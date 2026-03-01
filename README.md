@@ -32,7 +32,11 @@ python -m casterbot
 
 ## Commands
 
-- `/sync_matches` — fetch upcoming matches and post any new claim messages.
+- `/sync_matches` — Manually sync upcoming matches from the sheet
+- `/match_status` — Show claim status for a match
+- `/force_channel` — Force create the private channel for a match (admin)
+- `/refresh_messages` — Refresh all claim messages (updates UI)
+- `/manage_claim` — Add or remove a user from a match slot (admin)
 
 ## Notes
 
