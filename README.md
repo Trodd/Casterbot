@@ -12,16 +12,22 @@ Discord bot that posts upcoming match claim messages (caster/cam-op buttons) and
 
 2. Copy `.env.example` to `.env` and fill in IDs.
 
-3. Install deps:
+3. Create a virtual environment and install deps:
 
-```powershell
-c:/Users/toddr/Desktop/casterbot/.venv/Scripts/python.exe -m pip install -r requirements.txt
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
 1. Run:
 
-```powershell
-c:/Users/toddr/Desktop/casterbot/.venv/Scripts/python.exe -m casterbot
+```bash
+python -m casterbot
 ```
 
 ## Commands
