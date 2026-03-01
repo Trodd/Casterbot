@@ -32,6 +32,8 @@ python -m casterbot
 
 ## Commands
 
+These commands are available as a backup in case the automatic sync/posting isn't working.
+
 - `/sync_matches` — Manually sync upcoming matches from the sheet
 - `/match_status` — Show claim status for a match
 - `/force_channel` — Force create the private channel for a match (admin)
