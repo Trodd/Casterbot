@@ -1,0 +1,348 @@
+"""Main bot logic and sync loop."""
+from __future__ import annotations
+
+import asyncio
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+from . import config, db, sheets
+from .views import ClaimView, CloseChannelView
+
+# Set up logging to both console and file
+log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+log_dir = Path(__file__).resolve().parent.parent / "logs"
+log_dir.mkdir(exist_ok=True)
+log_file = log_dir / "casterbot.log"
+
+# Create handlers
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter(log_format))
+
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=5 * 1024 * 1024,  # 5 MB
+    backupCount=3,  # Keep 3 backup files
+    encoding="utf-8",
+)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter(log_format))
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.INFO,
+    format=log_format,
+    handlers=[console_handler, file_handler],
+)
+log = logging.getLogger("casterbot")
+
+
+class CasterBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.guilds = True
+        intents.members = True
+        intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self) -> None:
+        await db.init_db()
+        log.info("Database initialized")
+
+        # Register persistent views for existing matches
+        await self._register_persistent_views()
+
+        # Sync slash commands
+        if config.GUILD_ID:
+            guild = discord.Object(id=config.GUILD_ID)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+        else:
+            await self.tree.sync()
+        log.info("Slash commands synced")
+
+        # Start background sync loop
+        self.sync_matches_loop.start()
+
+    async def _register_persistent_views(self) -> None:
+        """Re-register views for matches that have claim messages."""
+        async with __import__("aiosqlite").connect(config.DB_PATH) as conn:
+            conn.row_factory = __import__("aiosqlite").Row
+            cursor = await conn.execute(
+                "SELECT match_id FROM matches WHERE message_id IS NOT NULL"
+            )
+            rows = await cursor.fetchall()
+        for row in rows:
+            self.add_view(ClaimView(row["match_id"]))
+        log.info(f"Registered {len(rows)} persistent claim views")
+        
+        # Register close channel views for private channels
+        async with __import__("aiosqlite").connect(config.DB_PATH) as conn:
+            conn.row_factory = __import__("aiosqlite").Row
+            cursor = await conn.execute(
+                "SELECT match_id FROM matches WHERE private_channel_id IS NOT NULL"
+            )
+            rows = await cursor.fetchall()
+        for row in rows:
+            self.add_view(CloseChannelView(row["match_id"]))
+            self.add_view(CloseChannelView(row["match_id"], confirming=True))
+        log.info(f"Registered {len(rows)} persistent close channel views")
+
+    async def on_ready(self) -> None:
+        log.info(f"Logged in as {self.user} (ID: {self.user.id})")
+
+    @tasks.loop(seconds=config.SYNC_INTERVAL_SECONDS)
+    async def sync_matches_loop(self) -> None:
+        await self.wait_until_ready()
+        try:
+            await sync_matches(self)
+        except Exception as e:
+            log.exception(f"Sync loop error: {e}")
+
+    @sync_matches_loop.before_loop
+    async def before_sync_loop(self) -> None:
+        await self.wait_until_ready()
+        # Run once immediately
+        await sync_matches(self)
+
+
+async def sync_matches(bot: CasterBot) -> int:
+    """Fetch matches from sheet, insert new ones, post claim messages. Returns count of new messages."""
+    log.info("Syncing matches from sheet...")
+    matches = await sheets.fetch_upcoming_matches()
+    log.info(f"Fetched {len(matches)} upcoming matches")
+
+    # SAFEGUARD: If sheet returned empty/very few matches, skip deletion logic
+    # This prevents mass deletion due to network errors or sheet loading issues
+    existing_matches = await db.get_matches_with_message()
+    if len(matches) == 0 and len(existing_matches) > 0:
+        log.warning("Sheet returned 0 matches but we have existing matches - skipping sync to prevent data loss")
+        return 0
+    
+    # If we got significantly fewer matches than we have, log a warning but still proceed cautiously
+    if len(existing_matches) > 3 and len(matches) < len(existing_matches) // 2:
+        log.warning(f"Sheet returned {len(matches)} matches but we have {len(existing_matches)} - possible sheet loading issue")
+
+    # Get current match IDs from sheet
+    sheet_match_ids = {m.match_id for m in matches}
+
+    # Delete messages for matches no longer in sheet
+    channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+    
+    matches_to_delete = [m for m in existing_matches if m["match_id"] not in sheet_match_ids]
+    if matches_to_delete:
+        log.info(f"Found {len(matches_to_delete)} matches to remove (no longer in sheet)")
+        for m in matches_to_delete:
+            log.info(f"  - Will delete: {m['team_a']} vs {m['team_b']} (ID: {m['match_id'][:40]}...)")
+    
+    for match in existing_matches:
+        if match["match_id"] not in sheet_match_ids:
+            # Match was removed from sheet - delete message and DB entry
+            if channel and match.get("message_id"):
+                try:
+                    msg = await channel.fetch_message(match["message_id"])
+                    await msg.delete()
+                    log.info(f"Deleted message for removed match: {match['team_a']} vs {match['team_b']}")
+                except discord.NotFound:
+                    log.info(f"Message already deleted for match: {match['match_id']}")
+                except Exception as e:
+                    log.error(f"Failed to delete message for {match['match_id']}: {e}")
+            await db.delete_match(match["match_id"])
+            log.info(f"Removed match from DB: {match['team_a']} vs {match['team_b']}")
+        else:
+            # Match still on sheet - verify message still exists
+            if channel and match.get("message_id"):
+                try:
+                    await channel.fetch_message(match["message_id"])
+                except discord.NotFound:
+                    # Message was deleted externally, clear ID so it gets reposted
+                    await db.clear_message_id(match["match_id"])
+                    log.info(f"Message missing for {match['team_a']} vs {match['team_b']}, will repost")
+                except Exception as e:
+                    log.error(f"Error checking message for {match['match_id']}: {e}")
+
+    new_count = 0
+    for m in matches:
+        inserted = await db.upsert_match(
+            match_id=m.match_id,
+            team_a=m.team_a,
+            team_b=m.team_b,
+            match_date=m.match_date,
+            match_time=m.match_time,
+            match_timestamp=int(m.match_datetime.timestamp()),
+        )
+        if inserted:
+            new_count += 1
+
+    # Post messages for matches without one
+    pending = await db.get_matches_without_message()
+    if not channel:
+        log.warning(f"Claim channel {config.CLAIM_CHANNEL_ID} not found")
+        return new_count
+
+    for match in pending:
+        claims = await db.get_claims(match["match_id"])
+        view = ClaimView(match["match_id"], match, claims)
+        bot.add_view(view)
+        try:
+            msg = await channel.send(view=view)
+            await db.set_message_id(match["match_id"], msg.id, channel.id)
+            log.info(f"Posted claim message for {match['team_a']} vs {match['team_b']}")
+        except Exception as e:
+            log.error(f"Failed to post claim message: {e}")
+
+    return new_count
+
+
+# Slash commands
+bot_instance: CasterBot | None = None
+
+
+def get_bot() -> CasterBot:
+    global bot_instance
+    if bot_instance is None:
+        bot_instance = CasterBot()
+        _register_commands(bot_instance)
+    return bot_instance
+
+
+def _register_commands(bot: CasterBot) -> None:
+    @bot.tree.command(name="sync_matches", description="Manually sync upcoming matches from the sheet")
+    async def cmd_sync_matches(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        count = await sync_matches(bot)
+        await interaction.followup.send(f"Sync complete. {count} new matches added.", ephemeral=True)
+
+    @bot.tree.command(name="match_status", description="Show claim status for a match")
+    @app_commands.describe(match_id="The match ID number (shown on claim message)")
+    async def cmd_match_status(interaction: discord.Interaction, match_id: int):
+        match = await db.get_match_by_simple_id(match_id)
+        if not match:
+            await interaction.response.send_message("Match not found.", ephemeral=True)
+            return
+        claims = await db.get_claims(match["match_id"])
+        view = ClaimView(match["match_id"], match, claims)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+    @bot.tree.command(name="force_channel", description="Force create the private channel for a match (admin)")
+    @app_commands.describe(match_id="The match ID number")
+    async def cmd_force_channel(interaction: discord.Interaction, match_id: int):
+        match = await db.get_match_by_simple_id(match_id)
+        if not match:
+            await interaction.response.send_message("Match not found.", ephemeral=True)
+            return
+        if match.get("private_channel_id"):
+            await interaction.response.send_message(
+                f"Channel already exists: <#{match['private_channel_id']}>", ephemeral=True
+            )
+            return
+        claims = await db.get_claims(match["match_id"])
+        from .views import create_private_match_channel
+        channel = await create_private_match_channel(interaction, match, claims)
+        if channel:
+            await interaction.response.send_message(f"Created <#{channel.id}>", ephemeral=True)
+        else:
+            await interaction.response.send_message("Failed to create channel.", ephemeral=True)
+
+    @bot.tree.command(name="refresh_messages", description="Refresh all claim messages (updates UI)")
+    async def cmd_refresh_messages(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        matches = await db.get_matches_with_message()
+        channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        if not channel:
+            await interaction.followup.send("Claim channel not found.", ephemeral=True)
+            return
+        
+        updated = 0
+        for match in matches:
+            if not match.get("message_id"):
+                continue
+            try:
+                msg = await channel.fetch_message(match["message_id"])
+                claims = await db.get_claims(match["match_id"])
+                new_view = ClaimView(match["match_id"], match, claims)
+                await msg.edit(view=new_view)
+                updated += 1
+            except discord.NotFound:
+                log.info(f"Message not found for {match['match_id']}")
+            except Exception as e:
+                log.error(f"Failed to refresh message for {match['match_id']}: {e}")
+        
+        await interaction.followup.send(f"Refreshed {updated} claim messages.", ephemeral=True)
+
+    @bot.tree.command(name="manage_claim", description="Add or remove a user from a match slot (admin)")
+    @app_commands.describe(
+        match_id="The match ID number (shown on claim message)",
+        action="Add or remove a user",
+        role="Role type",
+        slot="Slot number (1-2 for caster, 1 for camop/sideline)",
+        user="User to add (required for Add action)"
+    )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="Add", value="add"),
+            app_commands.Choice(name="Remove", value="remove"),
+        ],
+        role=[
+            app_commands.Choice(name="Caster", value="caster"),
+            app_commands.Choice(name="Cam Op", value="camop"),
+            app_commands.Choice(name="Sideline", value="sideline"),
+        ]
+    )
+    async def cmd_manage_claim(interaction: discord.Interaction, match_id: int, action: str, role: str, slot: int, user: discord.Member | None = None):
+        match = await db.get_match_by_simple_id(match_id)
+        if not match:
+            await interaction.response.send_message("Match not found.", ephemeral=True)
+            return
+        
+        internal_match_id = match["match_id"]
+        
+        # Validate slot number
+        from .views import MAX_CASTERS, MAX_CAMOPS, MAX_SIDELINE
+        max_slot = MAX_CASTERS if role == "caster" else (MAX_CAMOPS if role == "camop" else MAX_SIDELINE)
+        if slot < 1 or slot > max_slot:
+            await interaction.response.send_message(f"Invalid slot. {role} has slots 1-{max_slot}.", ephemeral=True)
+            return
+        
+        role_display = role.capitalize() if role != "camop" else "Cam Op"
+        
+        if action == "add":
+            if not user:
+                await interaction.response.send_message("You must specify a user to add.", ephemeral=True)
+                return
+            # Add user to slot
+            previous = await db.claim_slot(internal_match_id, user.id, role, slot)
+            if previous:
+                result_msg = f"Added {user.mention} as {role_display} {slot} (replaced <@{previous}>)."
+            else:
+                result_msg = f"Added {user.mention} as {role_display} {slot}."
+        else:
+            # Remove current holder
+            removed_user = await db.remove_claim_by_slot(internal_match_id, role, slot)
+            if not removed_user:
+                await interaction.response.send_message("That slot is already empty.", ephemeral=True)
+                return
+            result_msg = f"Removed <@{removed_user}> from {role_display} {slot}."
+        
+        # Refresh the claim message
+        channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        if channel and match.get("message_id"):
+            try:
+                msg = await channel.fetch_message(match["message_id"])
+                claims = await db.get_claims(internal_match_id)
+                new_view = ClaimView(internal_match_id, match, claims)
+                await msg.edit(view=new_view)
+            except Exception as e:
+                log.error(f"Failed to refresh message: {e}")
+        
+        await interaction.response.send_message(result_msg, ephemeral=True)
+
+
+def run() -> None:
+    bot = get_bot()
+    bot.run(config.DISCORD_TOKEN)

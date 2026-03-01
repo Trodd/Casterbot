@@ -1,0 +1,68 @@
+"""Load configuration from environment / .env."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
+
+
+def _get(key: str, default: str | None = None, required: bool = False) -> str:
+    val = os.getenv(key, default)
+    if required and not val:
+        raise RuntimeError(f"Missing required env var: {key}")
+    return val or ""
+
+
+def _int(key: str, default: int = 0) -> int:
+    val = os.getenv(key)
+    if val is None or val.strip() == "":
+        return default
+    return int(val)
+
+
+def _bool(key: str, default: bool = False) -> bool:
+    val = os.getenv(key, "").lower()
+    if val in ("true", "1", "yes"):
+        return True
+    if val in ("false", "0", "no"):
+        return False
+    return default
+
+
+# Discord
+DISCORD_TOKEN: str = _get("DISCORD_TOKEN", required=True)
+GUILD_ID: int = _int("GUILD_ID")
+CLAIM_CHANNEL_ID: int = _int("CLAIM_CHANNEL_ID")
+PRIVATE_CATEGORY_ID: int = _int("PRIVATE_CATEGORY_ID")
+
+REQUIRE_CLAIM_ROLE: bool = _bool("REQUIRE_CLAIM_ROLE", False)
+CLAIM_ELIGIBLE_ROLE_ID: int = _int("CLAIM_ELIGIBLE_ROLE_ID")
+
+CASTER_ROLE_ID: int = _int("CASTER_ROLE_ID")
+CAMOP_ROLE_ID: int = _int("CAMOP_ROLE_ID")
+STAFF_ROLE_ID: int = _int("STAFF_ROLE_ID")
+
+# Live announcement
+LIVE_ANNOUNCEMENT_CHANNEL_ID: int = _int("LIVE_ANNOUNCEMENT_CHANNEL_ID")
+LIVE_PING_ROLE_ID: int = _int("LIVE_PING_ROLE_ID")
+TWITCH_URL: str = _get("TWITCH_URL", "https://www.twitch.tv/echomasterleague")
+
+# Data sources
+UPCOMING_MATCHES_CSV_URL: str = _get(
+    "UPCOMING_MATCHES_CSV_URL",
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIvdXGBkVZB5ZFdMVUCZqe8e8DbOj6UbSAeqBP0uzYAY5Z1q37c-ZVG7iV96_cOlX-0jsgNLYXfe6B/pub?gid=881384435&single=true&output=csv",
+)
+ROSTERS_CSV_URL: str = _get("ROSTERS_CSV_URL", "")
+
+# Behavior
+MATCH_LOOKAHEAD_DAYS: int = _int("MATCH_LOOKAHEAD_DAYS", 14)
+SYNC_INTERVAL_SECONDS: int = _int("SYNC_INTERVAL_SECONDS", 300)
+TIMEZONE: str = _get("TIMEZONE", "US/Eastern")
+
+# Database path (SQLite)
+DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"
