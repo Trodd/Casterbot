@@ -61,6 +61,7 @@ ROSTERS_CSV_URL: str = _get("ROSTERS_CSV_URL", "")
 
 # Behavior
 MATCH_LOOKAHEAD_DAYS: int = _int("MATCH_LOOKAHEAD_DAYS", 14)
+MATCH_GRACE_HOURS: int = _int("MATCH_GRACE_HOURS", 4)  # Keep matches for X hours after start time
 SYNC_INTERVAL_SECONDS: int = _int("SYNC_INTERVAL_SECONDS", 300)
 TIMEZONE: str = _get("TIMEZONE", "US/Eastern")
 

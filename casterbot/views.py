@@ -416,7 +416,7 @@ async def create_private_match_channel(
                 overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
                 team_roles.append(role)
 
-    channel_name = f"match-{match['team_a'][:10]}-vs-{match['team_b'][:10]}".lower().replace(" ", "-")
+    channel_name = f"{match['team_a']}-vs-{match['team_b']}".lower().replace(" ", "-")
 
     try:
         channel = await guild.create_text_channel(
@@ -515,10 +515,10 @@ class CloseChannelView(LayoutView):
     async def interaction_check(self, interaction: Interaction) -> bool:
         custom_id = interaction.data.get("custom_id", "")
         
-        # Check if user has caster role
-        if not self._is_caster(interaction):
+        # Check if user has caster or staff role
+        if not self._can_close_channel(interaction):
             await interaction.response.send_message(
-                "Only casters can close the channel.", ephemeral=True
+                "Only casters or staff can close the channel.", ephemeral=True
             )
             return False
         
@@ -530,7 +530,22 @@ class CloseChannelView(LayoutView):
         elif custom_id.startswith("confirm_close:"):
             # Actually delete the channel
             await interaction.response.send_message("Closing channel in 3 seconds...", ephemeral=True)
-            await db.clear_private_channel(self.match_id)
+            
+            # Delete claim message from claim channel if it exists
+            match = await db.get_match(self.match_id)
+            if match and match.get("message_id"):
+                try:
+                    claim_channel = interaction.client.get_channel(config.CLAIM_CHANNEL_ID)
+                    if claim_channel:
+                        msg = await claim_channel.fetch_message(match["message_id"])
+                        await msg.delete()
+                except discord.NotFound:
+                    pass
+                except Exception:
+                    pass
+            
+            # Delete match from DB (this also clears claims)
+            await db.delete_match(self.match_id)
             await asyncio.sleep(3)
             try:
                 await interaction.channel.delete(reason="Match channel closed by caster")
@@ -545,11 +560,21 @@ class CloseChannelView(LayoutView):
         
         return True
 
-    def _is_caster(self, interaction: Interaction) -> bool:
-        """Check if user has the caster role."""
-        if not config.CASTER_ROLE_ID:
-            return True  # No role configured, allow anyone
+    def _can_close_channel(self, interaction: Interaction) -> bool:
+        """Check if user has the caster or staff role."""
         member = interaction.user
-        if isinstance(member, discord.Member):
-            return any(r.id == config.CASTER_ROLE_ID for r in member.roles)
-        return False
+        if not isinstance(member, discord.Member):
+            return False
+        
+        # Allow if no roles configured
+        if not config.CASTER_ROLE_ID and not config.STAFF_ROLE_ID:
+            return True
+        
+        # Check for caster or staff role
+        allowed_role_ids = []
+        if config.CASTER_ROLE_ID:
+            allowed_role_ids.append(config.CASTER_ROLE_ID)
+        if config.STAFF_ROLE_ID:
+            allowed_role_ids.append(config.STAFF_ROLE_ID)
+        
+        return any(r.id in allowed_role_ids for r in member.roles)

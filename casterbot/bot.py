@@ -142,7 +142,13 @@ async def sync_matches(bot: CasterBot) -> int:
     
     for match in existing_matches:
         if match["match_id"] not in sheet_match_ids:
-            # Match was removed from sheet - delete message and DB entry
+            # Match was removed from sheet (outdated)
+            # Keep match + claim message if there's still an active private channel
+            if match.get("private_channel_id"):
+                log.info(f"Keeping match + claim message for {match['team_a']} vs {match['team_b']} - private channel still active")
+                continue
+            
+            # No private channel, safe to delete entirely
             if channel and match.get("message_id"):
                 try:
                     msg = await channel.fetch_message(match["message_id"])

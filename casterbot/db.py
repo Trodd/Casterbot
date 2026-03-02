@@ -222,21 +222,22 @@ async def get_claims(match_id: str) -> list[dict]:
 
 
 async def get_matches_without_message() -> list[dict]:
+    """Get matches that need claim messages posted (no message and no private channel yet)."""
     async with aiosqlite.connect(config.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM matches WHERE message_id IS NULL"
+            "SELECT * FROM matches WHERE message_id IS NULL AND private_channel_id IS NULL"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
 async def get_matches_with_message() -> list[dict]:
-    """Get all matches that have a posted Discord message."""
+    """Get all matches that have a posted Discord message or active private channel."""
     async with aiosqlite.connect(config.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM matches WHERE message_id IS NOT NULL"
+            "SELECT * FROM matches WHERE message_id IS NOT NULL OR private_channel_id IS NOT NULL"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]

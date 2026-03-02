@@ -54,6 +54,8 @@ async def fetch_upcoming_matches() -> list[Match]:
     matches: list[Match] = []
     now = datetime.now(tz.gettz(config.TIMEZONE))
     cutoff = now + timedelta(days=config.MATCH_LOOKAHEAD_DAYS)
+    # Grace period: include matches that started recently (for Go Live / Ready buttons)
+    grace_cutoff = now - timedelta(hours=config.MATCH_GRACE_HOURS)
 
     async with aiohttp.ClientSession() as session:
         try:
@@ -121,8 +123,8 @@ async def fetch_upcoming_matches() -> list[Match]:
         if dt is None:
             continue
 
-        # Only future matches within lookahead window
-        if dt < now or dt > cutoff:
+        # Include matches within grace period (after start) up to lookahead window (before start)
+        if dt < grace_cutoff or dt > cutoff:
             continue
 
         match_id = _make_match_id(team_a, team_b, match_date, match_time)
