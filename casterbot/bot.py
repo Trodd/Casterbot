@@ -117,16 +117,7 @@ async def sync_matches(bot: CasterBot) -> int:
     matches = await sheets.fetch_upcoming_matches()
     log.info(f"Fetched {len(matches)} upcoming matches")
 
-    # SAFEGUARD: If sheet returned empty/very few matches, skip deletion logic
-    # This prevents mass deletion due to network errors or sheet loading issues
     existing_matches = await db.get_matches_with_message()
-    if len(matches) == 0 and len(existing_matches) > 0:
-        log.warning("Sheet returned 0 matches but we have existing matches - skipping sync to prevent data loss")
-        return 0
-    
-    # If we got significantly fewer matches than we have, log a warning but still proceed cautiously
-    if len(existing_matches) > 3 and len(matches) < len(existing_matches) // 2:
-        log.warning(f"Sheet returned {len(matches)} matches but we have {len(existing_matches)} - possible sheet loading issue")
 
     # Get current match IDs from sheet
     sheet_match_ids = {m.match_id for m in matches}
