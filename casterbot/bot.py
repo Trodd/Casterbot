@@ -41,6 +41,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("casterbot")
 
+# Quiet discord.py's noisy gateway logs
+logging.getLogger("discord.gateway").setLevel(logging.WARNING)
+logging.getLogger("discord.http").setLevel(logging.WARNING)
+
 
 class CasterBot(commands.Bot):
     def __init__(self):
@@ -113,9 +117,9 @@ class CasterBot(commands.Bot):
 
 async def sync_matches(bot: CasterBot) -> int:
     """Fetch matches from sheet, insert new ones, post claim messages. Returns count of new messages."""
-    log.info("Syncing matches from sheet...")
+    log.debug("Syncing matches from sheet...")
     matches = await sheets.fetch_upcoming_matches()
-    log.info(f"Fetched {len(matches)} upcoming matches")
+    log.debug(f"Fetched {len(matches)} upcoming matches")
 
     existing_matches = await db.get_matches_with_message()
 
@@ -146,7 +150,7 @@ async def sync_matches(bot: CasterBot) -> int:
                     await msg.delete()
                     log.info(f"Deleted message for removed match: {match['team_a']} vs {match['team_b']}")
                 except discord.NotFound:
-                    log.info(f"Message already deleted for match: {match['match_id']}")
+                    log.debug(f"Message already deleted for match: {match['match_id']}")
                 except Exception as e:
                     log.error(f"Failed to delete message for {match['match_id']}: {e}")
             await db.delete_match(match["match_id"])
@@ -338,6 +342,39 @@ def _register_commands(bot: CasterBot) -> None:
                 log.error(f"Failed to refresh message: {e}")
         
         await interaction.response.send_message(result_msg, ephemeral=True)
+
+    @bot.tree.command(name="margarita", description="Request a margarita from the margarita machine")
+    async def cmd_margarita(interaction: discord.Interaction):
+        import random
+        flavors = ["Classic Lime", "Strawberry", "Mango", "Spicy Jalapeño", "Blue Curaçao", "Watermelon", "Peach", "Pineapple", "Coconut", "Passion Fruit", "Blood Orange", "Blackberry"]
+        flavor = random.choice(flavors)
+        responses = [
+            f"🍹 **WHIRRRR** The margarita machine dispenses a fresh {flavor} margarita for {interaction.user.mention}!",
+            f"🧊 Ice crushed. Tequila poured. Lime squeezed. {interaction.user.mention} receives a {flavor} margarita! 🍹",
+            f"🍹 One {flavor} margarita, coming right up! *slides drink across the bar to {interaction.user.mention}*",
+            f"⚠️ ERROR: Margarita machine is out of... just kidding! 🍹 Here's your {flavor} margarita, {interaction.user.mention}!",
+            f"🎰 *slot machine noises* 🍹🍹🍹 JACKPOT! {interaction.user.mention} wins a {flavor} margarita!",
+            f"🤖 BEEP BOOP. Margarita protocol initiated. Dispensing {flavor} margarita to {interaction.user.mention}. 🍹",
+            f"🌴 A tiny beach umbrella pops out, followed by a {flavor} margarita for {interaction.user.mention}! 🍹🏖️",
+            f"🍹 The margarita machine hums approvingly and presents {interaction.user.mention} with a perfectly crafted {flavor} margarita.",
+            f"🎵 *Margaritaville plays softly* 🍹 {interaction.user.mention}, your {flavor} margarita awaits!",
+            f"🧪 After careful scientific analysis... the optimal drink for {interaction.user.mention} is a {flavor} margarita! 🍹",
+            # Echo Arena themed
+            f"🥏 {interaction.user.mention} catches the disc— wait no, it's a {flavor} margarita! 🍹",
+            f"💥 STUNNED! {interaction.user.mention} gets hit with a {flavor} margarita to the face! 🍹",
+            f"🚀 {interaction.user.mention} launches out of the tube and grabs a {flavor} margarita mid-flight! 🍹",
+            f"🎯 GOAL! {interaction.user.mention} scores a {flavor} margarita! The crowd goes wild! 🍹",
+            f"⚡ {interaction.user.mention} jousts the margarita machine and wins a {flavor} margarita! 🍹",
+            f"🔄 Self-pass into regrab! {interaction.user.mention} secures the {flavor} margarita! 🍹",
+            f"🍹 {interaction.user.mention} boosts off the wall and intercepts a {flavor} margarita!",
+            f"🎮 **OVERTIME!** {interaction.user.mention} clutches it with a {flavor} margarita! 🍹",
+            f"🛸 {interaction.user.mention} floats through zero-g and catches a {flavor} margarita drifting by. 🍹",
+            f"💫 {interaction.user.mention} arcs a beautiful {flavor} margarita right into their own hands! 🍹",
+            f"🧤 Clean catch! {interaction.user.mention} grabs the {flavor} margarita out of the air! 🍹",
+            f"🏆 ESL Champion {interaction.user.mention} is awarded a ceremonial {flavor} margarita! 🍹",
+            f"🤖 RAD clears {interaction.user.mention} for a {flavor} margarita. No headbutting detected. 🍹",
+        ]
+        await interaction.response.send_message(random.choice(responses))
 
 
 def run() -> None:
