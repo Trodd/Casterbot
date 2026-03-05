@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
+from io import StringIO
 
 import discord
 from discord import ButtonStyle, Interaction
@@ -531,8 +533,14 @@ class CloseChannelView(LayoutView):
             # Actually delete the channel
             await interaction.response.send_message("Closing channel in 3 seconds...", ephemeral=True)
             
-            # Delete claim message from claim channel if it exists
+            # Get match info for transcript
             match = await db.get_match(self.match_id)
+            
+            # Generate and post transcript if configured
+            if config.TRANSCRIPT_CHANNEL_ID and interaction.channel:
+                await self._create_transcript(interaction, match)
+            
+            # Delete claim message from claim channel if it exists
             if match and match.get("message_id"):
                 try:
                     claim_channel = interaction.client.get_channel(config.CLAIM_CHANNEL_ID)
@@ -578,3 +586,84 @@ class CloseChannelView(LayoutView):
             allowed_role_ids.append(config.STAFF_ROLE_ID)
         
         return any(r.id in allowed_role_ids for r in member.roles)
+
+    async def _create_transcript(self, interaction: Interaction, match: dict | None) -> None:
+        """Create and post a transcript of the channel to the transcript channel."""
+        transcript_channel = interaction.client.get_channel(config.TRANSCRIPT_CHANNEL_ID)
+        if not transcript_channel:
+            return
+        
+        channel = interaction.channel
+        if not isinstance(channel, discord.TextChannel):
+            return
+        
+        # Collect messages
+        messages = []
+        try:
+            async for msg in channel.history(limit=500, oldest_first=True):
+                messages.append(msg)
+        except Exception:
+            return
+        
+        if not messages:
+            return
+        
+        # Build transcript text
+        transcript = StringIO()
+        
+        # Header
+        if match:
+            transcript.write(f"TRANSCRIPT: {match['team_a']} vs {match['team_b']}\n")
+            transcript.write(f"Match Date: {match.get('match_date', 'Unknown')} {match.get('match_time', '')}\n")
+        else:
+            transcript.write(f"TRANSCRIPT: {channel.name}\n")
+        
+        transcript.write(f"Channel: #{channel.name}\n")
+        transcript.write(f"Closed by: {interaction.user.display_name} ({interaction.user.id})\n")
+        transcript.write(f"Closed at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+        transcript.write(f"Message count: {len(messages)}\n")
+        transcript.write("=" * 60 + "\n\n")
+        
+        # Messages
+        for msg in messages:
+            timestamp = msg.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            author = f"{msg.author.display_name} ({msg.author.name})"
+            transcript.write(f"[{timestamp}] {author}:\n")
+            
+            if msg.content:
+                transcript.write(f"{msg.content}\n")
+            
+            # Note attachments
+            for attachment in msg.attachments:
+                transcript.write(f"[Attachment: {attachment.filename} - {attachment.url}]\n")
+            
+            # Note embeds
+            if msg.embeds:
+                transcript.write(f"[{len(msg.embeds)} embed(s)]\n")
+            
+            transcript.write("\n")
+        
+        # Create file and send
+        transcript_content = transcript.getvalue()
+        transcript.close()
+        
+        # Build summary embed
+        embed = discord.Embed(
+            title="Channel Transcript",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        if match:
+            embed.add_field(name="Match", value=f"{match['team_a']} vs {match['team_b']}", inline=True)
+        embed.add_field(name="Channel", value=f"#{channel.name}", inline=True)
+        embed.add_field(name="Closed By", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Messages", value=str(len(messages)), inline=True)
+        
+        # Send as file attachment
+        filename = f"transcript-{channel.name}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.txt"
+        file = discord.File(StringIO(transcript_content), filename=filename)
+        
+        try:
+            await transcript_channel.send(embed=embed, file=file)
+        except Exception:
+            pass

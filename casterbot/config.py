@@ -52,6 +52,9 @@ LIVE_ANNOUNCEMENT_CHANNEL_ID: int = _int("LIVE_ANNOUNCEMENT_CHANNEL_ID")
 LIVE_PING_ROLE_ID: int = _int("LIVE_PING_ROLE_ID")
 TWITCH_URL: str = _get("TWITCH_URL", "https://www.twitch.tv/echomasterleague")
 
+# Transcript channel (optional - logs deleted private channels)
+TRANSCRIPT_CHANNEL_ID: int = _int("TRANSCRIPT_CHANNEL_ID")
+
 # Data sources
 UPCOMING_MATCHES_CSV_URL: str = _get(
     "UPCOMING_MATCHES_CSV_URL",
