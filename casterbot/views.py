@@ -368,7 +368,7 @@ class ClaimView(LayoutView):
 
         # Build announcement
         twitch_url = config.TWITCH_URL or "https://www.twitch.tv/echomasterleague"
-        announcement = f"# [{twitch_url.split('/')[-1]}]({twitch_url}) We are live now casting {teams_text}"
+        announcement = f"# [EchoMasterLeague]({twitch_url}) We are live now casting {teams_text}"
         if live_ping:
             announcement += f"\n{live_ping}"
 
