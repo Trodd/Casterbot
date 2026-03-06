@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS matches (
     match_date TEXT NOT NULL,
     match_time TEXT NOT NULL,
     match_timestamp INTEGER,
+    week_number TEXT,
+    match_type TEXT,
     message_id INTEGER,
     channel_id INTEGER,
     private_channel_id INTEGER
@@ -27,6 +29,16 @@ CREATE TABLE IF NOT EXISTS claims (
     slot INTEGER NOT NULL,  -- 1-3 for casters, 1 for camop
     UNIQUE(match_id, role, slot),
     FOREIGN KEY(match_id) REFERENCES matches(match_id)
+);
+
+CREATE TABLE IF NOT EXISTS caster_stats (
+    user_id INTEGER PRIMARY KEY,
+    cast_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -49,6 +61,12 @@ async def init_db() -> None:
                 await db.execute("UPDATE matches SET simple_id = ? WHERE match_id = ?", (idx, row[0]))
             # Create unique index
             await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_simple_id ON matches(simple_id)")
+        # Migration: add week_number column if missing
+        if "week_number" not in columns:
+            await db.execute("ALTER TABLE matches ADD COLUMN week_number TEXT")
+        # Migration: add match_type column if missing
+        if "match_type" not in columns:
+            await db.execute("ALTER TABLE matches ADD COLUMN match_type TEXT")
         await db.commit()
 
 
@@ -67,6 +85,7 @@ async def upsert_match(
     match_date: str,
     match_time: str,
     match_timestamp: int | None = None,
+    match_type: str | None = None,
 ) -> bool:
     """Insert or update a match. Returns True if newly inserted."""
     async with aiosqlite.connect(config.DB_PATH) as db:
@@ -81,15 +100,21 @@ async def upsert_match(
                     "UPDATE matches SET match_timestamp = ? WHERE match_id = ? AND match_timestamp IS NULL",
                     (match_timestamp, match_id),
                 )
-                await db.commit()
+            # Update match_type if provided
+            if match_type:
+                await db.execute(
+                    "UPDATE matches SET match_type = ? WHERE match_id = ?",
+                    (match_type, match_id),
+                )
+            await db.commit()
             return False
         simple_id = await _next_simple_id()
         await db.execute(
             """
-            INSERT INTO matches (match_id, simple_id, team_a, team_b, match_date, match_time, match_timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO matches (match_id, simple_id, team_a, team_b, match_date, match_time, match_timestamp, match_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (match_id, simple_id, team_a, team_b, match_date, match_time, match_timestamp),
+            (match_id, simple_id, team_a, team_b, match_date, match_time, match_timestamp, match_type),
         )
         await db.commit()
         return True
@@ -259,3 +284,86 @@ async def delete_match(match_id: str) -> None:
         await db.execute("DELETE FROM claims WHERE match_id = ?", (match_id,))
         await db.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
         await db.commit()
+
+
+# -- Caster Leaderboard Functions --
+
+
+async def increment_cast_count(user_id: int) -> int:
+    """Increment cast count for a user. Returns the new count."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # Upsert: insert or update
+        await db.execute(
+            """
+            INSERT INTO caster_stats (user_id, cast_count)
+            VALUES (?, 1)
+            ON CONFLICT(user_id) DO UPDATE SET cast_count = cast_count + 1
+            """,
+            (user_id,),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT cast_count FROM caster_stats WHERE user_id = ?", (user_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 1
+
+
+async def get_caster_leaderboard(limit: int = 10) -> list[dict]:
+    """Get top casters by cast count."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT user_id, cast_count FROM caster_stats ORDER BY cast_count DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_user_cast_count(user_id: int) -> int:
+    """Get a single user's cast count."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT cast_count FROM caster_stats WHERE user_id = ?", (user_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
+async def reset_leaderboard() -> int:
+    """Reset all caster stats. Returns number of entries cleared."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM caster_stats")
+        row = await cursor.fetchone()
+        count = row[0] if row else 0
+        await db.execute("DELETE FROM caster_stats")
+        await db.commit()
+        return count
+
+
+# -- Settings Functions --
+
+
+async def set_setting(key: str, value: str) -> None:
+    """Set a setting value."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = ?
+            """,
+            (key, value, value),
+        )
+        await db.commit()
+
+
+async def get_setting(key: str) -> str | None:
+    """Get a setting value."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None

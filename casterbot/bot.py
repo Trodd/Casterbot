@@ -176,6 +176,7 @@ async def sync_matches(bot: CasterBot) -> int:
             match_date=m.match_date,
             match_time=m.match_time,
             match_timestamp=int(m.match_datetime.timestamp()),
+            match_type=m.match_type,
         )
         if inserted:
             new_count += 1
@@ -375,6 +376,46 @@ def _register_commands(bot: CasterBot) -> None:
             f"🤖 RAD clears {interaction.user.mention} for a {flavor} margarita. No headbutting detected. 🍹",
         ]
         await interaction.response.send_message(random.choice(responses))
+
+    @bot.tree.command(name="leaderboard", description="Show the caster leaderboard (including cam ops)")
+    async def cmd_leaderboard(interaction: discord.Interaction):
+        leaderboard = await db.get_caster_leaderboard(limit=10)
+        if not leaderboard:
+            await interaction.response.send_message("No casts recorded yet!", ephemeral=True)
+            return
+        
+        lines = ["# 🎙️ Caster Leaderboard\n"]
+        for i, entry in enumerate(leaderboard, start=1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"**{i}.**"
+            lines.append(f"{medal} <@{entry['user_id']}> — **{entry['cast_count']}** casts")
+        
+        # Show the requesting user's rank if not in top 10
+        user_count = await db.get_user_cast_count(interaction.user.id)
+        if user_count > 0:
+            user_in_top = any(e['user_id'] == interaction.user.id for e in leaderboard)
+            if not user_in_top:
+                lines.append(f"\n---\n**Your casts:** {user_count}")
+        
+        await interaction.response.send_message("\n".join(lines))
+
+    @bot.tree.command(name="set_week", description="Set the current season and week number")
+    @app_commands.describe(
+        season="Season number or name (e.g., '5' or 'S5')",
+        week="Week number (e.g., '3')"
+    )
+    async def cmd_set_week(interaction: discord.Interaction, season: str, week: str):
+        await db.set_setting("season", season)
+        await db.set_setting("week", week)
+        await interaction.response.send_message(
+            f"Updated to **Season {season}, Week {week}**", ephemeral=True
+        )
+
+    @bot.tree.command(name="reset_leaderboard", description="Reset the caster leaderboard (admin)")
+    async def cmd_reset_leaderboard(interaction: discord.Interaction):
+        count = await db.reset_leaderboard()
+        await interaction.response.send_message(
+            f"Leaderboard reset. Cleared {count} entries.", ephemeral=True
+        )
 
 
 def run() -> None:

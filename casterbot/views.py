@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from io import StringIO
 
 import discord
+from dateutil import tz as dateutil_tz
 from discord import ButtonStyle, Interaction
 from discord.ui import ActionRow, Button, Container, LayoutView, TextDisplay
 
@@ -536,6 +537,14 @@ class CloseChannelView(LayoutView):
             # Get match info for transcript
             match = await db.get_match(self.match_id)
             
+            # Get claims BEFORE deleting match (for leaderboard)
+            claims = await db.get_claims(self.match_id)
+            
+            # Increment cast count for all casters and cam ops
+            for claim in claims:
+                if claim["role"] in ("caster", "camop"):
+                    await db.increment_cast_count(claim["user_id"])
+            
             # Generate and post transcript if configured
             if config.TRANSCRIPT_CHANNEL_ID and interaction.channel:
                 await self._create_transcript(interaction, match)
@@ -608,13 +617,33 @@ class CloseChannelView(LayoutView):
         if not messages:
             return
         
+        # Get season/week settings
+        season = await db.get_setting("season") or ""
+        week = await db.get_setting("week") or ""
+        
         # Build transcript text
         transcript = StringIO()
         
         # Header
         if match:
             transcript.write(f"TRANSCRIPT: {match['team_a']} vs {match['team_b']}\n")
-            transcript.write(f"Match Date: {match.get('match_date', 'Unknown')} {match.get('match_time', '')}\n")
+            # Season and week from settings
+            if season:
+                transcript.write(f"Season: {season}\n")
+            if week:
+                transcript.write(f"Week: {week}\n")
+            # Match type (Assigned/Challenge) from match data
+            match_type = match.get('match_type', '')
+            if match_type:
+                transcript.write(f"Match Type: {match_type}\n")
+            # Match date/time in Eastern
+            ts = match.get('match_timestamp')
+            if ts:
+                eastern = dateutil_tz.gettz('US/Eastern')
+                match_dt = datetime.fromtimestamp(ts, tz=eastern)
+                transcript.write(f"Match Date/Time: {match_dt.strftime('%B %d, %Y at %I:%M %p')} ET\n")
+            else:
+                transcript.write(f"Match Date: {match.get('match_date', 'Unknown')} {match.get('match_time', '')}\n")
         else:
             transcript.write(f"TRANSCRIPT: {channel.name}\n")
         
@@ -655,6 +684,18 @@ class CloseChannelView(LayoutView):
         )
         if match:
             embed.add_field(name="Match", value=f"{match['team_a']} vs {match['team_b']}", inline=True)
+            if season:
+                embed.add_field(name="Season", value=season, inline=True)
+            if week:
+                embed.add_field(name="Week", value=week, inline=True)
+            match_type = match.get('match_type', '')
+            if match_type:
+                embed.add_field(name="Type", value=match_type, inline=True)
+            ts = match.get('match_timestamp')
+            if ts:
+                eastern = dateutil_tz.gettz('US/Eastern')
+                match_dt = datetime.fromtimestamp(ts, tz=eastern)
+                embed.add_field(name="Match Time", value=f"{match_dt.strftime('%b %d, %Y %I:%M %p')} ET", inline=True)
         embed.add_field(name="Channel", value=f"#{channel.name}", inline=True)
         embed.add_field(name="Closed By", value=interaction.user.mention, inline=True)
         embed.add_field(name="Messages", value=str(len(messages)), inline=True)
