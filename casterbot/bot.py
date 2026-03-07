@@ -411,7 +411,7 @@ def _register_commands(bot: CasterBot) -> None:
             medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"**{i}.**"
             lines.append(f"{medal} <@{entry['user_id']}> — **{entry['cast_count']}** casts")
         
-        await interaction.response.send_message("\n".join(lines))
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
     @bot.tree.command(name="set_week", description="Set the current season and week number")
     @app_commands.describe(
