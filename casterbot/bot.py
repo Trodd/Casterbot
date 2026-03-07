@@ -393,6 +393,10 @@ def _register_commands(bot: CasterBot) -> None:
                     for member in role.members:
                         eligible_members.add(member.id)
         
+        # Exclude the bot itself
+        if bot.user:
+            eligible_members.discard(bot.user.id)
+        
         if not eligible_members:
             await interaction.response.send_message("No casters or cam ops found.", ephemeral=True)
             return
