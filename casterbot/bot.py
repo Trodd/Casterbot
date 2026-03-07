@@ -379,22 +379,37 @@ def _register_commands(bot: CasterBot) -> None:
 
     @bot.tree.command(name="leaderboard", description="Show the caster leaderboard (including cam ops)")
     async def cmd_leaderboard(interaction: discord.Interaction):
-        leaderboard = await db.get_caster_leaderboard(limit=10)
-        if not leaderboard:
-            await interaction.response.send_message("No casts recorded yet!", ephemeral=True)
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("Could not access server.", ephemeral=True)
             return
         
+        # Get all members with caster or cam op roles (including training roles)
+        eligible_members: set[int] = set()
+        for role_id in (config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID, config.CASTER_TRAINING_ROLE_ID, config.CAMOP_TRAINING_ROLE_ID):
+            if role_id:
+                role = guild.get_role(role_id)
+                if role:
+                    for member in role.members:
+                        eligible_members.add(member.id)
+        
+        if not eligible_members:
+            await interaction.response.send_message("No casters or cam ops found.", ephemeral=True)
+            return
+        
+        # Get cast counts for all eligible members
+        entries = []
+        for user_id in eligible_members:
+            count = await db.get_user_cast_count(user_id)
+            entries.append({"user_id": user_id, "cast_count": count})
+        
+        # Sort by cast count descending
+        entries.sort(key=lambda e: e["cast_count"], reverse=True)
+        
         lines = ["# 🎙️ Caster Leaderboard\n"]
-        for i, entry in enumerate(leaderboard, start=1):
+        for i, entry in enumerate(entries, start=1):
             medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"**{i}.**"
             lines.append(f"{medal} <@{entry['user_id']}> — **{entry['cast_count']}** casts")
-        
-        # Show the requesting user's rank if not in top 10
-        user_count = await db.get_user_cast_count(interaction.user.id)
-        if user_count > 0:
-            user_in_top = any(e['user_id'] == interaction.user.id for e in leaderboard)
-            if not user_in_top:
-                lines.append(f"\n---\n**Your casts:** {user_count}")
         
         await interaction.response.send_message("\n".join(lines))
 
