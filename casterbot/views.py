@@ -8,7 +8,7 @@ from io import StringIO
 import discord
 from dateutil import tz as dateutil_tz
 from discord import ButtonStyle, Interaction
-from discord.ui import ActionRow, Button, Container, LayoutView, TextDisplay
+from discord.ui import ActionRow, Button, Container, LayoutView, Separator, TextDisplay, View
 
 from . import config, db
 
@@ -16,6 +16,31 @@ from . import config, db
 MAX_CASTERS = 2
 MAX_CAMOPS = 1
 MAX_SIDELINE = 1
+
+
+class ConfirmView(View):
+    """A simple confirmation view with Yes/No buttons."""
+    
+    def __init__(self, action_name: str):
+        super().__init__(timeout=30)
+        self.confirmed = False
+        self.action_name = action_name
+    
+    @discord.ui.button(label="Yes", style=ButtonStyle.success)
+    async def confirm_button(self, interaction: Interaction, button: Button):
+        self.confirmed = True
+        self.stop()
+        await interaction.response.edit_message(content="Confirmed!", view=None)
+    
+    @discord.ui.button(label="No", style=ButtonStyle.danger)
+    async def cancel_button(self, interaction: Interaction, button: Button):
+        self.confirmed = False
+        self.stop()
+        try:
+            await interaction.response.defer()
+            await interaction.delete_original_response()
+        except Exception:
+            pass
 
 
 def _role_allowed(interaction: Interaction) -> bool:
@@ -88,7 +113,7 @@ class ClaimView(LayoutView):
         # Build text content
         content = _build_claim_text(match, claims or [])
         
-        # Create buttons for row 1 (casters)
+        # Create buttons for row 1 (Caster 1, Caster 2, Cam Op, Sideline, Unclaim)
         caster_buttons = []
         for slot in range(1, MAX_CASTERS + 1):
             btn = Button(
@@ -98,7 +123,7 @@ class ClaimView(LayoutView):
             )
             caster_buttons.append(btn)
         
-        # Cam-op button
+        # Cam-op button (stacked with casters)
         cam_btn = Button(
             style=ButtonStyle.secondary,
             label="Cam Op",
@@ -106,7 +131,7 @@ class ClaimView(LayoutView):
         )
         caster_buttons.append(cam_btn)
         
-        # Sideline button
+        # Sideline button (stacked with casters)
         sideline_btn = Button(
             style=ButtonStyle.secondary,
             label="Sideline",
@@ -114,12 +139,15 @@ class ClaimView(LayoutView):
         )
         caster_buttons.append(sideline_btn)
         
-        # Row 2 buttons
+        # Unclaim button (stacked with casters)
         unclaim_btn = Button(
             style=ButtonStyle.danger,
             label="Unclaim",
             custom_id=f"unclaim:{match_id}",
         )
+        caster_buttons.append(unclaim_btn)
+        
+        # Other action buttons
         create_channel_btn = Button(
             style=ButtonStyle.success,
             label="Create Channel",
@@ -136,14 +164,22 @@ class ClaimView(LayoutView):
             custom_id=f"go_live:{match_id}",
         )
         
-        # Build container with text and action rows
+        # Build container with text and Caster 1, 2, Cam Op, Sideline, Unclaim row
         container = Container(
             TextDisplay(content),
             ActionRow(*caster_buttons),
-            ActionRow(unclaim_btn, create_channel_btn, ready_btn, go_live_btn),
             accent_color=discord.Color.blurple(),
         )
         self.add_item(container)
+        
+        # Add separator line
+        self.add_item(Separator())
+        
+        # Build second container with remaining buttons
+        other_container = Container(
+            ActionRow(create_channel_btn, ready_btn, go_live_btn),
+        )
+        self.add_item(other_container)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         """Route interactions to the appropriate handler."""
@@ -213,7 +249,7 @@ class ClaimView(LayoutView):
         await self._refresh_message(interaction)
 
     async def _handle_create_channel(self, interaction: Interaction):
-        """Create the private match channel."""
+        """Create the private match channel with confirmation."""
         match = await db.get_match(self.match_id)
         if not match:
             await interaction.response.send_message("Match not found.", ephemeral=True)
@@ -243,13 +279,22 @@ class ClaimView(LayoutView):
             )
             return
 
+        # Confirmation step
+        confirm_view = ConfirmView("Create Channel")
+        await interaction.response.send_message(
+            "Are you sure you want to create the match channel?", view=confirm_view, ephemeral=True
+        )
+        await confirm_view.wait()
+        if not confirm_view.confirmed:
+            return
+
         channel = await create_private_match_channel(interaction, match, claims)
         if channel:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"Channel created: <#{channel.id}>", ephemeral=True
             )
         else:
-            await interaction.response.send_message("Failed to create channel.", ephemeral=True)
+            await interaction.followup.send("Failed to create channel.", ephemeral=True)
 
     async def _refresh_message(self, interaction: Interaction):
         """Update the message with current claims."""
@@ -287,6 +332,15 @@ class ClaimView(LayoutView):
             )
             return
 
+        # Confirmation step
+        confirm_view = ConfirmView("Crew Ready")
+        await interaction.response.send_message(
+            "Are you sure you want to send the crew ready message?", view=confirm_view, ephemeral=True
+        )
+        await confirm_view.wait()
+        if not confirm_view.confirmed:
+            return
+
         # Find team roles
         team_a_lower = match['team_a'].lower()
         team_b_lower = match['team_b'].lower()
@@ -305,7 +359,7 @@ class ClaimView(LayoutView):
             ready_msg = f"**{match['team_a']}** and **{match['team_b']}**\n\n**The casting crew is ready!** You may start whenever you're ready."
 
         await private_channel.send(ready_msg)
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Ready message sent to <#{match['private_channel_id']}>!", ephemeral=True
         )
 
@@ -321,6 +375,23 @@ class ClaimView(LayoutView):
             await interaction.response.send_message("Could not access server.", ephemeral=True)
             return
 
+        # Check if private channel was created
+        if not match.get("private_channel_id"):
+            await interaction.response.send_message(
+                "Private channel hasn't been created yet. Create the channel first.", ephemeral=True
+            )
+            return
+
+        # Check if at least 1 caster and 1 cam op have claimed
+        claims = await db.get_claims(self.match_id)
+        casters = [c for c in claims if c["role"] == "caster"]
+        camops = [c for c in claims if c["role"] == "camop"]
+        if not casters or not camops:
+            await interaction.response.send_message(
+                "Need at least 1 caster and 1 cam op claimed before going live.", ephemeral=True
+            )
+            return
+
         # Check if live announcement channel is configured
         if not config.LIVE_ANNOUNCEMENT_CHANNEL_ID:
             await interaction.response.send_message(
@@ -333,6 +404,15 @@ class ClaimView(LayoutView):
             await interaction.response.send_message(
                 "Live announcement channel not found.", ephemeral=True
             )
+            return
+
+        # Confirmation step
+        confirm_view = ConfirmView("Go Live")
+        await interaction.response.send_message(
+            "Are you sure you want to post the live announcement?", view=confirm_view, ephemeral=True
+        )
+        await confirm_view.wait()
+        if not confirm_view.confirmed:
             return
 
         # Find team roles
@@ -373,7 +453,7 @@ class ClaimView(LayoutView):
             announcement += f"\n{live_ping}"
 
         await live_channel.send(announcement)
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Live announcement posted to <#{config.LIVE_ANNOUNCEMENT_CHANNEL_ID}>!", ephemeral=True
         )
 
