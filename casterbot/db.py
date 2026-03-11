@@ -67,6 +67,9 @@ async def init_db() -> None:
         # Migration: add match_type column if missing
         if "match_type" not in columns:
             await db.execute("ALTER TABLE matches ADD COLUMN match_type TEXT")
+        # Migration: add missing_since column if missing (for delayed deletion)
+        if "missing_since" not in columns:
+            await db.execute("ALTER TABLE matches ADD COLUMN missing_since INTEGER")
         await db.commit()
 
 
@@ -286,6 +289,38 @@ async def delete_match(match_id: str) -> None:
         await db.commit()
 
 
+async def mark_match_missing(match_id: str) -> None:
+    """Mark a match as missing from the sheet (sets missing_since if not already set)."""
+    import time
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # Only set if not already marked as missing
+        await db.execute(
+            "UPDATE matches SET missing_since = ? WHERE match_id = ? AND missing_since IS NULL",
+            (int(time.time()), match_id),
+        )
+        await db.commit()
+
+
+async def clear_match_missing(match_id: str) -> None:
+    """Clear the missing_since flag (match reappeared on sheet)."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "UPDATE matches SET missing_since = NULL WHERE match_id = ?",
+            (match_id,),
+        )
+        await db.commit()
+
+
+async def get_missing_since(match_id: str) -> int | None:
+    """Get the timestamp when a match was first seen as missing."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT missing_since FROM matches WHERE match_id = ?", (match_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
 # -- Caster Leaderboard Functions --
 
 
@@ -340,6 +375,24 @@ async def reset_leaderboard() -> int:
         await db.execute("DELETE FROM caster_stats")
         await db.commit()
         return count
+
+
+async def set_cast_count(user_id: int, count: int) -> None:
+    """Set a user's cast count to a specific value."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        if count <= 0:
+            # Remove entry if count is 0 or negative
+            await db.execute("DELETE FROM caster_stats WHERE user_id = ?", (user_id,))
+        else:
+            await db.execute(
+                """
+                INSERT INTO caster_stats (user_id, cast_count)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET cast_count = ?
+                """,
+                (user_id, count, count),
+            )
+        await db.commit()
 
 
 # -- Settings Functions --

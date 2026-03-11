@@ -117,6 +117,8 @@ class CasterBot(commands.Bot):
 
 async def sync_matches(bot: CasterBot) -> int:
     """Fetch matches from sheet, insert new ones, post claim messages. Returns count of new messages."""
+    import time
+    
     log.debug("Syncing matches from sheet...")
     matches = await sheets.fetch_upcoming_matches()
     log.debug(f"Fetched {len(matches)} upcoming matches")
@@ -126,46 +128,53 @@ async def sync_matches(bot: CasterBot) -> int:
     # Get current match IDs from sheet
     sheet_match_ids = {m.match_id for m in matches}
 
-    # Delete messages for matches no longer in sheet
-    channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
-    
-    matches_to_delete = [m for m in existing_matches if m["match_id"] not in sheet_match_ids]
-    if matches_to_delete:
-        log.info(f"Found {len(matches_to_delete)} matches to remove (no longer in sheet)")
-        for m in matches_to_delete:
-            log.info(f"  - Will delete: {m['team_a']} vs {m['team_b']} (ID: {m['match_id'][:40]}...)")
-    
-    for match in existing_matches:
-        if match["match_id"] not in sheet_match_ids:
-            # Match was removed from sheet (outdated)
-            # Keep match + claim message if there's still an active private channel
-            if match.get("private_channel_id"):
-                log.info(f"Keeping match + claim message for {match['team_a']} vs {match['team_b']} - private channel still active")
-                continue
-            
-            # No private channel, safe to delete entirely
-            if channel and match.get("message_id"):
-                try:
-                    msg = await channel.fetch_message(match["message_id"])
-                    await msg.delete()
-                    log.info(f"Deleted message for removed match: {match['team_a']} vs {match['team_b']}")
-                except discord.NotFound:
-                    log.debug(f"Message already deleted for match: {match['match_id']}")
-                except Exception as e:
-                    log.error(f"Failed to delete message for {match['match_id']}: {e}")
-            await db.delete_match(match["match_id"])
-            log.info(f"Removed match from DB: {match['team_a']} vs {match['team_b']}")
-        else:
-            # Match still on sheet - verify message still exists
-            if channel and match.get("message_id"):
-                try:
-                    await channel.fetch_message(match["message_id"])
-                except discord.NotFound:
-                    # Message was deleted externally, clear ID so it gets reposted
-                    await db.clear_message_id(match["match_id"])
-                    log.info(f"Message missing for {match['team_a']} vs {match['team_b']}, will repost")
-                except Exception as e:
-                    log.error(f"Error checking message for {match['match_id']}: {e}")
+    # SAFETY: If sheet returned 0 matches but we have existing matches,
+    # this is likely a fetch failure - don't mark anything as missing
+    if len(matches) == 0 and len(existing_matches) > 0:
+        log.warning("Sheet returned 0 matches but we have existing matches - skipping (possible fetch failure)")
+    else:
+        channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        
+        for match in existing_matches:
+            if match["match_id"] not in sheet_match_ids:
+                # Match not in sheet
+                # Keep match if there's still an active private channel
+                if match.get("private_channel_id"):
+                    log.debug(f"Keeping {match['team_a']} vs {match['team_b']} - private channel still active")
+                    continue
+                
+                # Mark as missing and check if it's been missing long enough (5 minutes)
+                await db.mark_match_missing(match["match_id"])
+                missing_since = await db.get_missing_since(match["match_id"])
+                
+                if missing_since and (time.time() - missing_since) >= 300:  # 5 minutes
+                    # Been missing for 5+ minutes, safe to delete
+                    if channel and match.get("message_id"):
+                        try:
+                            msg = await channel.fetch_message(match["message_id"])
+                            await msg.delete()
+                            log.info(f"Deleted message for removed match: {match['team_a']} vs {match['team_b']}")
+                        except discord.NotFound:
+                            log.debug(f"Message already deleted for match: {match['match_id']}")
+                        except Exception as e:
+                            log.error(f"Failed to delete message for {match['match_id']}: {e}")
+                    await db.delete_match(match["match_id"])
+                    log.info(f"Removed match from DB (missing 5+ min): {match['team_a']} vs {match['team_b']}")
+                else:
+                    log.debug(f"Match {match['team_a']} vs {match['team_b']} missing from sheet, waiting before deletion...")
+            else:
+                # Match still on sheet - clear missing flag and verify message exists
+                await db.clear_match_missing(match["match_id"])
+                
+                if channel and match.get("message_id"):
+                    try:
+                        await channel.fetch_message(match["message_id"])
+                    except discord.NotFound:
+                        # Message was deleted externally, clear ID so it gets reposted
+                        await db.clear_message_id(match["match_id"])
+                        log.info(f"Message missing for {match['team_a']} vs {match['team_b']}, will repost")
+                    except Exception as e:
+                        log.error(f"Error checking message for {match['match_id']}: {e}")
 
     new_count = 0
     for m in matches:
@@ -178,6 +187,8 @@ async def sync_matches(bot: CasterBot) -> int:
             match_timestamp=int(m.match_datetime.timestamp()),
             match_type=m.match_type,
         )
+        # Clear missing flag since match is on sheet
+        await db.clear_match_missing(m.match_id)
         if inserted:
             new_count += 1
 
@@ -377,7 +388,7 @@ def _register_commands(bot: CasterBot) -> None:
         ]
         await interaction.response.send_message(random.choice(responses))
 
-    @bot.tree.command(name="leaderboard", description="Show the caster leaderboard (including cam ops)")
+    @bot.tree.command(name="leaderboard", description="Show the caster leaderboard (including cam ops and sideline)")
     async def cmd_leaderboard(interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
@@ -435,6 +446,27 @@ def _register_commands(bot: CasterBot) -> None:
         await interaction.response.send_message(
             f"Leaderboard reset. Cleared {count} entries.", ephemeral=True
         )
+
+    @bot.tree.command(name="edit_leaderboard", description="Edit a user's cast count (admin)")
+    @discord.app_commands.describe(
+        user="The user to edit",
+        count="The new cast count (0 to remove from leaderboard)"
+    )
+    async def cmd_edit_leaderboard(
+        interaction: discord.Interaction,
+        user: discord.Member,
+        count: int
+    ):
+        old_count = await db.get_user_cast_count(user.id)
+        await db.set_cast_count(user.id, count)
+        if count <= 0:
+            await interaction.response.send_message(
+                f"Removed {user.mention} from the leaderboard (was {old_count} casts).", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"Updated {user.mention}'s cast count: {old_count} → {count}", ephemeral=True
+            )
 
 
 def run() -> None:

@@ -164,22 +164,16 @@ class ClaimView(LayoutView):
             custom_id=f"go_live:{match_id}",
         )
         
-        # Build container with text and Caster 1, 2, Cam Op, Sideline, Unclaim row
+        # Build container with all buttons, separated by a line
         container = Container(
             TextDisplay(content),
             ActionRow(*caster_buttons),
+            Separator(),
+            TextDisplay("**Broadcast Controls**"),
+            ActionRow(create_channel_btn, ready_btn, go_live_btn),
             accent_color=discord.Color.blurple(),
         )
         self.add_item(container)
-        
-        # Add separator line
-        self.add_item(Separator())
-        
-        # Build second container with remaining buttons
-        other_container = Container(
-            ActionRow(create_channel_btn, ready_btn, go_live_btn),
-        )
-        self.add_item(other_container)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         """Route interactions to the appropriate handler."""
@@ -275,7 +269,7 @@ class ClaimView(LayoutView):
         camops = [c for c in claims if c["role"] == "camop"]
         if not casters or not camops:
             await interaction.response.send_message(
-                "Need at least 1 caster and 1 cam op to create the channel.", ephemeral=True
+                "Need at least **1 caster** and **1 cam op** to create the channel.", ephemeral=True
             )
             return
 
@@ -620,9 +614,9 @@ class CloseChannelView(LayoutView):
             # Get claims BEFORE deleting match (for leaderboard)
             claims = await db.get_claims(self.match_id)
             
-            # Increment cast count for all casters and cam ops
+            # Increment cast count for all casters, cam ops, and sideline
             for claim in claims:
-                if claim["role"] in ("caster", "camop"):
+                if claim["role"] in ("caster", "camop", "sideline"):
                     await db.increment_cast_count(claim["user_id"])
             
             # Generate and post transcript if configured
