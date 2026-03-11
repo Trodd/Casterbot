@@ -1,6 +1,50 @@
 # casterbot
 
-Discord bot that posts upcoming match claim messages (caster/cam-op buttons) and creates a private match channel once staffing is filled.
+Discord bot that posts upcoming match claim messages (caster/cam-op/sideline buttons) and creates a private match channel once staffing is filled.
+
+## Features
+
+### Claim System
+
+- **Caster 1 & 2**: Primary caster slots
+- **Cam Op**: Camera operator slot
+- **Sideline**: Sideline reporter slot
+- **Unclaim**: Remove yourself from any claimed slots
+- One-click claiming with role-based restrictions (optional)
+
+### Private Match Channels
+
+- Auto-creates a private channel for the crew when channel is created
+- Visible only to claimed casters, cam ops, sideline, and staff
+- Includes a **Close Channel** button (2-step confirmation, casters/staff only)
+- Auto-generates and posts **transcripts** to a designated channel when closed
+- Updates leaderboard counts when channel is closed
+
+### Broadcast Controls
+
+All broadcast control buttons have **2-step confirmation** to prevent accidental clicks:
+
+- **Create Channel**: Creates the private match channel (requires at least 1 caster + 1 cam op)
+- **Crew Ready**: Pings team roles in the private channel to let them know the crew is ready
+- **Go Live**: Posts a live announcement to the designated channel with team mentions and live ping role
+
+### Leaderboard
+
+- Tracks cast counts for casters, cam ops, and sideline crew
+- Only counts matches that go through the full workflow (channel closed properly)
+- Admin commands to edit or reset counts
+
+### Safety Features
+
+- **5-minute delay**: Matches must be missing from the sheet for 5 minutes before being auto-deleted (prevents false positives from fetch failures)
+- **Active channel protection**: Matches with an active private channel are never auto-deleted
+- **Zero-match protection**: If sheet returns 0 matches but DB has existing matches, assumes fetch failure and skips all deletions
+
+### Auto-Sync
+
+- Fetches matches from a published Google Sheet CSV
+- Configurable sync interval (default: 5 minutes)
+- Configurable lookahead (default: 14 days)
 
 ## Setup
 
@@ -8,7 +52,7 @@ Discord bot that posts upcoming match claim messages (caster/cam-op buttons) and
    - Manage Channels
    - Manage Roles (optional)
    - Read/Send Messages
-   - Create Private Threads/Channels (channels)
+   - Create Private Threads/Channels
 
 2. Copy `.env.example` to `.env` and fill in IDs.
 
@@ -32,15 +76,57 @@ python -m casterbot
 
 ## Commands
 
-These commands are available as a backup in case the automatic sync/posting isn't working.
+### Match Management
 
 - `/sync_matches` — Manually sync upcoming matches from the sheet
-- `/match_status` — Show claim status for a match
-- `/force_channel` — Force create the private channel for a match (admin)
+- `/match_status <match_id>` — Show claim status for a match
+- `/force_channel <match_id>` — Force create the private channel for a match (admin)
 - `/refresh_messages` — Refresh all claim messages (updates UI)
-- `/manage_claim` — Add or remove a user from a match slot (admin)
+- `/manage_claim <match_id> <action> <role> <slot> [user]` — Add or remove a user from a match slot (admin)
+
+### Leaderboard
+
+- `/leaderboard` — Show the caster leaderboard (includes cam ops and sideline)
+- `/edit_leaderboard <user> <count>` — Edit a user's cast count (admin)
+- `/reset_leaderboard` — Reset the entire caster leaderboard (admin)
+
+### Settings
+
+- `/set_week <season> <week>` — Set the current season and week number
+
+### Fun
+
+- `/margarita` — Request a margarita from the margarita machine 🍹
+
+## Configuration (.env)
+
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_TOKEN` | Bot token from Discord Developer Portal |
+| `GUILD_ID` | Your Discord server ID |
+| `CLAIM_CHANNEL_ID` | Channel where claim messages are posted |
+| `PRIVATE_CATEGORY_ID` | Category for private match channels |
+| `TRANSCRIPT_CHANNEL_ID` | Channel where transcripts are posted |
+| `REQUIRE_CLAIM_ROLE` | Whether to restrict who can claim (true/false) |
+| `CLAIM_ELIGIBLE_ROLE_ID` | Role ID required to claim (if enabled) |
+| `CASTER_ROLE_ID` | Caster role for channel permissions |
+| `CAMOP_ROLE_ID` | Cam op role for channel permissions |
+| `CASTER_TRAINING_ROLE_ID` | Training caster role |
+| `CAMOP_TRAINING_ROLE_ID` | Training cam op role |
+| `STAFF_ROLE_ID` | Staff role for admin permissions |
+| `LIVE_ANNOUNCEMENT_CHANNEL_ID` | Channel for Go Live announcements |
+| `LIVE_PING_ROLE_ID` | Role to ping in Go Live announcements |
+| `TWITCH_URL` | Twitch stream URL for announcements |
+| `UPCOMING_MATCHES_CSV_URL` | Published Google Sheet CSV URL |
+| `ROSTERS_CSV_URL` | Optional roster CSV URL |
+| `MATCH_LOOKAHEAD_DAYS` | How many days ahead to fetch matches (default: 14) |
+| `MATCH_GRACE_HOURS` | Grace period for past matches (default: 0) |
+| `SYNC_INTERVAL_SECONDS` | How often to sync from sheet (default: 300) |
+| `TIMEZONE` | Timezone for match times (default: US/Eastern) |
 
 ## Notes
 
-- The upcoming matches source is a published Google Sheet CSV.
-- If roster CSV is not publicly readable, the bot will still work but will post roster links instead of full player lists.
+- The upcoming matches source is a published Google Sheet CSV (File → Share → Publish to web → CSV)
+- Team roles should be named `Team: TeamName` for auto-pinging to work
+- Broadcast Controls require confirmation to prevent accidental triggers
+- Leaderboard only increments when a channel is properly closed (not when matches are auto-deleted)
