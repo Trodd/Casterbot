@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -467,6 +468,68 @@ def _register_commands(bot: CasterBot) -> None:
             await interaction.response.send_message(
                 f"Updated {user.mention}'s cast count: {old_count} → {count}", ephemeral=True
             )
+
+    @bot.tree.command(name="start_cycle", description="Archive current leaderboard and start a new cycle (admin)")
+    @discord.app_commands.describe(
+        weeks="Number of weeks for this cycle",
+        cycle_name="Optional name for the cycle (defaults to date range)"
+    )
+    async def cmd_start_cycle(
+        interaction: discord.Interaction,
+        weeks: int,
+        cycle_name: str = None
+    ):
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        # Calculate approximate start date
+        from datetime import timedelta
+        start_date = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+        
+        if not cycle_name:
+            cycle_name = f"{start_date} to {end_date}"
+        
+        cycle_id = await db.archive_cycle(cycle_name, weeks, start_date, end_date)
+        await interaction.response.send_message(
+            f"Archived current leaderboard as **{cycle_name}** (Cycle #{cycle_id}, {weeks} weeks).\n"
+            f"Leaderboard has been reset for the new cycle.",
+            ephemeral=True
+        )
+
+    @bot.tree.command(name="view_cycles", description="View all archived leaderboard cycles")
+    async def cmd_view_cycles(interaction: discord.Interaction):
+        cycles = await db.get_cycles()
+        if not cycles:
+            await interaction.response.send_message("No archived cycles found.", ephemeral=True)
+            return
+        
+        lines = ["# 📊 Archived Leaderboard Cycles\n"]
+        for c in cycles:
+            lines.append(f"**Cycle #{c['cycle_id']}**: {c['cycle_name']} ({c['weeks']} weeks)")
+        lines.append("\nUse `/view_cycle <id>` to view a specific cycle's leaderboard.")
+        
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+    @bot.tree.command(name="view_cycle", description="View a specific archived cycle's leaderboard")
+    @discord.app_commands.describe(cycle_id="The cycle ID to view")
+    async def cmd_view_cycle(interaction: discord.Interaction, cycle_id: int):
+        cycle = await db.get_cycle_by_id(cycle_id)
+        if not cycle:
+            await interaction.response.send_message(f"Cycle #{cycle_id} not found.", ephemeral=True)
+            return
+        
+        entries = await db.get_cycle_leaderboard(cycle_id)
+        if not entries:
+            await interaction.response.send_message(
+                f"**{cycle['cycle_name']}** ({cycle['weeks']} weeks)\nNo entries in this cycle.",
+                ephemeral=True
+            )
+            return
+        
+        lines = [f"# 🎙️ {cycle['cycle_name']}\n*{cycle['weeks']} weeks ({cycle['start_date']} to {cycle['end_date']})*\n"]
+        for i, entry in enumerate(entries, start=1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"**{i}.**"
+            lines.append(f"{medal} <@{entry['user_id']}> — **{entry['cast_count']}** casts")
+        
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
 def run() -> None:

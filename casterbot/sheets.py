@@ -128,6 +128,10 @@ async def fetch_upcoming_matches() -> list[Match]:
             continue
 
         match_id = _make_match_id(team_a, team_b, match_date, match_time)
+        # Skip duplicates (same teams and time)
+        if any(m.match_id == match_id for m in matches):
+            log.debug(f"Skipping duplicate match: {team_a} vs {team_b} at {match_date} {match_time}")
+            continue
         matches.append(
             Match(
                 match_id=match_id,

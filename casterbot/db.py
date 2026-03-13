@@ -36,6 +36,22 @@ CREATE TABLE IF NOT EXISTS caster_stats (
     cast_count INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS leaderboard_cycles (
+    cycle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_name TEXT NOT NULL,
+    weeks INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS leaderboard_archive (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    cast_count INTEGER NOT NULL,
+    FOREIGN KEY(cycle_id) REFERENCES leaderboard_cycles(cycle_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -393,6 +409,72 @@ async def set_cast_count(user_id: int, count: int) -> None:
                 (user_id, count, count),
             )
         await db.commit()
+
+
+# -- Leaderboard Cycle Functions --
+
+
+async def archive_cycle(cycle_name: str, weeks: int, start_date: str, end_date: str) -> int:
+    """Archive current leaderboard to a new cycle. Returns the cycle_id."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # Create the cycle record
+        cursor = await db.execute(
+            """
+            INSERT INTO leaderboard_cycles (cycle_name, weeks, start_date, end_date)
+            VALUES (?, ?, ?, ?)
+            """,
+            (cycle_name, weeks, start_date, end_date),
+        )
+        cycle_id = cursor.lastrowid
+        
+        # Copy all current stats to archive
+        await db.execute(
+            """
+            INSERT INTO leaderboard_archive (cycle_id, user_id, cast_count)
+            SELECT ?, user_id, cast_count FROM caster_stats WHERE cast_count > 0
+            """,
+            (cycle_id,),
+        )
+        
+        # Reset current leaderboard
+        await db.execute("DELETE FROM caster_stats")
+        await db.commit()
+        return cycle_id
+
+
+async def get_cycles() -> list[dict]:
+    """Get all archived cycles, ordered by most recent first."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT cycle_id, cycle_name, weeks, start_date, end_date FROM leaderboard_cycles ORDER BY cycle_id DESC"
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_cycle_leaderboard(cycle_id: int) -> list[dict]:
+    """Get the leaderboard for a specific archived cycle."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT user_id, cast_count FROM leaderboard_archive WHERE cycle_id = ? ORDER BY cast_count DESC",
+            (cycle_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_cycle_by_id(cycle_id: int) -> dict | None:
+    """Get a specific cycle's metadata."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT cycle_id, cycle_name, weeks, start_date, end_date FROM leaderboard_cycles WHERE cycle_id = ?",
+            (cycle_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
 
 
 # -- Settings Functions --

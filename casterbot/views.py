@@ -59,8 +59,12 @@ def _format_match_time(match: dict) -> str:
     """Format match time as Discord timestamp or fallback to text."""
     ts = match.get('match_timestamp')
     if ts:
+        # Convert to Eastern time for display
+        eastern = dateutil_tz.gettz('America/New_York')
+        dt_eastern = datetime.fromtimestamp(ts, tz=eastern)
+        est_str = dt_eastern.strftime('%I:%M %p %Z')  # %Z gives EST or EDT automatically
         # F = full date/time, R = relative
-        return f"<t:{ts}:F> (<t:{ts}:R>)"
+        return f"<t:{ts}:F> ({est_str}) (<t:{ts}:R>)"
     return f"{match['match_date']} {match['match_time']}"
 
 
