@@ -70,8 +70,20 @@ HTML_TEMPLATE = """
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EML Broadcast Schedule</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>EML Broadcast Hub</title>
+    
+    <!-- PWA Support -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0a0a12">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="EML Caster">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="EML Caster">
+    <meta name="description" content="Echo Master League Broadcast Hub - Claim matches and manage casts">
+    
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -581,6 +593,42 @@ HTML_TEMPLATE = """
         .tab-content.active {
             display: block;
         }
+        /* Filter bar */
+        .filter-bar {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .filter-btn {
+            padding: 10px 20px;
+            background: rgba(0,212,255,0.1);
+            border: 1px solid var(--echo-cyan);
+            border-radius: 4px;
+            color: var(--echo-cyan);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .filter-btn:hover {
+            background: rgba(0,212,255,0.2);
+            box-shadow: 0 0 10px rgba(0,212,255,0.3);
+        }
+        .filter-btn.active {
+            background: var(--echo-cyan);
+            color: var(--echo-bg);
+            box-shadow: 0 0 15px rgba(0,212,255,0.5);
+        }
+        .no-claims-msg {
+            text-align: center;
+            color: var(--echo-text-dim);
+            padding: 40px;
+            font-style: italic;
+        }
+        .match-card.filtered-out {
+            display: none !important;
+        }
         /* Leaderboard styles */
         .leaderboard {
             background: var(--echo-panel);
@@ -1022,7 +1070,11 @@ HTML_TEMPLATE = """
             {admin_tab_btn}
         </div>
         <div id="tab-schedule" class="tab-content {schedule_content_active}">
-            {content}
+            {filter_bar}
+            <div id="schedule-content">
+                {content}
+            </div>
+            <p class="no-claims-msg" id="no-claims-msg" style="display:none;">You haven't claimed any matches yet.</p>
         </div>
         <div id="tab-leaderboard" class="tab-content {leaderboard_content_active}">
             {cycle_selector}
@@ -1186,6 +1238,35 @@ HTML_TEMPLATE = """
         
         function viewCycle(cycleId) {
             selectCycle(cycleId);
+        }
+        
+        // Filter for "My Claims" only
+        let myClaimsFilterActive = false;
+        function toggleMyClaimsFilter() {
+            myClaimsFilterActive = !myClaimsFilterActive;
+            const btn = document.getElementById('filter-my-claims');
+            const cards = document.querySelectorAll('.match-card');
+            const noClaimsMsg = document.getElementById('no-claims-msg');
+            
+            if (myClaimsFilterActive) {
+                btn.classList.add('active');
+                btn.textContent = 'Show All Matches';
+                let visibleCount = 0;
+                cards.forEach(card => {
+                    if (card.dataset.myClaim === 'true') {
+                        card.classList.remove('filtered-out');
+                        visibleCount++;
+                    } else {
+                        card.classList.add('filtered-out');
+                    }
+                });
+                noClaimsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = 'Show My Claims Only';
+                cards.forEach(card => card.classList.remove('filtered-out'));
+                noClaimsMsg.style.display = 'none';
+            }
         }
         
         // Admin functions
@@ -1370,6 +1451,11 @@ HTML_TEMPLATE = """
         }
         
         setTimeout(() => location.reload(), 60000);
+        
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
     </script>
 </body>
 </html>
@@ -1467,6 +1553,9 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
     slots.append(build_slot("camop", 1, "Cam Op"))
     slots.append(build_slot("sideline", 1, "Sideline"))
     
+    # Check if current user has any claim in this match
+    has_my_claim = any(c["user_id"] == current_user_id for c in claims) if current_user_id else False
+    
     match_type_html = ""
     if match.get("match_type"):
         match_type_html = f'<p class="match-type">{match["match_type"]}</p>'
@@ -1501,8 +1590,10 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
             </div>
         '''
     
+    my_claim_attr = ' data-my-claim="true"' if has_my_claim else ''
+    
     return f'''
-        <div class="{card_class}">
+        <div class="{card_class}"{my_claim_attr}>
             <div class="match-header">
                 <span class="teams">{match["team_a"]}<span class="team-vs">vs</span>{match["team_b"]}</span>
                 <span class="match-id">#{match.get("simple_id", "?")}</span>
@@ -1677,6 +1768,16 @@ async def schedule_handler(request: web.Request) -> web.Response:
                     <span style="color: #8e9297;">View-only mode (OAuth not configured)</span>
                 </div>
             '''
+    
+    # Build filter bar (only for logged in users)
+    if session:
+        filter_bar = '''
+            <div class="filter-bar">
+                <button class="filter-btn" id="filter-my-claims" onclick="toggleMyClaimsFilter()">Show My Claims Only</button>
+            </div>
+        '''
+    else:
+        filter_bar = ''
     
     # Build schedule content
     matches = await db.get_all_matches_sorted_by_time()
@@ -2031,6 +2132,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
     html = (HTML_TEMPLATE
         .replace("{user_bar}", user_bar)
         .replace("{season_badge}", season_badge)
+        .replace("{filter_bar}", filter_bar)
         .replace("{admin_tab_btn}", admin_tab_btn)
         .replace("{admin_tab_content}", admin_tab_content)
         .replace("{content}", content)
@@ -2536,6 +2638,164 @@ async def health_handler(request: web.Request) -> web.Response:
     return web.Response(text="OK")
 
 
+async def manifest_handler(request: web.Request) -> web.Response:
+    """Serve PWA manifest."""
+    manifest = {
+        "name": "EML Broadcast Hub",
+        "short_name": "EML Caster",
+        "description": "Echo Master League Broadcast Hub - Claim matches and manage casts",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0a0a12",
+        "theme_color": "#ff6a00",
+        "orientation": "portrait-primary",
+        "icons": [
+            {
+                "src": "/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable"
+            },
+            {
+                "src": "/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
+    }
+    return web.json_response(manifest)
+
+
+async def service_worker_handler(request: web.Request) -> web.Response:
+    """Serve service worker for PWA."""
+    sw_code = """
+const CACHE_NAME = 'eml-caster-v1';
+const STATIC_ASSETS = [
+    'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap'
+];
+
+self.addEventListener('install', event => {
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+    );
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(keys => 
+            Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+        )
+    );
+    self.clients.claim();
+});
+
+self.addEventListener('fetch', event => {
+    // Network-first for API calls and main page
+    if (event.request.url.includes('/api/') || event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request).catch(() => caches.match(event.request))
+        );
+        return;
+    }
+    // Cache-first for static assets
+    event.respondWith(
+        caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
+});
+"""
+    return web.Response(text=sw_code.strip(), content_type="application/javascript")
+
+
+async def icon_handler(request: web.Request) -> web.Response:
+    """Generate PNG icon dynamically."""
+    import base64
+    import struct
+    import zlib
+    
+    # Determine size from path
+    size = 512 if "512" in request.path else 192
+    
+    # Generate a simple PNG with EML logo (orange circle with E)
+    # This creates a minimal valid PNG
+    def create_png(width, height):
+        # Create RGBA pixel data
+        pixels = []
+        center_x, center_y = width // 2, height // 2
+        radius = min(width, height) // 2 - 4
+        
+        for y in range(height):
+            row = []
+            for x in range(width):
+                # Distance from center
+                dx, dy = x - center_x, y - center_y
+                dist = (dx * dx + dy * dy) ** 0.5
+                
+                if dist <= radius:
+                    # Inside circle - orange (#ff6a00)
+                    # Check if we should draw the "E"
+                    rel_x = (x - center_x) / radius
+                    rel_y = (y - center_y) / radius
+                    
+                    # Draw E shape
+                    e_left = -0.5
+                    e_right = 0.4
+                    e_top = -0.55
+                    e_bottom = 0.55
+                    bar_height = 0.12
+                    
+                    is_e = False
+                    # Left vertical bar
+                    if e_left <= rel_x <= e_left + 0.2 and e_top <= rel_y <= e_bottom:
+                        is_e = True
+                    # Top horizontal bar
+                    if e_left <= rel_x <= e_right and e_top <= rel_y <= e_top + bar_height:
+                        is_e = True
+                    # Middle horizontal bar
+                    if e_left <= rel_x <= e_right - 0.1 and -bar_height/2 <= rel_y <= bar_height/2:
+                        is_e = True
+                    # Bottom horizontal bar
+                    if e_left <= rel_x <= e_right and e_bottom - bar_height <= rel_y <= e_bottom:
+                        is_e = True
+                    
+                    if is_e:
+                        row.extend([10, 10, 18, 255])  # Dark background for E
+                    else:
+                        row.extend([255, 106, 0, 255])  # Orange
+                else:
+                    # Outside circle - transparent
+                    row.extend([0, 0, 0, 0])
+            pixels.append(bytes(row))
+        
+        # Create PNG
+        def png_chunk(chunk_type, data):
+            chunk = chunk_type + data
+            return struct.pack('>I', len(data)) + chunk + struct.pack('>I', zlib.crc32(chunk) & 0xffffffff)
+        
+        # PNG signature
+        png = b'\x89PNG\r\n\x1a\n'
+        
+        # IHDR chunk
+        ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+        png += png_chunk(b'IHDR', ihdr_data)
+        
+        # IDAT chunk (compressed pixel data)
+        raw_data = b''
+        for row in pixels:
+            raw_data += b'\x00' + row  # Filter byte + row data
+        compressed = zlib.compress(raw_data, 9)
+        png += png_chunk(b'IDAT', compressed)
+        
+        # IEND chunk
+        png += png_chunk(b'IEND', b'')
+        
+        return png
+    
+    png_data = create_png(size, size)
+    return web.Response(body=png_data, content_type="image/png")
+
+
 async def leaderboard_handler(request: web.Request) -> web.Response:
     """Redirect to main page with leaderboard tab active."""
     raise web.HTTPFound("/?tab=leaderboard")
@@ -2566,6 +2826,11 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/reset-leaderboard", api_admin_reset_leaderboard_handler)
     app.router.add_post("/api/admin/start-cycle", api_admin_start_cycle_handler)
     app.router.add_get("/health", health_handler)
+    # PWA routes
+    app.router.add_get("/manifest.json", manifest_handler)
+    app.router.add_get("/sw.js", service_worker_handler)
+    app.router.add_get("/icon-192.png", icon_handler)
+    app.router.add_get("/icon-512.png", icon_handler)
     
     return app
 
