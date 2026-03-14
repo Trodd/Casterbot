@@ -80,5 +80,8 @@ WEB_PUBLIC_URL: str = _get("WEB_PUBLIC_URL", "")  # e.g., "http://yourdomain.com
 DISCORD_CLIENT_ID: str = _get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET: str = _get("DISCORD_CLIENT_SECRET", "")
 
+# Web admin role (users with this role can access the admin tab)
+WEB_LEAD_ROLE_ID: int = _int("WEB_LEAD_ROLE_ID")
+
 # Database path (SQLite)
 DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"

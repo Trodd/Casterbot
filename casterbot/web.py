@@ -26,6 +26,28 @@ def _get_session(request: web.Request) -> dict | None:
     return None
 
 
+async def _is_admin(bot, user_id: int) -> bool:
+    """Check if a user has the lead role (admin access)."""
+    if not bot or not config.WEB_LEAD_ROLE_ID or not config.GUILD_ID:
+        return False
+    
+    try:
+        guild = bot.get_guild(config.GUILD_ID)
+        if not guild:
+            return False
+        
+        member = guild.get_member(user_id)
+        if not member:
+            try:
+                member = await guild.fetch_member(user_id)
+            except Exception:
+                return False
+        
+        return any(role.id == config.WEB_LEAD_ROLE_ID for role in member.roles)
+    except Exception:
+        return False
+
+
 def _get_base_url(request: web.Request) -> str:
     """Get the base URL for OAuth redirects."""
     # Check for forwarded headers (behind proxy)
@@ -49,136 +71,856 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Broadcast Schedule</title>
+    <title>EML Broadcast Schedule</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --echo-orange: #ff6a00;
+            --echo-orange-glow: rgba(255, 106, 0, 0.4);
+            --echo-cyan: #00d4ff;
+            --echo-cyan-glow: rgba(0, 212, 255, 0.4);
+            --echo-blue: #1a4fff;
+            --echo-dark: #0a0a12;
+            --echo-darker: #050508;
+            --echo-panel: rgba(15, 15, 25, 0.9);
+            --echo-border: rgba(255, 106, 0, 0.3);
+            --echo-text: #e8e8f0;
+            --echo-text-dim: #8888a0;
+            --echo-success: #00ff88;
+            --echo-danger: #ff3366;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+            background: var(--echo-darker);
+            background-image: 
+                radial-gradient(ellipse at top, rgba(26, 79, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom, rgba(255, 106, 0, 0.1) 0%, transparent 50%),
+                repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(255,106,0,0.03) 50px, rgba(255,106,0,0.03) 51px),
+                repeating-linear-gradient(90deg, transparent, transparent 50px, rgba(255,106,0,0.03) 50px, rgba(255,106,0,0.03) 51px);
             min-height: 100vh;
-            color: #e0e0e0;
+            color: var(--echo-text);
             padding: 20px;
+            position: relative;
         }
-        .container { max-width: 900px; margin: 0 auto; }
-        h1 { text-align: center; color: #5865f2; margin-bottom: 10px; font-size: 2em; }
-        .subtitle { text-align: center; color: #8e9297; margin-bottom: 20px; font-size: 0.9em; }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at 50% 50%, transparent 0%, var(--echo-darker) 70%);
+            pointer-events: none;
+            z-index: -1;
+        }
+        .container { max-width: 950px; margin: 0 auto; }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px; height: 300px;
+            background: radial-gradient(circle, var(--echo-orange-glow) 0%, transparent 70%);
+            opacity: 0.3;
+            pointer-events: none;
+        }
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.5em;
+            font-weight: 900;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            background: linear-gradient(180deg, var(--echo-orange) 0%, #ff8533 50%, var(--echo-orange) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 40px var(--echo-orange-glow);
+            position: relative;
+        }
+        .subtitle {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            font-size: 0.85em;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+        .season-badge {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 8px 20px;
+            background: linear-gradient(135deg, rgba(255,106,0,0.2), rgba(0,212,255,0.2));
+            border: 1px solid var(--echo-orange);
+            border-radius: 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9em;
+            font-weight: 600;
+            letter-spacing: 2px;
+            color: var(--echo-text);
+            box-shadow: 0 0 15px var(--echo-orange-glow);
+        }
+        .season-badge .season-num {
+            color: var(--echo-orange);
+        }
+        .season-badge .week-num {
+            color: var(--echo-cyan);
+        }
+        .season-badge .separator {
+            color: var(--echo-text-dim);
+            margin: 0 8px;
+        }
         .user-bar {
             display: flex; justify-content: center; align-items: center; gap: 15px;
-            margin-bottom: 25px; padding: 12px; background: #2f3136; border-radius: 8px;
+            margin-bottom: 30px; padding: 14px 20px;
+            background: var(--echo-panel);
+            border: 1px solid var(--echo-border);
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
         }
-        .user-info { display: flex; align-items: center; gap: 10px; }
-        .user-avatar { width: 32px; height: 32px; border-radius: 50%; }
-        .user-name { color: #ffffff; font-weight: 500; }
+        .user-info { display: flex; align-items: center; gap: 12px; }
+        .user-avatar { 
+            width: 36px; height: 36px; border-radius: 50%;
+            border: 2px solid var(--echo-orange);
+            box-shadow: 0 0 10px var(--echo-orange-glow);
+        }
+        .user-name { 
+            color: var(--echo-text); 
+            font-weight: 600; 
+            font-size: 1.1em;
+            letter-spacing: 1px;
+        }
         .login-btn, .logout-btn {
-            padding: 8px 16px; border-radius: 6px; text-decoration: none;
-            font-weight: 500; font-size: 0.9em; transition: background 0.2s;
+            padding: 10px 20px; border-radius: 4px; text-decoration: none;
+            font-weight: 600; font-size: 0.9em; transition: all 0.3s;
+            text-transform: uppercase; letter-spacing: 1px;
+            font-family: 'Orbitron', sans-serif;
         }
-        .login-btn { background: #5865f2; color: white; }
-        .login-btn:hover { background: #4752c4; }
-        .logout-btn { background: #4f545c; color: #dcddde; }
-        .logout-btn:hover { background: #5d6269; }
+        .login-btn { 
+            background: linear-gradient(180deg, var(--echo-orange) 0%, #cc5500 100%);
+            color: white;
+            border: 1px solid var(--echo-orange);
+            box-shadow: 0 0 15px var(--echo-orange-glow);
+        }
+        .login-btn:hover { 
+            box-shadow: 0 0 25px var(--echo-orange-glow), 0 0 40px var(--echo-orange-glow);
+            transform: translateY(-2px);
+        }
+        .logout-btn { 
+            background: rgba(255,255,255,0.1); 
+            color: var(--echo-text-dim);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .logout-btn:hover { 
+            background: rgba(255,255,255,0.2);
+            color: var(--echo-text);
+        }
         .match-card {
-            background: #2f3136; border-radius: 12px; padding: 20px; margin-bottom: 16px;
-            border-left: 4px solid #5865f2; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            background: var(--echo-panel);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid var(--echo-border);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+            position: relative;
+            overflow: hidden;
         }
-        .match-card.live { border-left-color: #ed4245; animation: pulse 2s infinite; }
-        .match-card.soon { border-left-color: #faa61a; }
-        @keyframes pulse {
-            0%, 100% { box-shadow: 0 4px 6px rgba(237,66,69,0.3); }
-            50% { box-shadow: 0 4px 20px rgba(237,66,69,0.5); }
+        .match-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--echo-orange), transparent);
         }
-        .match-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .teams { font-size: 1.4em; font-weight: bold; color: #ffffff; }
-        .team-vs { color: #5865f2; margin: 0 8px; }
-        .match-id { background: #5865f2; color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
-        .match-time { color: #8e9297; font-size: 0.95em; margin-bottom: 16px; }
-        .time-relative { color: #5865f2; font-weight: 500; }
-        .claims { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+        .match-card.live { 
+            border-color: var(--echo-danger);
+            animation: livePulse 2s infinite;
+        }
+        .match-card.live::before {
+            background: linear-gradient(90deg, transparent, var(--echo-danger), transparent);
+        }
+        .match-card.soon { 
+            border-color: var(--echo-cyan);
+        }
+        .match-card.soon::before {
+            background: linear-gradient(90deg, transparent, var(--echo-cyan), transparent);
+        }
+        @keyframes livePulse {
+            0%, 100% { box-shadow: 0 4px 30px rgba(0,0,0,0.4), 0 0 20px rgba(255,51,102,0.2); }
+            50% { box-shadow: 0 4px 30px rgba(0,0,0,0.4), 0 0 40px rgba(255,51,102,0.4); }
+        }
+        .match-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 16px;
+        }
+        .teams { 
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5em; 
+            font-weight: 700; 
+            color: #ffffff;
+            letter-spacing: 2px;
+        }
+        .team-vs { 
+            color: var(--echo-orange); 
+            margin: 0 12px;
+            font-size: 0.8em;
+        }
+        .match-id { 
+            background: linear-gradient(135deg, var(--echo-orange) 0%, #cc5500 100%);
+            color: white; 
+            padding: 6px 14px; 
+            border-radius: 4px; 
+            font-size: 0.85em; 
+            font-weight: 700;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px var(--echo-orange-glow);
+        }
+        .match-time { 
+            color: var(--echo-text-dim); 
+            font-size: 1em; 
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255,106,0,0.2);
+        }
+        .time-relative { 
+            color: var(--echo-cyan); 
+            font-weight: 600;
+        }
+        .claims { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 12px; 
+        }
         .claim-slot {
-            background: #36393f; padding: 12px 14px; border-radius: 8px;
-            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            background: rgba(0,0,0,0.3);
+            padding: 14px 16px;
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
         }
-        .claim-slot.filled { background: #3ba55c20; border: 1px solid #3ba55c40; }
-        .claim-slot.open { background: #40444b; border: 1px dashed #72767d; }
-        .claim-slot.mine { background: #5865f220; border: 1px solid #5865f240; }
-        .slot-info { display: flex; flex-direction: column; gap: 2px; }
-        .role-label { font-weight: 600; color: #b9bbbe; font-size: 0.85em; }
-        .holder-name { color: #ffffff; }
-        .open-text { color: #72767d; font-style: italic; }
+        .claim-slot:hover {
+            border-color: rgba(255,106,0,0.3);
+        }
+        .claim-slot.filled { 
+            background: rgba(0,255,136,0.1); 
+            border: 1px solid rgba(0,255,136,0.3);
+        }
+        .claim-slot.open { 
+            background: rgba(0,0,0,0.2); 
+            border: 1px dashed rgba(255,255,255,0.2);
+        }
+        .claim-slot.mine { 
+            background: rgba(0,212,255,0.15); 
+            border: 1px solid rgba(0,212,255,0.4);
+            box-shadow: 0 0 15px rgba(0,212,255,0.2);
+        }
+        .slot-info { display: flex; flex-direction: column; gap: 4px; }
+        .role-label { 
+            font-weight: 700; 
+            color: var(--echo-orange); 
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .holder-name { color: #ffffff; font-weight: 500; }
+        .open-text { color: var(--echo-text-dim); font-style: italic; }
         .claim-btn, .unclaim-btn {
-            padding: 6px 12px; border: none; border-radius: 4px;
-            font-size: 0.8em; font-weight: 600; cursor: pointer; transition: background 0.2s;
+            padding: 8px 14px; border: none; border-radius: 4px;
+            font-size: 0.8em; font-weight: 700; cursor: pointer; 
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'Rajdhani', sans-serif;
         }
-        .claim-btn { background: #3ba55c; color: white; }
-        .claim-btn:hover { background: #2d8049; }
-        .claim-btn:disabled { background: #4f545c; cursor: not-allowed; }
-        .unclaim-btn { background: #ed4245; color: white; }
-        .unclaim-btn:hover { background: #c73e3e; }
-        .no-matches { text-align: center; padding: 60px 20px; color: #72767d; }
-        .no-matches h2 { margin-bottom: 10px; color: #8e9297; }
-        .refresh-info { text-align: center; color: #72767d; font-size: 0.85em; margin-top: 30px; }
+        .claim-btn { 
+            background: linear-gradient(180deg, var(--echo-success) 0%, #00cc6a 100%);
+            color: #001a0d;
+            box-shadow: 0 0 10px rgba(0,255,136,0.3);
+        }
+        .claim-btn:hover { 
+            box-shadow: 0 0 20px rgba(0,255,136,0.5);
+            transform: translateY(-1px);
+        }
+        .claim-btn:disabled { 
+            background: rgba(255,255,255,0.1); 
+            color: var(--echo-text-dim);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .unclaim-btn { 
+            background: linear-gradient(180deg, var(--echo-danger) 0%, #cc2952 100%);
+            color: white;
+            box-shadow: 0 0 10px rgba(255,51,102,0.3);
+        }
+        .unclaim-btn:hover { 
+            box-shadow: 0 0 20px rgba(255,51,102,0.5);
+        }
+        .no-matches { 
+            text-align: center; padding: 80px 20px; 
+            color: var(--echo-text-dim);
+        }
+        .no-matches h2 { 
+            margin-bottom: 12px; 
+            color: var(--echo-orange);
+            font-family: 'Orbitron', sans-serif;
+        }
+        .refresh-info { 
+            text-align: center; 
+            color: var(--echo-text-dim); 
+            font-size: 0.85em; 
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,106,0,0.2);
+        }
         .status-badge {
-            display: inline-block; padding: 2px 8px; border-radius: 4px;
-            font-size: 0.75em; font-weight: bold; text-transform: uppercase; margin-left: 8px;
+            display: inline-block; padding: 4px 10px; border-radius: 4px;
+            font-size: 0.7em; font-weight: 700; text-transform: uppercase; 
+            margin-left: 10px; letter-spacing: 1px;
+            font-family: 'Orbitron', sans-serif;
         }
-        .status-badge.live { background: #ed4245; color: white; }
-        .status-badge.soon { background: #faa61a; color: #1a1a1a; }
-        .match-type { color: #72767d; font-size: 0.85em; margin-top: 8px; }
+        .status-badge.live { 
+            background: var(--echo-danger); 
+            color: white;
+            animation: liveFlash 1s infinite;
+        }
+        @keyframes liveFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .status-badge.soon { 
+            background: var(--echo-cyan); 
+            color: #001a1a;
+        }
+        .match-type { 
+            color: var(--echo-text-dim); 
+            font-size: 0.9em; 
+            margin-top: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
         .broadcast-controls {
-            margin-top: 16px; padding-top: 16px; border-top: 1px solid #40444b;
+            margin-top: 20px; 
+            padding-top: 20px; 
+            border-top: 1px solid rgba(255,106,0,0.2);
         }
-        .broadcast-controls h4 { color: #b9bbbe; font-size: 0.85em; margin-bottom: 10px; }
-        .broadcast-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+        .broadcast-controls h4 { 
+            color: var(--echo-orange); 
+            font-size: 0.85em; 
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-family: 'Orbitron', sans-serif;
+        }
+        .broadcast-btns { display: flex; flex-wrap: wrap; gap: 10px; }
         .broadcast-btn {
-            padding: 8px 16px; border: none; border-radius: 6px;
-            font-size: 0.85em; font-weight: 600; cursor: pointer; transition: all 0.2s;
+            padding: 10px 18px; border: none; border-radius: 4px;
+            font-size: 0.85em; font-weight: 700; cursor: pointer; 
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'Rajdhani', sans-serif;
         }
-        .broadcast-btn.create { background: #3ba55c; color: white; }
-        .broadcast-btn.create:hover { background: #2d8049; }
-        .broadcast-btn.ready { background: #5865f2; color: white; }
-        .broadcast-btn.ready:hover { background: #4752c4; }
-        .broadcast-btn.golive { background: #ed4245; color: white; }
-        .broadcast-btn.golive:hover { background: #c73e3e; }
-        .broadcast-btn:disabled { background: #4f545c; cursor: not-allowed; opacity: 0.6; }
-        .channel-link { color: #5865f2; text-decoration: none; font-size: 0.9em; margin-left: 8px; }
+        .broadcast-btn.create { 
+            background: linear-gradient(180deg, var(--echo-success) 0%, #00cc6a 100%);
+            color: #001a0d;
+            box-shadow: 0 0 10px rgba(0,255,136,0.3);
+        }
+        .broadcast-btn.create:hover { 
+            box-shadow: 0 0 25px rgba(0,255,136,0.5);
+        }
+        .broadcast-btn.ready { 
+            background: linear-gradient(180deg, var(--echo-cyan) 0%, #00a8cc 100%);
+            color: #001a1a;
+            box-shadow: 0 0 10px var(--echo-cyan-glow);
+        }
+        .broadcast-btn.ready:hover { 
+            box-shadow: 0 0 25px var(--echo-cyan-glow);
+        }
+        .broadcast-btn.golive { 
+            background: linear-gradient(180deg, var(--echo-danger) 0%, #cc2952 100%);
+            color: white;
+            box-shadow: 0 0 10px rgba(255,51,102,0.3);
+        }
+        .broadcast-btn.golive:hover { 
+            box-shadow: 0 0 25px rgba(255,51,102,0.5);
+        }
+        .broadcast-btn:disabled { 
+            background: rgba(255,255,255,0.1); 
+            color: var(--echo-text-dim);
+            cursor: not-allowed; 
+            opacity: 0.5;
+            box-shadow: none;
+        }
         .toast {
-            position: fixed; bottom: 20px; right: 20px; padding: 12px 20px;
-            border-radius: 8px; color: white; font-weight: 500; z-index: 1000;
+            position: fixed; bottom: 20px; right: 20px; padding: 14px 24px;
+            border-radius: 6px; color: white; font-weight: 600; z-index: 1000;
             animation: slideIn 0.3s ease;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-size: 0.85em;
         }
-        .toast.success { background: #3ba55c; }
-        .toast.error { background: #ed4245; }
+        .toast.success { 
+            background: var(--echo-success); 
+            color: #001a0d;
+            box-shadow: 0 0 20px rgba(0,255,136,0.4);
+        }
+        .toast.error { 
+            background: var(--echo-danger);
+            box-shadow: 0 0 20px rgba(255,51,102,0.4);
+        }
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
         .confirm-modal {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.8); display: flex; align-items: center;
+            background: rgba(5,5,8,0.95); 
+            display: flex; align-items: center;
             justify-content: center; z-index: 1000;
         }
         .confirm-box {
-            background: #2f3136; padding: 24px; border-radius: 12px;
-            text-align: center; max-width: 400px;
+            background: var(--echo-panel);
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center; 
+            max-width: 420px;
+            border: 1px solid var(--echo-orange);
+            box-shadow: 0 0 40px var(--echo-orange-glow);
         }
-        .confirm-box h3 { color: #ffffff; margin-bottom: 12px; }
-        .confirm-box p { color: #8e9297; margin-bottom: 20px; }
-        .confirm-btns { display: flex; gap: 12px; justify-content: center; }
+        .confirm-box h3 { 
+            color: var(--echo-orange); 
+            margin-bottom: 16px;
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .confirm-box p { 
+            color: var(--echo-text-dim); 
+            margin-bottom: 24px;
+        }
+        .confirm-btns { display: flex; gap: 14px; justify-content: center; }
         .confirm-btns button {
-            padding: 10px 24px; border: none; border-radius: 6px;
-            font-weight: 600; cursor: pointer;
+            padding: 12px 28px; border: none; border-radius: 4px;
+            font-weight: 700; cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'Rajdhani', sans-serif;
+            transition: all 0.3s;
         }
-        .confirm-yes { background: #3ba55c; color: white; }
-        .confirm-no { background: #4f545c; color: white; }
+        .confirm-yes { 
+            background: linear-gradient(180deg, var(--echo-success) 0%, #00cc6a 100%);
+            color: #001a0d;
+        }
+        .confirm-yes:hover {
+            box-shadow: 0 0 20px rgba(0,255,136,0.5);
+        }
+        .confirm-no { 
+            background: rgba(255,255,255,0.1); 
+            color: var(--echo-text);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .confirm-no:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        /* Hexagon decoration */
+        .hex-bg {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 100px;
+            height: 100px;
+            opacity: 0.1;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,5 95,27.5 95,72.5 50,95 5,72.5 5,27.5' fill='none' stroke='%23ff6a00' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+            pointer-events: none;
+        }
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--echo-border);
+        }
+        .tab-btn {
+            padding: 14px 30px;
+            background: transparent;
+            border: none;
+            color: var(--echo-text-dim);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.95em;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.3s;
+        }
+        .tab-btn:hover {
+            color: var(--echo-text);
+        }
+        .tab-btn.active {
+            color: var(--echo-orange);
+        }
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--echo-orange);
+            box-shadow: 0 0 10px var(--echo-orange-glow);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        /* Leaderboard styles */
+        .leaderboard {
+            background: var(--echo-panel);
+            border-radius: 8px;
+            border: 1px solid var(--echo-border);
+            overflow: hidden;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.4);
+        }
+        .leaderboard-header {
+            background: linear-gradient(90deg, rgba(255,106,0,0.2), transparent);
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--echo-border);
+        }
+        .leaderboard-header h2 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-orange);
+            font-size: 1.2em;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin: 0;
+        }
+        .leaderboard-row {
+            display: grid;
+            grid-template-columns: 60px 1fr 120px;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid rgba(255,106,0,0.1);
+            transition: all 0.3s;
+        }
+        .leaderboard-row:hover {
+            background: rgba(255,106,0,0.05);
+        }
+        .leaderboard-row:last-child {
+            border-bottom: none;
+        }
+        .leaderboard-row.top-1 {
+            background: linear-gradient(90deg, rgba(255,215,0,0.15), transparent);
+        }
+        .leaderboard-row.top-2 {
+            background: linear-gradient(90deg, rgba(192,192,192,0.1), transparent);
+        }
+        .leaderboard-row.top-3 {
+            background: linear-gradient(90deg, rgba(205,127,50,0.1), transparent);
+        }
+        .rank {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.4em;
+            font-weight: 900;
+            text-align: center;
+        }
+        .rank-1 { color: #ffd700; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
+        .rank-2 { color: #c0c0c0; text-shadow: 0 0 10px rgba(192,192,192,0.5); }
+        .rank-3 { color: #cd7f32; text-shadow: 0 0 10px rgba(205,127,50,0.5); }
+        .rank-other { color: var(--echo-text-dim); }
+        .caster-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .caster-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 2px solid var(--echo-border);
+        }
+        .caster-name {
+            font-weight: 600;
+            font-size: 1.1em;
+            color: var(--echo-text);
+        }
+        .cast-count {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3em;
+            font-weight: 700;
+            color: var(--echo-cyan);
+            text-align: right;
+        }
+        .cast-label {
+            font-size: 0.7em;
+            color: var(--echo-text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .no-data {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--echo-text-dim);
+        }
+        .no-data h2 {
+            color: var(--echo-orange);
+            font-family: 'Orbitron', sans-serif;
+            margin-bottom: 10px;
+        }
+        /* Cycle selector */
+        .cycle-selector {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .cycle-selector label {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .cycle-select {
+            background: var(--echo-panel);
+            border: 1px solid var(--echo-border);
+            color: var(--echo-text);
+            padding: 10px 16px;
+            border-radius: 4px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1em;
+            cursor: pointer;
+            min-width: 200px;
+        }
+        .cycle-select:focus {
+            outline: none;
+            border-color: var(--echo-orange);
+            box-shadow: 0 0 10px var(--echo-orange-glow);
+        }
+        .cycle-select option {
+            background: var(--echo-dark);
+            color: var(--echo-text);
+        }
+        .cycle-info {
+            background: linear-gradient(90deg, rgba(0,212,255,0.1), transparent);
+            border: 1px solid rgba(0,212,255,0.3);
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .cycle-info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .cycle-info-label {
+            font-size: 0.75em;
+            color: var(--echo-text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .cycle-info-value {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            font-weight: 600;
+        }
+        /* Cycle history */
+        .cycle-history {
+            margin-top: 40px;
+        }
+        .cycle-history h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-orange);
+            font-size: 1em;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--echo-border);
+        }
+        .cycle-history-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .cycle-card {
+            background: var(--echo-panel);
+            border: 1px solid var(--echo-border);
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .cycle-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--echo-cyan), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .cycle-card:hover {
+            border-color: var(--echo-cyan);
+            box-shadow: 0 0 20px rgba(0,212,255,0.2);
+        }
+        .cycle-card:hover::before {
+            opacity: 1;
+        }
+        .cycle-card-name {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-text);
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .cycle-card-dates {
+            color: var(--echo-text-dim);
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+        .cycle-card-stats {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,106,0,0.2);
+        }
+        .cycle-stat {
+            display: flex;
+            flex-direction: column;
+        }
+        .cycle-stat-value {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            font-weight: 700;
+        }
+        .cycle-stat-label {
+            font-size: 0.7em;
+            color: var(--echo-text-dim);
+            text-transform: uppercase;
+        }
+        /* Admin tab styles */
+        .admin-section {
+            background: var(--echo-panel);
+            border-radius: 8px;
+            border: 1px solid var(--echo-border);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .admin-section-header {
+            background: linear-gradient(90deg, rgba(255,51,102,0.2), transparent);
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--echo-border);
+        }
+        .admin-section-header h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-danger);
+            font-size: 1em;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin: 0;
+        }
+        .admin-command {
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255,106,0,0.1);
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+        .admin-command:last-child {
+            border-bottom: none;
+        }
+        .admin-command:hover {
+            background: rgba(255,106,0,0.05);
+        }
+        .cmd-name {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            font-size: 0.95em;
+            font-weight: 600;
+            min-width: 180px;
+            flex-shrink: 0;
+        }
+        .cmd-desc {
+            color: var(--echo-text-dim);
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+        .cmd-params {
+            margin-top: 8px;
+            font-size: 0.85em;
+        }
+        .cmd-param {
+            display: inline-block;
+            background: rgba(0,212,255,0.15);
+            border: 1px solid rgba(0,212,255,0.3);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-right: 6px;
+            margin-top: 4px;
+            color: var(--echo-cyan);
+        }
+        .admin-warning {
+            background: linear-gradient(90deg, rgba(255,51,102,0.1), transparent);
+            border: 1px solid rgba(255,51,102,0.3);
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            color: var(--echo-text-dim);
+            font-size: 0.9em;
+        }
+        .admin-warning strong {
+            color: var(--echo-danger);
+        }
+        .tab-btn.admin {
+            color: var(--echo-danger);
+        }
+        .tab-btn.admin.active::after {
+            background: var(--echo-danger);
+            box-shadow: 0 0 10px rgba(255,51,102,0.5);
+        }
     </style>
 </head>
 <body>
+    <div class="hex-bg"></div>
     <div class="container">
-        <h1>🎙️ Broadcast Schedule</h1>
-        <p class="subtitle">Upcoming matches and crew assignments</p>
+        <div class="header">
+            <h1>Echo Master League</h1>
+            <p class="subtitle">Broadcast Hub</p>
+            {season_badge}
+        </div>
         {user_bar}
-        {content}
-        <p class="refresh-info">Page auto-refreshes every 60 seconds</p>
+        <div class="tabs">
+            <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
+            <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
+            {admin_tab_btn}
+        </div>
+        <div id="tab-schedule" class="tab-content {schedule_content_active}">
+            {content}
+        </div>
+        <div id="tab-leaderboard" class="tab-content {leaderboard_content_active}">
+            {cycle_selector}
+            {cycle_info}
+            {leaderboard_content}
+            {cycle_history}
+        </div>
+        {admin_tab_content}
+        <p class="refresh-info">// AUTO-REFRESH: 60 SECONDS //</p>
     </div>
     <script>
         async function claimSlot(matchId, role, slot) {
@@ -303,6 +1045,36 @@ HTML_TEMPLATE = """
             toast.textContent = msg;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function switchTab(tab) {
+            // Update URL without reload
+            const url = new URL(window.location);
+            url.searchParams.set('tab', tab);
+            window.history.pushState({}, '', url);
+            
+            // Update button states
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+            
+            // Update content visibility
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+        }
+        
+        function selectCycle(cycleId) {
+            const url = new URL(window.location);
+            url.searchParams.set('tab', 'leaderboard');
+            if (cycleId === 'current') {
+                url.searchParams.delete('cycle');
+            } else {
+                url.searchParams.set('cycle', cycleId);
+            }
+            window.location.href = url.toString();
+        }
+        
+        function viewCycle(cycleId) {
+            selectCycle(cycleId);
         }
         
         setTimeout(() => location.reload(), 60000);
@@ -546,6 +1318,36 @@ async def schedule_handler(request: web.Request) -> web.Response:
     session = _get_session(request)
     current_user_id = session["user_id"] if session else None
     
+    # Check if user is admin
+    is_admin = await _is_admin(bot, current_user_id) if current_user_id else False
+    
+    # Determine active tab
+    active_tab = request.query.get("tab", "schedule")
+    valid_tabs = ["schedule", "leaderboard"]
+    if is_admin:
+        valid_tabs.append("admin")
+    if active_tab not in valid_tabs:
+        active_tab = "schedule"
+    
+    schedule_active = "active" if active_tab == "schedule" else ""
+    leaderboard_active = "active" if active_tab == "leaderboard" else ""
+    admin_active = "active" if active_tab == "admin" else ""
+    schedule_content_active = "active" if active_tab == "schedule" else ""
+    leaderboard_content_active = "active" if active_tab == "leaderboard" else ""
+    admin_content_active = "active" if active_tab == "admin" else ""
+    
+    # Build season badge
+    season = await db.get_setting("season")
+    week = await db.get_setting("week")
+    
+    if season or week:
+        season_part = f'<span class="season-num">SEASON {season}</span>' if season else ''
+        week_part = f'<span class="week-num">WEEK {week}</span>' if week else ''
+        separator = '<span class="separator">//</span>' if season and week else ''
+        season_badge = f'<div class="season-badge">{season_part}{separator}{week_part}</div>'
+    else:
+        season_badge = ''
+    
     # Build user bar
     if session:
         avatar_hash = session.get("avatar")
@@ -584,6 +1386,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 </div>
             '''
     
+    # Build schedule content
     matches = await db.get_all_matches_sorted_by_time()
     
     if not matches:
@@ -619,7 +1422,321 @@ async def schedule_handler(request: web.Request) -> web.Response:
         
         content = "\n".join(cards)
     
-    html = HTML_TEMPLATE.replace("{user_bar}", user_bar).replace("{content}", content)
+    # Build leaderboard content with cycle support
+    cycles = await db.get_cycles()
+    selected_cycle_id = request.query.get("cycle")
+    selected_cycle = None
+    
+    # Determine which leaderboard to show
+    if selected_cycle_id and selected_cycle_id.isdigit():
+        selected_cycle_id = int(selected_cycle_id)
+        selected_cycle = await db.get_cycle_by_id(selected_cycle_id)
+        if selected_cycle:
+            leaderboard_data = await db.get_cycle_leaderboard(selected_cycle_id)
+        else:
+            # Invalid cycle, fall back to current
+            selected_cycle_id = None
+            leaderboard_data = await db.get_caster_leaderboard(limit=25)
+    else:
+        selected_cycle_id = None
+        leaderboard_data = await db.get_caster_leaderboard(limit=25)
+    
+    # Build cycle selector dropdown
+    if cycles:
+        options = ['<option value="current"' + (' selected' if not selected_cycle_id else '') + '>Current Season</option>']
+        for cycle in cycles:
+            selected_attr = ' selected' if selected_cycle_id == cycle["cycle_id"] else ''
+            options.append(f'<option value="{cycle["cycle_id"]}"{selected_attr}>{cycle["cycle_name"]}</option>')
+        
+        cycle_selector = f'''
+            <div class="cycle-selector">
+                <label>Season:</label>
+                <select class="cycle-select" onchange="selectCycle(this.value)">
+                    {"".join(options)}
+                </select>
+            </div>
+        '''
+    else:
+        cycle_selector = ''
+    
+    # Build cycle info if viewing a past cycle
+    if selected_cycle:
+        cycle_info = f'''
+            <div class="cycle-info">
+                <div class="cycle-info-item">
+                    <span class="cycle-info-label">Season</span>
+                    <span class="cycle-info-value">{selected_cycle["cycle_name"]}</span>
+                </div>
+                <div class="cycle-info-item">
+                    <span class="cycle-info-label">Duration</span>
+                    <span class="cycle-info-value">{selected_cycle["weeks"]} weeks</span>
+                </div>
+                <div class="cycle-info-item">
+                    <span class="cycle-info-label">Period</span>
+                    <span class="cycle-info-value">{selected_cycle["start_date"]} - {selected_cycle["end_date"]}</span>
+                </div>
+            </div>
+        '''
+    else:
+        cycle_info = ''
+    
+    # Build leaderboard rows
+    if not leaderboard_data:
+        leaderboard_content = '''
+            <div class="no-data">
+                <h2>No Stats Yet</h2>
+                <p>Complete some broadcasts to appear on the leaderboard!</p>
+            </div>
+        '''
+    else:
+        rows = []
+        for idx, entry in enumerate(leaderboard_data, start=1):
+            user_id = entry["user_id"]
+            cast_count = entry["cast_count"]
+            
+            # Get user info
+            user_name = f"User #{user_id}"
+            avatar_url = f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+            
+            if bot:
+                try:
+                    user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+                    user_name = user.display_name if hasattr(user, "display_name") else user.name
+                    if user.avatar:
+                        avatar_url = user.avatar.url
+                except Exception:
+                    pass
+            
+            # Rank styling
+            if idx == 1:
+                rank_class = "rank-1"
+                row_class = "leaderboard-row top-1"
+            elif idx == 2:
+                rank_class = "rank-2"
+                row_class = "leaderboard-row top-2"
+            elif idx == 3:
+                rank_class = "rank-3"
+                row_class = "leaderboard-row top-3"
+            else:
+                rank_class = "rank-other"
+                row_class = "leaderboard-row"
+            
+            rows.append(f'''
+                <div class="{row_class}">
+                    <div class="rank {rank_class}">{idx}</div>
+                    <div class="caster-info">
+                        <img src="{avatar_url}" class="caster-avatar" alt="">
+                        <span class="caster-name">{user_name}</span>
+                    </div>
+                    <div class="cast-count">
+                        {cast_count}
+                        <div class="cast-label">casts</div>
+                    </div>
+                </div>
+            ''')
+        
+        title = "Top Casters" if not selected_cycle else f"{selected_cycle['cycle_name']} - Final Standings"
+        leaderboard_content = f'''
+            <div class="leaderboard">
+                <div class="leaderboard-header">
+                    <h2>{title}</h2>
+                </div>
+                {"".join(rows)}
+            </div>
+        '''
+    
+    # Build cycle history section (only show when viewing current season)
+    if cycles and not selected_cycle_id:
+        cycle_cards = []
+        for cycle in cycles:
+            # Get top caster for this cycle
+            cycle_lb = await db.get_cycle_leaderboard(cycle["cycle_id"])
+            total_casts = sum(entry["cast_count"] for entry in cycle_lb)
+            top_caster_count = cycle_lb[0]["cast_count"] if cycle_lb else 0
+            caster_count = len(cycle_lb)
+            
+            cycle_cards.append(f'''
+                <div class="cycle-card" onclick="viewCycle({cycle["cycle_id"]})">
+                    <div class="cycle-card-name">{cycle["cycle_name"]}</div>
+                    <div class="cycle-card-dates">{cycle["start_date"]} - {cycle["end_date"]}</div>
+                    <div class="cycle-card-stats">
+                        <div class="cycle-stat">
+                            <span class="cycle-stat-value">{caster_count}</span>
+                            <span class="cycle-stat-label">Casters</span>
+                        </div>
+                        <div class="cycle-stat">
+                            <span class="cycle-stat-value">{total_casts}</span>
+                            <span class="cycle-stat-label">Total Casts</span>
+                        </div>
+                        <div class="cycle-stat">
+                            <span class="cycle-stat-value">{top_caster_count}</span>
+                            <span class="cycle-stat-label">Top Score</span>
+                        </div>
+                    </div>
+                </div>
+            ''')
+        
+        cycle_history = f'''
+            <div class="cycle-history">
+                <h3>Past Seasons</h3>
+                <div class="cycle-history-grid">
+                    {"".join(cycle_cards)}
+                </div>
+            </div>
+        '''
+    else:
+        cycle_history = ''
+    
+    # Build admin tab (only for admins)
+    if is_admin:
+        admin_tab_btn = f'<button class="tab-btn admin {admin_active}" onclick="switchTab(\'admin\')">Admin</button>'
+        admin_tab_content = f'''
+            <div id="tab-admin" class="tab-content {admin_content_active}">
+                <div class="admin-warning">
+                    <strong>Admin Panel</strong> — These commands are available via Discord slash commands. 
+                    This page serves as a quick reference for all administrator functions.
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Match Management</h3>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/sync_matches</span>
+                        <div class="cmd-desc">
+                            Manually sync upcoming matches from the Google Sheet. Use this if matches aren't appearing automatically.
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/refresh_messages</span>
+                        <div class="cmd-desc">
+                            Refresh all claim messages in the claim channel. Updates the UI buttons and displays.
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/force_channel</span>
+                        <div class="cmd-desc">
+                            Force create the private broadcast channel for a match, bypassing the normal caster/cam op requirements.
+                            <div class="cmd-params">
+                                <span class="cmd-param">match_id</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/manage_claim</span>
+                        <div class="cmd-desc">
+                            Add or remove a user from a match slot. Use action "add" or "remove".
+                            <div class="cmd-params">
+                                <span class="cmd-param">match_id</span>
+                                <span class="cmd-param">action</span>
+                                <span class="cmd-param">user</span>
+                                <span class="cmd-param">role</span>
+                                <span class="cmd-param">slot</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/match_status</span>
+                        <div class="cmd-desc">
+                            Show claim status and details for a specific match.
+                            <div class="cmd-params">
+                                <span class="cmd-param">match_id</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Season & Week</h3>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/set_week</span>
+                        <div class="cmd-desc">
+                            Set the current season and week number displayed on the website.
+                            <div class="cmd-params">
+                                <span class="cmd-param">season</span>
+                                <span class="cmd-param">week</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Leaderboard Management</h3>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/leaderboard</span>
+                        <div class="cmd-desc">
+                            Display the current caster leaderboard (including cam ops and sideline reporters).
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/edit_leaderboard</span>
+                        <div class="cmd-desc">
+                            Edit a user's cast count manually. Useful for corrections.
+                            <div class="cmd-params">
+                                <span class="cmd-param">user</span>
+                                <span class="cmd-param">count</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/reset_leaderboard</span>
+                        <div class="cmd-desc">
+                            Reset the entire caster leaderboard to zero. <strong>Use with caution!</strong>
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/start_cycle</span>
+                        <div class="cmd-desc">
+                            Archive the current leaderboard and start a new cycle/season. This preserves all stats in history.
+                            <div class="cmd-params">
+                                <span class="cmd-param">cycle_name</span>
+                                <span class="cmd-param">weeks</span>
+                                <span class="cmd-param">start_date</span>
+                                <span class="cmd-param">end_date</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/view_cycles</span>
+                        <div class="cmd-desc">
+                            View all archived leaderboard cycles and their basic info.
+                        </div>
+                    </div>
+                    <div class="admin-command">
+                        <span class="cmd-name">/view_cycle</span>
+                        <div class="cmd-desc">
+                            View the full leaderboard for a specific archived cycle.
+                            <div class="cmd-params">
+                                <span class="cmd-param">cycle_id</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        '''
+    else:
+        admin_tab_btn = ''
+        admin_tab_content = ''
+    
+    html = (HTML_TEMPLATE
+        .replace("{user_bar}", user_bar)
+        .replace("{season_badge}", season_badge)
+        .replace("{admin_tab_btn}", admin_tab_btn)
+        .replace("{admin_tab_content}", admin_tab_content)
+        .replace("{content}", content)
+        .replace("{cycle_selector}", cycle_selector)
+        .replace("{cycle_info}", cycle_info)
+        .replace("{leaderboard_content}", leaderboard_content)
+        .replace("{cycle_history}", cycle_history)
+        .replace("{schedule_active}", schedule_active)
+        .replace("{leaderboard_active}", leaderboard_active)
+        .replace("{schedule_content_active}", schedule_content_active)
+        .replace("{leaderboard_content_active}", leaderboard_content_active)
+    )
     return web.Response(text=html, content_type="text/html")
 
 
@@ -899,6 +2016,11 @@ async def health_handler(request: web.Request) -> web.Response:
     return web.Response(text="OK")
 
 
+async def leaderboard_handler(request: web.Request) -> web.Response:
+    """Redirect to main page with leaderboard tab active."""
+    raise web.HTTPFound("/?tab=leaderboard")
+
+
 def create_app(bot=None) -> web.Application:
     """Create the aiohttp web application."""
     app = web.Application()
@@ -906,6 +2028,7 @@ def create_app(bot=None) -> web.Application:
     
     app.router.add_get("/", schedule_handler)
     app.router.add_get("/schedule", schedule_handler)
+    app.router.add_get("/leaderboard", leaderboard_handler)
     app.router.add_get("/login", login_handler)
     app.router.add_get("/callback", callback_handler)
     app.router.add_get("/logout", logout_handler)
