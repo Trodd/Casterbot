@@ -81,7 +81,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-5. Run:
+1. Run:
 
 ```bash
 python -m casterbot
