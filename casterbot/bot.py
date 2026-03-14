@@ -45,6 +45,7 @@ log = logging.getLogger("casterbot")
 # Quiet discord.py's noisy gateway logs
 logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 logging.getLogger("discord.http").setLevel(logging.WARNING)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 
 
 class CasterBot(commands.Bot):
@@ -54,6 +55,7 @@ class CasterBot(commands.Bot):
         intents.members = True
         intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
+        self._web_runner = None
 
     async def setup_hook(self) -> None:
         await db.init_db()
@@ -61,6 +63,15 @@ class CasterBot(commands.Bot):
 
         # Register persistent views for existing matches
         await self._register_persistent_views()
+
+        # Start web server if enabled
+        if config.WEB_ENABLED:
+            from . import web
+            self._web_runner = await web.start_web_server(
+                bot=self,
+                host=config.WEB_HOST,
+                port=config.WEB_PORT,
+            )
 
         # Sync slash commands
         if config.GUILD_ID:
@@ -100,6 +111,13 @@ class CasterBot(commands.Bot):
 
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
+
+    async def close(self) -> None:
+        # Stop web server if running
+        if self._web_runner:
+            from . import web
+            await web.stop_web_server(self._web_runner)
+        await super().close()
 
     @tasks.loop(seconds=config.SYNC_INTERVAL_SECONDS)
     async def sync_matches_loop(self) -> None:

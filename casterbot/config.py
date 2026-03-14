@@ -70,5 +70,15 @@ MATCH_GRACE_HOURS: int = _int("MATCH_GRACE_HOURS", 4)  # Keep matches for X hour
 SYNC_INTERVAL_SECONDS: int = _int("SYNC_INTERVAL_SECONDS", 300)
 TIMEZONE: str = _get("TIMEZONE", "US/Eastern")
 
+# Web server (optional)
+WEB_ENABLED: bool = _bool("WEB_ENABLED", False)
+WEB_HOST: str = _get("WEB_HOST", "0.0.0.0")
+WEB_PORT: int = _int("WEB_PORT", 8080)
+WEB_PUBLIC_URL: str = _get("WEB_PUBLIC_URL", "")  # e.g., "http://yourdomain.com:8080"
+
+# Discord OAuth2 (for web login - optional)
+DISCORD_CLIENT_ID: str = _get("DISCORD_CLIENT_ID", "")
+DISCORD_CLIENT_SECRET: str = _get("DISCORD_CLIENT_SECRET", "")
+
 # Database path (SQLite)
 DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"
