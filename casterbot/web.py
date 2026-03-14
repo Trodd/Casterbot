@@ -835,45 +835,106 @@ HTML_TEMPLATE = """
             text-transform: uppercase;
             margin: 0;
         }
-        .admin-command {
-            padding: 16px 20px;
+        .admin-row {
+            padding: 20px;
             border-bottom: 1px solid rgba(255,106,0,0.1);
-            display: flex;
-            align-items: flex-start;
-            gap: 16px;
         }
-        .admin-command:last-child {
+        .admin-row:last-child {
             border-bottom: none;
         }
-        .admin-command:hover {
-            background: rgba(255,106,0,0.05);
+        .admin-row-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
         }
-        .cmd-name {
+        .admin-row-title {
             font-family: 'Orbitron', sans-serif;
             color: var(--echo-cyan);
             font-size: 0.95em;
             font-weight: 600;
-            min-width: 180px;
-            flex-shrink: 0;
         }
-        .cmd-desc {
+        .admin-row-desc {
             color: var(--echo-text-dim);
-            font-size: 0.95em;
-            line-height: 1.4;
-        }
-        .cmd-params {
-            margin-top: 8px;
             font-size: 0.85em;
+            margin-bottom: 12px;
         }
-        .cmd-param {
-            display: inline-block;
-            background: rgba(0,212,255,0.15);
-            border: 1px solid rgba(0,212,255,0.3);
-            padding: 2px 8px;
+        .admin-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .admin-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .admin-input-group label {
+            font-size: 0.75em;
+            color: var(--echo-text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .admin-input, .admin-select {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--echo-border);
+            color: var(--echo-text);
+            padding: 8px 12px;
             border-radius: 4px;
-            margin-right: 6px;
-            margin-top: 4px;
-            color: var(--echo-cyan);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.95em;
+            min-width: 120px;
+        }
+        .admin-input:focus, .admin-select:focus {
+            outline: none;
+            border-color: var(--echo-cyan);
+            box-shadow: 0 0 10px var(--echo-cyan-glow);
+        }
+        .admin-input::placeholder {
+            color: var(--echo-text-dim);
+        }
+        .admin-btn {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .admin-btn.primary {
+            background: linear-gradient(180deg, var(--echo-cyan) 0%, #00a8cc 100%);
+            color: #001a1a;
+            box-shadow: 0 0 10px var(--echo-cyan-glow);
+        }
+        .admin-btn.primary:hover {
+            box-shadow: 0 0 20px var(--echo-cyan-glow);
+        }
+        .admin-btn.danger {
+            background: linear-gradient(180deg, var(--echo-danger) 0%, #cc2952 100%);
+            color: white;
+            box-shadow: 0 0 10px rgba(255,51,102,0.3);
+        }
+        .admin-btn.danger:hover {
+            box-shadow: 0 0 20px rgba(255,51,102,0.5);
+        }
+        .admin-btn.success {
+            background: linear-gradient(180deg, var(--echo-success) 0%, #00cc6a 100%);
+            color: #001a0d;
+            box-shadow: 0 0 10px rgba(0,255,136,0.3);
+        }
+        .admin-btn.success:hover {
+            box-shadow: 0 0 20px rgba(0,255,136,0.5);
+        }
+        .admin-btn:disabled {
+            background: rgba(255,255,255,0.1);
+            color: var(--echo-text-dim);
+            cursor: not-allowed;
+            box-shadow: none;
         }
         .admin-warning {
             background: linear-gradient(90deg, rgba(255,51,102,0.1), transparent);
@@ -893,6 +954,56 @@ HTML_TEMPLATE = """
         .tab-btn.admin.active::after {
             background: var(--echo-danger);
             box-shadow: 0 0 10px rgba(255,51,102,0.5);
+        }
+        .admin-result {
+            margin-top: 10px;
+            padding: 10px 14px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--echo-border);
+        }
+        .admin-result:empty {
+            display: none;
+        }
+        .admin-result .success {
+            color: var(--echo-success);
+        }
+        .admin-result .error {
+            color: var(--echo-danger);
+        }
+        .match-select-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--echo-border);
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .match-select-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,106,0,0.1);
+            transition: background 0.2s;
+        }
+        .match-select-item:hover {
+            background: rgba(255,106,0,0.1);
+        }
+        .match-select-item.selected {
+            background: rgba(0,212,255,0.15);
+            border-left: 3px solid var(--echo-cyan);
+        }
+        .match-select-item:last-child {
+            border-bottom: none;
+        }
+        .match-select-teams {
+            font-weight: 600;
+            color: var(--echo-text);
+        }
+        .match-select-id {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-orange);
+            font-size: 0.85em;
         }
     </style>
 </head>
@@ -1075,6 +1186,187 @@ HTML_TEMPLATE = """
         
         function viewCycle(cycleId) {
             selectCycle(cycleId);
+        }
+        
+        // Admin functions
+        async function adminSyncMatches(btn) {
+            btn.disabled = true;
+            btn.textContent = 'Syncing...';
+            const result = document.getElementById('result-sync');
+            try {
+                const resp = await fetch('/api/admin/sync', {method: 'POST', credentials: 'include'});
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Matches synced', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Sync Now';
+        }
+        
+        async function adminRefreshMessages(btn) {
+            btn.disabled = true;
+            btn.textContent = 'Refreshing...';
+            const result = document.getElementById('result-refresh');
+            try {
+                const resp = await fetch('/api/admin/refresh', {method: 'POST', credentials: 'include'});
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Messages refreshed', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Refresh';
+        }
+        
+        async function adminForceChannel() {
+            const matchId = document.getElementById('force-channel-match').value;
+            const result = document.getElementById('result-force-channel');
+            if (!matchId) {
+                result.innerHTML = '<span class="error">Select a match first</span>';
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/force-channel', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Channel created', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
+        async function adminSetWeek() {
+            const season = document.getElementById('set-season').value;
+            const week = document.getElementById('set-week').value;
+            const result = document.getElementById('result-set-week');
+            if (!season || !week) {
+                result.innerHTML = '<span class="error">Enter both season and week</span>';
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/set-week', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({season: season, week: week})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Season/Week updated', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
+        async function adminEditLeaderboard() {
+            const userId = document.getElementById('edit-lb-user').value;
+            const count = document.getElementById('edit-lb-count').value;
+            const result = document.getElementById('result-edit-lb');
+            if (!userId || count === '') {
+                result.innerHTML = '<span class="error">Enter user ID and count</span>';
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/edit-leaderboard', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_id: userId, count: parseInt(count)})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Leaderboard updated', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
+        async function adminResetLeaderboard() {
+            const result = document.getElementById('result-reset-lb');
+            if (!confirm('Are you sure you want to reset ALL cast counts to zero? This cannot be undone!')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/reset-leaderboard', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Leaderboard reset', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
+        async function adminStartCycle() {
+            const name = document.getElementById('cycle-name').value;
+            const weeks = document.getElementById('cycle-weeks').value;
+            const startDate = document.getElementById('cycle-start').value;
+            const endDate = document.getElementById('cycle-end').value;
+            const result = document.getElementById('result-cycle');
+            
+            if (!name) {
+                result.innerHTML = '<span class="error">Enter a cycle name</span>';
+                return;
+            }
+            if (!confirm('Archive current leaderboard as "' + name + '" and reset? This preserves history.')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/start-cycle', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: name,
+                        weeks: parseInt(weeks) || null,
+                        start_date: startDate || null,
+                        end_date: endDate || null
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Cycle archived', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
         }
         
         setTimeout(() => location.reload(), 60000);
@@ -1590,59 +1882,60 @@ async def schedule_handler(request: web.Request) -> web.Response:
     # Build admin tab (only for admins)
     if is_admin:
         admin_tab_btn = f'<button class="tab-btn admin {admin_active}" onclick="switchTab(\'admin\')">Admin</button>'
+        
+        # Build match options for selects
+        match_options = '<option value="">Select a match...</option>'
+        for match in matches:
+            match_options += f'<option value="{match["match_id"]}">#{match.get("simple_id", "?")} - {match["team_a"]} vs {match["team_b"]}</option>'
+        
         admin_tab_content = f'''
             <div id="tab-admin" class="tab-content {admin_content_active}">
                 <div class="admin-warning">
-                    <strong>Admin Panel</strong> — These commands are available via Discord slash commands. 
-                    This page serves as a quick reference for all administrator functions.
+                    <strong>Admin Panel</strong> — Execute administrative commands directly from this interface.
                 </div>
                 
                 <div class="admin-section">
                     <div class="admin-section-header">
-                        <h3>Match Management</h3>
+                        <h3>Match Sync</h3>
                     </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/sync_matches</span>
-                        <div class="cmd-desc">
-                            Manually sync upcoming matches from the Google Sheet. Use this if matches aren't appearing automatically.
+                    <div class="admin-row">
+                        <div class="admin-row-header">
+                            <span class="admin-row-title">Sync Matches</span>
                         </div>
-                    </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/refresh_messages</span>
-                        <div class="cmd-desc">
-                            Refresh all claim messages in the claim channel. Updates the UI buttons and displays.
+                        <div class="admin-row-desc">Manually sync upcoming matches from the Google Sheet.</div>
+                        <div class="admin-form">
+                            <button class="admin-btn primary" onclick="adminSyncMatches(this)">Sync Now</button>
                         </div>
+                        <div class="admin-result" id="result-sync"></div>
                     </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/force_channel</span>
-                        <div class="cmd-desc">
-                            Force create the private broadcast channel for a match, bypassing the normal caster/cam op requirements.
-                            <div class="cmd-params">
-                                <span class="cmd-param">match_id</span>
+                    <div class="admin-row">
+                        <div class="admin-row-header">
+                            <span class="admin-row-title">Refresh Messages</span>
+                        </div>
+                        <div class="admin-row-desc">Refresh all claim messages in the claim channel.</div>
+                        <div class="admin-form">
+                            <button class="admin-btn primary" onclick="adminRefreshMessages(this)">Refresh</button>
+                        </div>
+                        <div class="admin-result" id="result-refresh"></div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Force Create Channel</h3>
+                    </div>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Force create the private broadcast channel for a match (bypasses requirements).</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Match</label>
+                                <select class="admin-select" id="force-channel-match">
+                                    {match_options}
+                                </select>
                             </div>
+                            <button class="admin-btn success" onclick="adminForceChannel()">Create Channel</button>
                         </div>
-                    </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/manage_claim</span>
-                        <div class="cmd-desc">
-                            Add or remove a user from a match slot. Use action "add" or "remove".
-                            <div class="cmd-params">
-                                <span class="cmd-param">match_id</span>
-                                <span class="cmd-param">action</span>
-                                <span class="cmd-param">user</span>
-                                <span class="cmd-param">role</span>
-                                <span class="cmd-param">slot</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/match_status</span>
-                        <div class="cmd-desc">
-                            Show claim status and details for a specific match.
-                            <div class="cmd-params">
-                                <span class="cmd-param">match_id</span>
-                            </div>
-                        </div>
+                        <div class="admin-result" id="result-force-channel"></div>
                     </div>
                 </div>
                 
@@ -1650,15 +1943,20 @@ async def schedule_handler(request: web.Request) -> web.Response:
                     <div class="admin-section-header">
                         <h3>Season & Week</h3>
                     </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/set_week</span>
-                        <div class="cmd-desc">
-                            Set the current season and week number displayed on the website.
-                            <div class="cmd-params">
-                                <span class="cmd-param">season</span>
-                                <span class="cmd-param">week</span>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Set the current season and week number displayed on the website.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Season</label>
+                                <input type="text" class="admin-input" id="set-season" placeholder="e.g. 5" value="{season or ''}">
                             </div>
+                            <div class="admin-input-group">
+                                <label>Week</label>
+                                <input type="text" class="admin-input" id="set-week" placeholder="e.g. 3" value="{week or ''}">
+                            </div>
+                            <button class="admin-btn primary" onclick="adminSetWeek()">Update</button>
                         </div>
+                        <div class="admin-result" id="result-set-week"></div>
                     </div>
                 </div>
                 
@@ -1666,54 +1964,62 @@ async def schedule_handler(request: web.Request) -> web.Response:
                     <div class="admin-section-header">
                         <h3>Leaderboard Management</h3>
                     </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/leaderboard</span>
-                        <div class="cmd-desc">
-                            Display the current caster leaderboard (including cam ops and sideline reporters).
+                    <div class="admin-row">
+                        <div class="admin-row-header">
+                            <span class="admin-row-title">Edit Cast Count</span>
                         </div>
-                    </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/edit_leaderboard</span>
-                        <div class="cmd-desc">
-                            Edit a user's cast count manually. Useful for corrections.
-                            <div class="cmd-params">
-                                <span class="cmd-param">user</span>
-                                <span class="cmd-param">count</span>
+                        <div class="admin-row-desc">Manually set a user's cast count.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>User ID</label>
+                                <input type="text" class="admin-input" id="edit-lb-user" placeholder="Discord User ID">
                             </div>
-                        </div>
-                    </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/reset_leaderboard</span>
-                        <div class="cmd-desc">
-                            Reset the entire caster leaderboard to zero. <strong>Use with caution!</strong>
-                        </div>
-                    </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/start_cycle</span>
-                        <div class="cmd-desc">
-                            Archive the current leaderboard and start a new cycle/season. This preserves all stats in history.
-                            <div class="cmd-params">
-                                <span class="cmd-param">cycle_name</span>
-                                <span class="cmd-param">weeks</span>
-                                <span class="cmd-param">start_date</span>
-                                <span class="cmd-param">end_date</span>
+                            <div class="admin-input-group">
+                                <label>Count</label>
+                                <input type="number" class="admin-input" id="edit-lb-count" placeholder="0" min="0">
                             </div>
+                            <button class="admin-btn primary" onclick="adminEditLeaderboard()">Set Count</button>
                         </div>
+                        <div class="admin-result" id="result-edit-lb"></div>
                     </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/view_cycles</span>
-                        <div class="cmd-desc">
-                            View all archived leaderboard cycles and their basic info.
+                    <div class="admin-row">
+                        <div class="admin-row-header">
+                            <span class="admin-row-title">Reset Leaderboard</span>
                         </div>
+                        <div class="admin-row-desc">Reset all cast counts to zero. This cannot be undone!</div>
+                        <div class="admin-form">
+                            <button class="admin-btn danger" onclick="adminResetLeaderboard()">Reset All</button>
+                        </div>
+                        <div class="admin-result" id="result-reset-lb"></div>
                     </div>
-                    <div class="admin-command">
-                        <span class="cmd-name">/view_cycle</span>
-                        <div class="cmd-desc">
-                            View the full leaderboard for a specific archived cycle.
-                            <div class="cmd-params">
-                                <span class="cmd-param">cycle_id</span>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Archive Season</h3>
+                    </div>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Archive the current leaderboard and start a new cycle. This preserves all stats in history.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Cycle Name</label>
+                                <input type="text" class="admin-input" id="cycle-name" placeholder="e.g. Season 5">
                             </div>
+                            <div class="admin-input-group">
+                                <label>Weeks</label>
+                                <input type="number" class="admin-input" id="cycle-weeks" placeholder="10" min="1" style="width: 80px;">
+                            </div>
+                            <div class="admin-input-group">
+                                <label>Start Date</label>
+                                <input type="date" class="admin-input" id="cycle-start">
+                            </div>
+                            <div class="admin-input-group">
+                                <label>End Date</label>
+                                <input type="date" class="admin-input" id="cycle-end">
+                            </div>
+                            <button class="admin-btn success" onclick="adminStartCycle()">Archive & Start</button>
                         </div>
+                        <div class="admin-result" id="result-cycle"></div>
                     </div>
                 </div>
             </div>
@@ -2011,6 +2317,220 @@ async def api_go_live_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True})
 
 
+# Admin API helpers
+async def _check_admin(request: web.Request) -> tuple[dict | None, web.Response | None]:
+    """Check if user is admin. Returns (session, error_response)."""
+    session = _get_session(request)
+    if not session:
+        return None, web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return None, web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    # Check admin role
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return None, web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    member = guild.get_member(session["user_id"])
+    if not member:
+        return None, web.json_response({"success": False, "error": "Not a guild member"}, status=403)
+    
+    lead_role_id = config.WEB_LEAD_ROLE_ID
+    if not lead_role_id:
+        return None, web.json_response({"success": False, "error": "Admin role not configured"}, status=500)
+    
+    if lead_role_id not in [r.id for r in member.roles]:
+        return None, web.json_response({"success": False, "error": "Admin access required"}, status=403)
+    
+    return session, None
+
+
+async def api_admin_sync_handler(request: web.Request) -> web.Response:
+    """Admin API: Sync matches from Google Sheet."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    try:
+        # Import and call sync_matches directly
+        from . import bot as bot_module
+        count = await bot_module.sync_matches(bot)
+        return web.json_response({"success": True, "message": f"Synced {count} new matches"})
+    except Exception as e:
+        log.error(f"Admin sync failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_refresh_handler(request: web.Request) -> web.Response:
+    """Admin API: Refresh all claim messages."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    try:
+        from .views import ClaimView
+        matches = await db.get_matches_with_message()
+        channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        if not channel:
+            return web.json_response({"success": False, "error": "Claim channel not found"}, status=500)
+        
+        updated = 0
+        for match in matches:
+            if not match.get("message_id"):
+                continue
+            try:
+                msg = await channel.fetch_message(match["message_id"])
+                claims = await db.get_claims(match["match_id"])
+                new_view = ClaimView(match["match_id"], match, claims)
+                await msg.edit(view=new_view)
+                updated += 1
+            except Exception as e:
+                log.error(f"Failed to refresh message for {match['match_id']}: {e}")
+        
+        return web.json_response({"success": True, "message": f"Refreshed {updated} messages"})
+    except Exception as e:
+        log.error(f"Admin refresh failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_force_channel_handler(request: web.Request) -> web.Response:
+    """Admin API: Force create private channel for a match."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    if match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Channel already exists"}, status=400)
+    
+    try:
+        from .views import create_private_match_channel_web
+        claims = await db.get_claims(match_id)
+        channel = await create_private_match_channel_web(bot, match, claims)
+        if channel:
+            return web.json_response({"success": True, "message": f"Created channel #{channel.name}"})
+        else:
+            return web.json_response({"success": False, "error": "Failed to create channel"}, status=500)
+    except Exception as e:
+        log.error(f"Admin force channel failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_set_week_handler(request: web.Request) -> web.Response:
+    """Admin API: Set current season/week."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    season = data.get("season")
+    week = data.get("week")
+    
+    if not season or not week:
+        return web.json_response({"success": False, "error": "Missing season or week"}, status=400)
+    
+    try:
+        await db.set_setting("current_season", str(season))
+        await db.set_setting("current_week", str(week))
+        return web.json_response({"success": True, "message": f"Updated to Season {season} Week {week}"})
+    except Exception as e:
+        log.error(f"Admin set week failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_edit_leaderboard_handler(request: web.Request) -> web.Response:
+    """Admin API: Edit a user's cast count."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    user_id = data.get("user_id")
+    count = data.get("count")
+    
+    if not user_id:
+        return web.json_response({"success": False, "error": "Missing user_id"}, status=400)
+    if count is None:
+        return web.json_response({"success": False, "error": "Missing count"}, status=400)
+    
+    try:
+        user_id_int = int(user_id)
+        count_int = int(count)
+        await db.set_cast_count(user_id_int, count_int)
+        return web.json_response({"success": True, "message": f"Set cast count to {count_int}"})
+    except ValueError:
+        return web.json_response({"success": False, "error": "Invalid user_id or count"}, status=400)
+    except Exception as e:
+        log.error(f"Admin edit leaderboard failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_reset_leaderboard_handler(request: web.Request) -> web.Response:
+    """Admin API: Reset all cast counts to zero."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        count = await db.reset_leaderboard()
+        return web.json_response({"success": True, "message": f"Reset {count} entries"})
+    except Exception as e:
+        log.error(f"Admin reset leaderboard failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_start_cycle_handler(request: web.Request) -> web.Response:
+    """Admin API: Archive current leaderboard and start new cycle."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    name = data.get("name")
+    if not name:
+        return web.json_response({"success": False, "error": "Missing cycle name"}, status=400)
+    
+    weeks = data.get("weeks") or 0
+    start_date = data.get("start_date") or ""
+    end_date = data.get("end_date") or ""
+    
+    try:
+        cycle_id = await db.archive_cycle(name, weeks, start_date, end_date)
+        return web.json_response({"success": True, "message": f"Archived as '{name}' (cycle #{cycle_id})"})
+    except Exception as e:
+        log.error(f"Admin start cycle failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 async def health_handler(request: web.Request) -> web.Response:
     """Health check endpoint."""
     return web.Response(text="OK")
@@ -2037,6 +2557,14 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/create_channel", api_create_channel_handler)
     app.router.add_post("/api/crew_ready", api_crew_ready_handler)
     app.router.add_post("/api/go_live", api_go_live_handler)
+    # Admin API routes
+    app.router.add_post("/api/admin/sync", api_admin_sync_handler)
+    app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
+    app.router.add_post("/api/admin/force-channel", api_admin_force_channel_handler)
+    app.router.add_post("/api/admin/set-week", api_admin_set_week_handler)
+    app.router.add_post("/api/admin/edit-leaderboard", api_admin_edit_leaderboard_handler)
+    app.router.add_post("/api/admin/reset-leaderboard", api_admin_reset_leaderboard_handler)
+    app.router.add_post("/api/admin/start-cycle", api_admin_start_cycle_handler)
     app.router.add_get("/health", health_handler)
     
     return app
