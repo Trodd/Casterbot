@@ -786,3 +786,70 @@ class CloseChannelView(LayoutView):
             await transcript_channel.send(embed=embed, file=file)
         except Exception:
             pass
+
+
+async def create_private_match_channel_web(
+    bot, match: dict, claims: list[dict]
+) -> discord.TextChannel | None:
+    """Create a private text channel from the web interface (no Interaction required)."""
+    guild = bot.get_guild(config.GUILD_ID)
+    if guild is None:
+        return None
+
+    category = None
+    if config.PRIVATE_CATEGORY_ID:
+        category = guild.get_channel(config.PRIVATE_CATEGORY_ID)
+
+    # Permission overwrites
+    overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+    }
+
+    # Add claimed users
+    for c in claims:
+        member = guild.get_member(c["user_id"])
+        if member:
+            overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+    # Add roles
+    for role_id in (config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID, config.STAFF_ROLE_ID):
+        if role_id:
+            role = guild.get_role(role_id)
+            if role:
+                overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+    # Add team roles
+    team_a_lower = match['team_a'].lower()
+    team_b_lower = match['team_b'].lower()
+    team_roles: list[discord.Role] = []
+    for role in guild.roles:
+        if role.name.lower().startswith("team:"):
+            team_name = role.name[5:].strip().lower()
+            if team_name == team_a_lower or team_name == team_b_lower:
+                overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                team_roles.append(role)
+
+    channel_name = f"{match['team_a']}-vs-{match['team_b']}".lower().replace(" ", "-")
+
+    try:
+        channel = await guild.create_text_channel(
+            name=channel_name,
+            category=category,
+            overwrites=overwrites,
+            reason="CasterBot match channel (web)",
+        )
+    except Exception:
+        return None
+
+    await db.set_private_channel(match["match_id"], channel.id)
+
+    # Post rosters / match info with team pings
+    roster_msg = _build_roster_message(match, claims, team_roles)
+    await channel.send(roster_msg)
+    
+    # Post close channel button
+    close_view = CloseChannelView(match["match_id"])
+    bot.add_view(close_view)
+    await channel.send(view=close_view)
+    
+    return channel

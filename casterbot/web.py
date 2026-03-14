@@ -124,6 +124,23 @@ HTML_TEMPLATE = """
         .status-badge.live { background: #ed4245; color: white; }
         .status-badge.soon { background: #faa61a; color: #1a1a1a; }
         .match-type { color: #72767d; font-size: 0.85em; margin-top: 8px; }
+        .broadcast-controls {
+            margin-top: 16px; padding-top: 16px; border-top: 1px solid #40444b;
+        }
+        .broadcast-controls h4 { color: #b9bbbe; font-size: 0.85em; margin-bottom: 10px; }
+        .broadcast-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+        .broadcast-btn {
+            padding: 8px 16px; border: none; border-radius: 6px;
+            font-size: 0.85em; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .broadcast-btn.create { background: #3ba55c; color: white; }
+        .broadcast-btn.create:hover { background: #2d8049; }
+        .broadcast-btn.ready { background: #5865f2; color: white; }
+        .broadcast-btn.ready:hover { background: #4752c4; }
+        .broadcast-btn.golive { background: #ed4245; color: white; }
+        .broadcast-btn.golive:hover { background: #c73e3e; }
+        .broadcast-btn:disabled { background: #4f545c; cursor: not-allowed; opacity: 0.6; }
+        .channel-link { color: #5865f2; text-decoration: none; font-size: 0.9em; margin-left: 8px; }
         .toast {
             position: fixed; bottom: 20px; right: 20px; padding: 12px 20px;
             border-radius: 8px; color: white; font-weight: 500; z-index: 1000;
@@ -135,6 +152,24 @@ HTML_TEMPLATE = """
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
+        .confirm-modal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8); display: flex; align-items: center;
+            justify-content: center; z-index: 1000;
+        }
+        .confirm-box {
+            background: #2f3136; padding: 24px; border-radius: 12px;
+            text-align: center; max-width: 400px;
+        }
+        .confirm-box h3 { color: #ffffff; margin-bottom: 12px; }
+        .confirm-box p { color: #8e9297; margin-bottom: 20px; }
+        .confirm-btns { display: flex; gap: 12px; justify-content: center; }
+        .confirm-btns button {
+            padding: 10px 24px; border: none; border-radius: 6px;
+            font-weight: 600; cursor: pointer;
+        }
+        .confirm-yes { background: #3ba55c; color: white; }
+        .confirm-no { background: #4f545c; color: white; }
     </style>
 </head>
 <body>
@@ -178,6 +213,84 @@ HTML_TEMPLATE = """
                     setTimeout(() => location.reload(), 500);
                 } else {
                     showToast(data.error || 'Failed to unclaim', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        function showConfirm(title, message) {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.className = 'confirm-modal';
+                modal.innerHTML = `
+                    <div class="confirm-box">
+                        <h3>${title}</h3>
+                        <p>${message}</p>
+                        <div class="confirm-btns">
+                            <button class="confirm-yes">Yes</button>
+                            <button class="confirm-no">No</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.querySelector('.confirm-yes').onclick = () => { modal.remove(); resolve(true); };
+                modal.querySelector('.confirm-no').onclick = () => { modal.remove(); resolve(false); };
+            });
+        }
+        
+        async function createChannel(matchId) {
+            if (!await showConfirm('Create Channel', 'Create the private match channel?')) return;
+            try {
+                const resp = await fetch('/api/create_channel', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Channel created!', 'success');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(data.error || 'Failed to create channel', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        async function crewReady(matchId) {
+            if (!await showConfirm('Crew Ready', 'Send the crew ready message to the channel?')) return;
+            try {
+                const resp = await fetch('/api/crew_ready', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Ready message sent!', 'success');
+                } else {
+                    showToast(data.error || 'Failed to send message', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        async function goLive(matchId) {
+            if (!await showConfirm('Go Live', 'Post the live announcement?')) return;
+            try {
+                const resp = await fetch('/api/go_live', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Live announcement posted!', 'success');
+                } else {
+                    showToast(data.error || 'Failed to go live', 'error');
                 }
             } catch (e) {
                 showToast('Network error', 'error');
@@ -294,6 +407,36 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
     if match.get("match_type"):
         match_type_html = f'<p class="match-type">{match["match_type"]}</p>'
     
+    # Check if requirements met for controls
+    has_caster = any(c for c in claims if c["role"] == "caster")
+    has_camop = any(c for c in claims if c["role"] == "camop")
+    has_channel = bool(match.get("private_channel_id"))
+    can_create = has_caster and has_camop and not has_channel
+    can_ready = has_channel
+    can_go_live = has_channel and has_caster and has_camop
+    
+    # Build broadcast controls (only show if logged in)
+    broadcast_html = ""
+    if current_user_id:
+        create_disabled = "" if can_create else "disabled"
+        ready_disabled = "" if can_ready else "disabled"
+        live_disabled = "" if can_go_live else "disabled"
+        
+        channel_info = ""
+        if has_channel:
+            channel_info = '<span style="color: #3ba55c; font-size: 0.85em; margin-left: 8px;">✓ Channel exists</span>'
+        
+        broadcast_html = f'''
+            <div class="broadcast-controls">
+                <h4>Broadcast Controls {channel_info}</h4>
+                <div class="broadcast-btns">
+                    <button class="broadcast-btn create" onclick="createChannel('{match_id}')" {create_disabled}>Create Channel</button>
+                    <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
+                    <button class="broadcast-btn golive" onclick="goLive('{match_id}')" {live_disabled}>Go Live</button>
+                </div>
+            </div>
+        '''
+    
     return f'''
         <div class="{card_class}">
             <div class="match-header">
@@ -303,6 +446,7 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
             <p class="match-time">{formatted_time} <span class="time-relative">{status_badge} {relative}</span></p>
             <div class="claims">{"".join(slots)}</div>
             {match_type_html}
+            {broadcast_html}
         </div>
     '''
 
@@ -567,6 +711,189 @@ async def _refresh_discord_message(bot, match_id: str) -> None:
         log.error(f"Failed to refresh Discord message: {e}")
 
 
+async def api_create_channel_handler(request: web.Request) -> web.Response:
+    """API endpoint to create private match channel."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    # Check if channel already exists
+    if match.get("private_channel_id"):
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            existing = guild.get_channel(match["private_channel_id"])
+            if existing:
+                return web.json_response({"success": False, "error": "Channel already exists"}, status=400)
+        await db.clear_private_channel(match_id)
+    
+    # Check requirements
+    claims = await db.get_claims(match_id)
+    casters = [c for c in claims if c["role"] == "caster"]
+    camops = [c for c in claims if c["role"] == "camop"]
+    if not casters or not camops:
+        return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
+    
+    # Create channel
+    from .views import create_private_match_channel_web
+    channel = await create_private_match_channel_web(bot, match, claims)
+    if channel:
+        await _refresh_discord_message(bot, match_id)
+        return web.json_response({"success": True, "channel_id": channel.id})
+    else:
+        return web.json_response({"success": False, "error": "Failed to create channel"}, status=500)
+
+
+async def api_crew_ready_handler(request: web.Request) -> web.Response:
+    """API endpoint to send crew ready message."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
+    
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    channel = guild.get_channel(match["private_channel_id"])
+    if not channel:
+        return web.json_response({"success": False, "error": "Channel not found"}, status=404)
+    
+    # Find team roles
+    team_a_lower = match['team_a'].lower()
+    team_b_lower = match['team_b'].lower()
+    team_pings = []
+    for role in guild.roles:
+        if role.name.lower().startswith("team:"):
+            team_name = role.name[5:].strip().lower()
+            if team_name == team_a_lower or team_name == team_b_lower:
+                team_pings.append(role.mention)
+    
+    if team_pings:
+        pings = " ".join(team_pings)
+        ready_msg = f"{pings}\n\n**The casting crew is ready!** You may start whenever you're ready."
+    else:
+        ready_msg = f"**{match['team_a']}** and **{match['team_b']}**\n\n**The casting crew is ready!** You may start whenever you're ready."
+    
+    await channel.send(ready_msg)
+    return web.json_response({"success": True})
+
+
+async def api_go_live_handler(request: web.Request) -> web.Response:
+    """API endpoint to post live announcement."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
+    
+    claims = await db.get_claims(match_id)
+    casters = [c for c in claims if c["role"] == "caster"]
+    camops = [c for c in claims if c["role"] == "camop"]
+    if not casters or not camops:
+        return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
+    
+    if not config.LIVE_ANNOUNCEMENT_CHANNEL_ID:
+        return web.json_response({"success": False, "error": "Live announcement channel not configured"}, status=500)
+    
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    live_channel = guild.get_channel(config.LIVE_ANNOUNCEMENT_CHANNEL_ID)
+    if not live_channel:
+        return web.json_response({"success": False, "error": "Live announcement channel not found"}, status=404)
+    
+    # Find team roles
+    team_a_lower = match['team_a'].lower()
+    team_b_lower = match['team_b'].lower()
+    team_mentions = []
+    for role in guild.roles:
+        if role.name.lower().startswith("team:"):
+            team_name = role.name[5:].strip().lower()
+            if team_name == team_a_lower:
+                team_mentions.append(role.mention)
+            elif team_name == team_b_lower:
+                team_mentions.append(role.mention)
+    
+    if len(team_mentions) >= 2:
+        teams_text = f"{team_mentions[0]} vs {team_mentions[1]}"
+    elif len(team_mentions) == 1:
+        if team_a_lower in team_mentions[0].lower():
+            teams_text = f"{team_mentions[0]} vs {match['team_b']}"
+        else:
+            teams_text = f"{match['team_a']} vs {team_mentions[0]}"
+    else:
+        teams_text = f"{match['team_a']} vs {match['team_b']}"
+    
+    live_ping = ""
+    if config.LIVE_PING_ROLE_ID:
+        live_role = guild.get_role(config.LIVE_PING_ROLE_ID)
+        if live_role:
+            live_ping = live_role.mention
+    
+    twitch_url = config.TWITCH_URL or "https://www.twitch.tv/echomasterleague"
+    announcement = f"# [EchoMasterLeague]({twitch_url}) We are live now casting {teams_text}"
+    if live_ping:
+        announcement += f"\n{live_ping}"
+    
+    await live_channel.send(announcement)
+    return web.json_response({"success": True})
+
+
 async def health_handler(request: web.Request) -> web.Response:
     """Health check endpoint."""
     return web.Response(text="OK")
@@ -584,6 +911,9 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/logout", logout_handler)
     app.router.add_post("/api/claim", api_claim_handler)
     app.router.add_post("/api/unclaim", api_unclaim_handler)
+    app.router.add_post("/api/create_channel", api_create_channel_handler)
+    app.router.add_post("/api/crew_ready", api_crew_ready_handler)
+    app.router.add_post("/api/go_live", api_go_live_handler)
     app.router.add_get("/health", health_handler)
     
     return app
