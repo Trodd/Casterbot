@@ -1,6 +1,6 @@
 # casterbot
 
-Discord bot that posts upcoming match claim messages (caster/cam-op/sideline buttons) and creates a private match channel once staffing is filled.
+Discord bot that posts upcoming match claim messages (caster/cam-op/sideline buttons) and creates a private match channel once staffing is filled. Includes a web interface for schedule viewing, claiming, and administration.
 
 ## Features
 
@@ -11,6 +11,15 @@ Discord bot that posts upcoming match claim messages (caster/cam-op/sideline but
 - **Sideline**: Sideline reporter slot
 - **Unclaim**: Remove yourself from any claimed slots
 - One-click claiming with role-based restrictions (optional)
+
+### Web Interface
+
+- **Broadcast Hub**: View all upcoming matches with claim status
+- **Discord OAuth2 Login**: Claim/unclaim matches directly from the web
+- **My Claims Filter**: Filter to show only matches you've claimed
+- **Leaderboard Tab**: View cast counts with cycle/season history
+- **Admin Panel**: Execute admin commands from the web (role-restricted)
+- **PWA Support**: Install as an app on Android/iOS for quick access
 
 ### Private Match Channels
 
@@ -32,6 +41,7 @@ All broadcast control buttons have **2-step confirmation** to prevent accidental
 
 - Tracks cast counts for casters, cam ops, and sideline crew
 - Only counts matches that go through the full workflow (channel closed properly)
+- Cycle/season archiving with historical leaderboard viewing
 - Admin commands to edit or reset counts
 
 ### Safety Features
@@ -54,9 +64,12 @@ All broadcast control buttons have **2-step confirmation** to prevent accidental
    - Read/Send Messages
    - Create Private Threads/Channels
 
-2. Copy `.env.example` to `.env` and fill in IDs.
+2. For web OAuth2 login, add a redirect URI in the Discord Developer Portal:
+   - `http://your-domain:8080/callback` (or your configured port)
 
-3. Create a virtual environment and install deps:
+3. Copy `.env.example` to `.env` and fill in IDs.
+
+4. Create a virtual environment and install deps:
 
 ```bash
 python -m venv .venv
@@ -68,11 +81,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-1. Run:
+5. Run:
 
 ```bash
 python -m casterbot
 ```
+
+The web interface will be available at `http://localhost:8080` (or your configured `WEB_PORT`).
 
 ## Commands
 
@@ -89,6 +104,9 @@ python -m casterbot
 - `/leaderboard` — Show the caster leaderboard (includes cam ops and sideline)
 - `/edit_leaderboard <user> <count>` — Edit a user's cast count (admin)
 - `/reset_leaderboard` — Reset the entire caster leaderboard (admin)
+- `/start_cycle <name> [weeks] [start_date] [end_date]` — Archive current leaderboard and start a new cycle
+- `/view_cycles` — View all archived cycles
+- `/view_cycle <cycle_id>` — View leaderboard for a specific archived cycle
 
 ### Settings
 
@@ -97,6 +115,28 @@ python -m casterbot
 ### Fun
 
 - `/margarita` — Request a margarita from the margarita machine 🍹
+
+## Web Admin Panel
+
+The admin panel (visible to users with `WEB_LEAD_ROLE_ID`) provides:
+
+- **Sync Matches** — Pull latest from Google Sheet
+- **Refresh Messages** — Update Discord claim embeds
+- **Force Create Channel** — Create match channel bypassing requirements
+- **Set Season/Week** — Update displayed season and week
+- **Edit Cast Count** — Manually set a user's cast count
+- **Reset Leaderboard** — Reset all counts to zero
+- **Archive Season** — Archive current leaderboard and start new cycle
+
+## Environment Variables
+
+See `.env.example` for all available configuration options including:
+
+- Discord bot token and guild ID
+- Channel IDs for claims, announcements, and transcripts
+- Role IDs for casters, cam ops, staff, and web admins
+- Google Sheet URL for match data
+- Web server port and OAuth2 credentials
 
 ## Configuration (.env)
 
