@@ -1829,10 +1829,36 @@ async def schedule_handler(request: web.Request) -> web.Response:
         else:
             # Invalid cycle, fall back to current
             selected_cycle_id = None
-            leaderboard_data = await db.get_caster_leaderboard(limit=25)
+            leaderboard_data = await db.get_caster_leaderboard(limit=100)
     else:
         selected_cycle_id = None
-        leaderboard_data = await db.get_caster_leaderboard(limit=25)
+        leaderboard_data = await db.get_caster_leaderboard(limit=100)
+    
+    # For current season, include all members with caster/camop roles (even with 0 casts)
+    if not selected_cycle_id and bot:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            # Get all role IDs to check
+            role_ids = set()
+            for rid in (config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID, 
+                       config.CASTER_TRAINING_ROLE_ID, config.CAMOP_TRAINING_ROLE_ID):
+                if rid:
+                    role_ids.add(rid)
+            
+            # Get existing user IDs from leaderboard
+            existing_user_ids = {entry["user_id"] for entry in leaderboard_data}
+            
+            # Find all members with these roles who aren't already in the leaderboard
+            for member in guild.members:
+                if member.bot:
+                    continue
+                member_role_ids = {r.id for r in member.roles}
+                if member_role_ids & role_ids:  # Has at least one of the roles
+                    if member.id not in existing_user_ids:
+                        leaderboard_data.append({"user_id": member.id, "cast_count": 0})
+            
+            # Sort by cast_count descending, then by user_id for consistency
+            leaderboard_data.sort(key=lambda x: (-x["cast_count"], x["user_id"]))
     
     # Build cycle selector dropdown
     if cycles:
