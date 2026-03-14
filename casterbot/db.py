@@ -502,3 +502,21 @@ async def get_setting(key: str) -> str | None:
         )
         row = await cursor.fetchone()
         return row[0] if row else None
+
+
+# -- Web View Functions --
+
+
+async def get_all_matches_sorted_by_time() -> list[dict]:
+    """Get all matches with claims, sorted by match_timestamp (ascending - upcoming first)."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT * FROM matches 
+            WHERE message_id IS NOT NULL OR private_channel_id IS NOT NULL
+            ORDER BY match_timestamp ASC NULLS LAST
+            """
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
