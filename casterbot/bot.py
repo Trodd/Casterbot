@@ -47,6 +47,17 @@ logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 logging.getLogger("discord.http").setLevel(logging.WARNING)
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 
+# Suppress Windows asyncio connection reset errors
+class ConnectionResetFilter(logging.Filter):
+    def filter(self, record):
+        if record.exc_info:
+            exc_type = record.exc_info[0]
+            if exc_type and issubclass(exc_type, ConnectionResetError):
+                return False
+        return True
+
+logging.getLogger("asyncio").addFilter(ConnectionResetFilter())
+
 
 class CasterBot(commands.Bot):
     def __init__(self):

@@ -723,6 +723,8 @@ HTML_TEMPLATE = """
             margin-bottom: 20px;
             display: flex;
             gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
         }
         .filter-btn {
             padding: 10px 20px;
@@ -744,6 +746,79 @@ HTML_TEMPLATE = """
             background: var(--echo-cyan);
             color: var(--echo-bg);
             box-shadow: 0 0 15px rgba(0,212,255,0.5);
+        }
+        .filter-select {
+            padding: 10px 20px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--echo-cyan);
+            border-radius: 4px;
+            color: var(--echo-cyan);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 200px;
+        }
+        .filter-select:hover {
+            background: rgba(0,212,255,0.1);
+            box-shadow: 0 0 10px rgba(0,212,255,0.3);
+        }
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--echo-cyan);
+            box-shadow: 0 0 15px rgba(0,212,255,0.4);
+        }
+        .filter-select option {
+            background: #1a1a2e;
+            color: var(--echo-text);
+            padding: 10px;
+        }
+        .filter-select optgroup {
+            background: #12121a;
+            color: var(--echo-orange);
+            font-weight: 600;
+            font-style: normal;
+        }
+        .filter-datetime {
+            padding: 10px 12px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--echo-cyan);
+            border-radius: 4px;
+            color: var(--echo-cyan);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .filter-datetime:hover {
+            background: rgba(0,212,255,0.1);
+            box-shadow: 0 0 10px rgba(0,212,255,0.3);
+        }
+        .filter-datetime:focus {
+            outline: none;
+            border-color: var(--echo-cyan);
+            box-shadow: 0 0 15px rgba(0,212,255,0.4);
+        }
+        .filter-datetime::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
+        .filter-clear-btn {
+            padding: 10px 16px;
+            background: rgba(255,106,0,0.1);
+            border: 1px solid var(--echo-orange);
+            border-radius: 4px;
+            color: var(--echo-orange);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75em;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .filter-clear-btn:hover {
+            background: rgba(255,106,0,0.2);
+            box-shadow: 0 0 10px rgba(255,106,0,0.3);
         }
         .no-claims-msg {
             text-align: center;
@@ -1085,6 +1160,10 @@ HTML_TEMPLATE = """
             border-color: var(--echo-cyan);
             box-shadow: 0 0 10px var(--echo-cyan-glow);
         }
+        .admin-select option {
+            background: #1a1a2e;
+            color: var(--echo-text);
+        }
         .admin-input::placeholder {
             color: var(--echo-text-dim);
         }
@@ -1203,115 +1282,183 @@ HTML_TEMPLATE = """
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             body {
-                padding: 10px;
+                padding: 12px;
             }
             .container {
                 max-width: 100%;
             }
+            .header {
+                margin-bottom: 20px;
+                padding-bottom: 16px;
+                border-bottom: 1px solid var(--echo-border);
+            }
             .header h1 {
-                font-size: 1.8em;
-                letter-spacing: 3px;
+                font-size: 1.6em;
+                letter-spacing: 2px;
+                margin-bottom: 6px;
             }
             .header .subtitle {
-                font-size: 0.75em;
-                letter-spacing: 4px;
+                font-size: 0.7em;
+                letter-spacing: 3px;
             }
             .season-badge {
-                flex-direction: column;
-                gap: 4px;
-                padding: 8px 12px;
-            }
-            .season-badge .separator {
-                display: none;
+                flex-direction: row;
+                gap: 8px;
+                padding: 8px 14px;
+                margin-top: 12px;
+                font-size: 0.85em;
             }
             .user-bar {
                 flex-direction: column;
-                gap: 10px;
+                gap: 12px;
                 text-align: center;
-                padding: 12px;
+                padding: 16px;
+                margin-bottom: 20px;
             }
-            .tabs {
-                flex-wrap: wrap;
-                gap: 0;
-            }
-            .tab-btn {
-                flex: 1;
-                min-width: 45%;
-                padding: 12px 10px;
-                font-size: 0.75em;
-                letter-spacing: 1px;
-            }
-            .filter-bar {
+            .user-info {
                 justify-content: center;
             }
-            .filter-btn {
-                width: 100%;
+            .tabs {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: 0;
+                margin-bottom: 24px;
+            }
+            .tab-btn {
+                padding: 14px 10px;
+                font-size: 0.7em;
+                letter-spacing: 1px;
                 text-align: center;
             }
-            .match-card {
+            /* Filter bar mobile redesign */
+            .filter-bar {
+                flex-direction: column;
+                gap: 12px;
                 padding: 16px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+            .filter-select {
+                width: 100%;
+                padding: 14px 16px;
+                font-size: 0.85em;
+            }
+            .filter-datetime {
+                width: 100%;
+                padding: 14px 16px;
+            }
+            .filter-clear-btn {
+                width: 100%;
+                padding: 14px 16px;
+            }
+            /* Match cards mobile */
+            .match-card {
+                padding: 18px;
+                margin-bottom: 16px;
             }
             .match-header {
                 flex-direction: column;
                 align-items: flex-start;
-                gap: 8px;
+                gap: 10px;
+                margin-bottom: 14px;
             }
             .match-header .teams {
-                font-size: 1.1em;
-                line-height: 1.3;
+                font-size: 1.15em;
+                line-height: 1.4;
+                letter-spacing: 1px;
             }
             .match-header .team-vs {
-                display: block;
-                margin: 4px 0;
+                display: inline;
+                margin: 0 8px;
+                font-size: 0.75em;
+            }
+            .match-id {
+                padding: 5px 10px;
+                font-size: 0.75em;
             }
             .match-time {
-                font-size: 0.85em;
+                font-size: 0.9em;
+                margin-bottom: 16px;
+                padding-bottom: 14px;
             }
             .time-relative {
                 display: block;
-                margin-top: 4px;
+                margin-top: 6px;
             }
+            .match-type {
+                font-size: 0.8em;
+                margin-top: 12px;
+            }
+            /* Claims grid mobile */
             .claims {
-                grid-template-columns: 1fr;
-                gap: 8px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
             }
             .claim-slot {
-                padding: 10px;
+                padding: 14px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
             }
             .slot-info {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 4px;
-            }
-            .broadcast-controls {
-                padding: 12px;
-            }
-            .broadcast-btns {
-                flex-direction: column;
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
                 gap: 8px;
             }
-            .broadcast-btn {
-                width: 100%;
-                padding: 12px;
+            .role-label {
+                font-size: 0.75em;
+            }
+            .holder-name, .open-text {
+                font-size: 0.95em;
             }
             .slot-buttons {
                 width: 100%;
-                margin-top: 8px;
+                display: flex;
+                gap: 8px;
             }
             .slot-buttons .claim-btn,
+            .slot-buttons .unclaim-btn,
             .slot-buttons .assign-btn {
                 flex: 1;
-                padding: 10px 8px;
+                padding: 12px 10px;
                 font-size: 0.75em;
+                min-height: 44px;
+            }
+            /* Broadcast controls mobile */
+            .broadcast-controls {
+                padding: 16px;
+                margin-top: 16px;
+            }
+            .broadcast-controls h4 {
+                font-size: 0.85em;
+                margin-bottom: 14px;
+            }
+            .broadcast-btns {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .broadcast-btn {
+                width: 100%;
+                padding: 14px;
+                font-size: 0.8em;
             }
             /* Leaderboard mobile */
-            .leaderboard-row {
-                grid-template-columns: 50px 1fr 60px 40px;
-                padding: 12px 14px;
+            .leaderboard-header {
+                padding: 16px;
             }
-            .save-avatar-btn {
-                padding: 4px 6px;
-                font-size: 0.75em;
+            .leaderboard-header h2 {
+                font-size: 1em;
+            }
+            .leaderboard-row {
+                grid-template-columns: 45px 1fr 55px 42px;
+                padding: 14px 12px;
+                gap: 10px;
+            }
+            .rank {
+                font-size: 1em;
             }
             .caster-avatar {
                 width: 32px;
@@ -1321,80 +1468,144 @@ HTML_TEMPLATE = """
                 font-size: 0.9em;
             }
             .cast-count {
-                font-size: 1.2em;
+                font-size: 1.1em;
             }
             .cast-label {
-                font-size: 0.65em;
+                font-size: 0.6em;
+            }
+            .save-avatar-btn {
+                padding: 5px 7px;
+                font-size: 0.7em;
             }
             .cycle-selector {
                 flex-direction: column;
-                gap: 8px;
+                gap: 10px;
+                margin-bottom: 20px;
             }
             .cycle-select {
                 width: 100%;
+                padding: 12px;
             }
             .cycle-info {
                 flex-direction: column;
-                gap: 8px;
+                gap: 10px;
+                padding: 14px;
+                margin-bottom: 20px;
             }
             .cycle-info-item {
                 flex-direction: row;
                 justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid var(--echo-border);
+            }
+            .cycle-info-item:last-child {
+                border-bottom: none;
             }
             .cycle-history {
                 grid-template-columns: 1fr;
+                gap: 12px;
             }
             .cycle-card {
-                padding: 14px;
+                padding: 16px;
             }
             /* Admin panel mobile */
             .admin-section {
-                padding: 14px;
+                padding: 16px;
+                margin-bottom: 16px;
+            }
+            .admin-section-header h3 {
+                font-size: 1em;
             }
             .admin-row {
-                padding: 12px 0;
+                padding: 14px 0;
+            }
+            .admin-row-desc {
+                font-size: 0.85em;
+                margin-bottom: 14px;
             }
             .admin-form {
                 flex-direction: column;
-                gap: 10px;
+                gap: 12px;
             }
             .admin-input-group {
                 width: 100%;
             }
+            .admin-input-group label {
+                font-size: 0.75em;
+                margin-bottom: 6px;
+            }
             .admin-input, .admin-select {
                 width: 100%;
+                padding: 12px;
+                font-size: 0.95em;
             }
             .admin-btn {
                 width: 100%;
-                padding: 12px;
+                padding: 14px;
+                font-size: 0.85em;
+            }
+            /* Modal mobile */
+            .confirm-box {
+                margin: 16px;
+                padding: 24px 20px;
+            }
+            .confirm-btns {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .confirm-btns button {
+                width: 100%;
+                padding: 14px;
+            }
+            .assign-modal-box {
+                margin: 12px;
+                padding: 20px;
+                max-height: 85vh;
+            }
+            .assign-user-item {
+                padding: 14px 12px;
+            }
+            /* Toast mobile */
+            .toast {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+                text-align: center;
+            }
+            /* Hide hex decoration on mobile */
+            .hex-bg {
+                display: none;
             }
         }
         
         @media (max-width: 480px) {
             body {
-                padding: 8px;
+                padding: 10px;
             }
             .header h1 {
-                font-size: 1.4em;
-                letter-spacing: 2px;
+                font-size: 1.3em;
+                letter-spacing: 1px;
             }
             .header .subtitle {
-                font-size: 0.65em;
+                font-size: 0.6em;
+                letter-spacing: 2px;
+            }
+            .season-badge {
+                font-size: 0.75em;
+                padding: 6px 10px;
             }
             .tab-btn {
-                padding: 10px 8px;
-                font-size: 0.7em;
+                padding: 12px 8px;
+                font-size: 0.65em;
+                letter-spacing: 0.5px;
             }
             .match-header .teams {
                 font-size: 1em;
             }
             .leaderboard-row {
-                grid-template-columns: 40px 1fr 50px 36px;
-                padding: 10px;
-            }
-            .save-avatar-btn {
-                padding: 3px 5px;
-                font-size: 0.7em;
+                grid-template-columns: 38px 1fr 48px 38px;
+                padding: 12px 10px;
+                gap: 8px;
             }
             .rank {
                 font-size: 0.9em;
@@ -1406,32 +1617,79 @@ HTML_TEMPLATE = """
             .caster-name {
                 font-size: 0.85em;
             }
+            .cast-count {
+                font-size: 1em;
+            }
         }
         
         /* Touch-friendly improvements */
         @media (pointer: coarse) {
-            .claim-btn, .unclaim-btn, .assign-btn, .broadcast-btn, .admin-btn, .filter-btn, .tab-btn {
-                min-height: 44px;
+            .claim-btn, .unclaim-btn, .assign-btn, .broadcast-btn, .admin-btn, .filter-btn, .tab-btn, .filter-select, .filter-datetime, .filter-clear-btn {
+                min-height: 48px;
             }
             .claim-slot {
-                min-height: 50px;
+                min-height: 60px;
             }
             .assign-user-item {
-                min-height: 48px;
+                min-height: 52px;
             }
         }
         
         /* Safe area for notched phones */
         @supports (padding: max(0px)) {
             body {
-                padding-left: max(10px, env(safe-area-inset-left));
-                padding-right: max(10px, env(safe-area-inset-right));
-                padding-bottom: max(10px, env(safe-area-inset-bottom));
+                padding-left: max(12px, env(safe-area-inset-left));
+                padding-right: max(12px, env(safe-area-inset-right));
+                padding-bottom: max(12px, env(safe-area-inset-bottom));
             }
+        }
+        
+        /* Pull-to-refresh styles */
+        .pull-indicator {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(-60px);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--echo-panel);
+            border: 2px solid var(--echo-orange);
+            border-radius: 50%;
+            z-index: 9999;
+            transition: transform 0.2s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 15px var(--echo-orange-glow);
+        }
+        .pull-indicator.visible {
+            transform: translateX(-50%) translateY(20px);
+        }
+        .pull-indicator.refreshing {
+            transform: translateX(-50%) translateY(20px);
+        }
+        .pull-indicator svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--echo-orange);
+            transition: transform 0.2s ease;
+        }
+        .pull-indicator.refreshing svg {
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .pull-indicator .pull-text {
+            display: none;
         }
     </style>
 </head>
 <body>
+    <div class="pull-indicator" id="pull-indicator">
+        <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </div>
     <div class="hex-bg"></div>
     <div class="container">
         <div class="header">
@@ -1462,6 +1720,74 @@ HTML_TEMPLATE = """
         <p class="refresh-info">// AUTO-REFRESH: 60 SECONDS //</p>
     </div>
     <script>
+        // Pull-to-refresh for mobile
+        (function() {
+            const indicator = document.getElementById('pull-indicator');
+            let startY = 0;
+            let currentY = 0;
+            let pulling = false;
+            let refreshing = false;
+            const threshold = 80;
+            
+            function isTouchDevice() {
+                return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            }
+            
+            if (isTouchDevice()) {
+                document.addEventListener('touchstart', function(e) {
+                    if (window.scrollY === 0 && !refreshing) {
+                        startY = e.touches[0].pageY;
+                        pulling = true;
+                    }
+                }, { passive: true });
+                
+                document.addEventListener('touchmove', function(e) {
+                    if (!pulling || refreshing) return;
+                    currentY = e.touches[0].pageY;
+                    const pullDistance = currentY - startY;
+                    
+                    if (pullDistance > 0 && window.scrollY === 0) {
+                        const progress = Math.min(pullDistance / threshold, 1);
+                        indicator.style.transform = `translateX(-50%) translateY(${-60 + (80 * progress)}px)`;
+                        indicator.style.opacity = progress;
+                        
+                        // Rotate arrow based on progress
+                        const rotation = progress * 180;
+                        indicator.querySelector('svg').style.transform = `rotate(${rotation}deg)`;
+                        
+                        if (pullDistance > threshold) {
+                            indicator.classList.add('visible');
+                        }
+                    }
+                }, { passive: true });
+                
+                document.addEventListener('touchend', function(e) {
+                    if (!pulling || refreshing) return;
+                    const pullDistance = currentY - startY;
+                    
+                    if (pullDistance > threshold && window.scrollY === 0) {
+                        refreshing = true;
+                        indicator.classList.add('refreshing');
+                        indicator.style.transform = 'translateX(-50%) translateY(20px)';
+                        indicator.style.opacity = 1;
+                        indicator.querySelector('svg').style.transform = '';
+                        
+                        setTimeout(() => {
+                            location.reload();
+                        }, 300);
+                    } else {
+                        indicator.style.transform = 'translateX(-50%) translateY(-60px)';
+                        indicator.style.opacity = 0;
+                        indicator.classList.remove('visible');
+                    }
+                    
+                    pulling = false;
+                    startY = 0;
+                    currentY = 0;
+                }, { passive: true });
+            }
+        })();
+        
         async function claimSlot(matchId, role, slot) {
             try {
                 const resp = await fetch('/api/claim', {
@@ -1690,33 +2016,77 @@ HTML_TEMPLATE = """
             selectCycle(cycleId);
         }
         
-        // Filter for "My Claims" only
-        let myClaimsFilterActive = false;
-        function toggleMyClaimsFilter() {
-            myClaimsFilterActive = !myClaimsFilterActive;
-            const btn = document.getElementById('filter-my-claims');
+        // Schedule filter
+        function applyScheduleFilter() {
+            const filterValue = document.getElementById('schedule-filter').value;
+            // Clear datetime input when using dropdown
+            document.getElementById('filter-datetime').value = '';
+            applyFilters();
+        }
+        
+        function applyDateTimeFilter() {
+            // Reset dropdown to "all" when using datetime
+            document.getElementById('schedule-filter').value = 'all';
+            applyFilters();
+        }
+        
+        function clearFilters() {
+            document.getElementById('schedule-filter').value = 'all';
+            document.getElementById('filter-datetime').value = '';
+            applyFilters();
+        }
+        
+        function applyFilters() {
+            const filterValue = document.getElementById('schedule-filter').value;
+            const filterDateTime = document.getElementById('filter-datetime').value;
             const cards = document.querySelectorAll('.match-card');
             const noClaimsMsg = document.getElementById('no-claims-msg');
+            let visibleCount = 0;
             
-            if (myClaimsFilterActive) {
-                btn.classList.add('active');
-                btn.textContent = 'Show All Matches';
-                let visibleCount = 0;
-                cards.forEach(card => {
-                    if (card.dataset.myClaim === 'true') {
-                        card.classList.remove('filtered-out');
-                        visibleCount++;
-                    } else {
-                        card.classList.add('filtered-out');
-                    }
-                });
-                noClaimsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
-            } else {
-                btn.classList.remove('active');
-                btn.textContent = 'Show My Claims Only';
-                cards.forEach(card => card.classList.remove('filtered-out'));
-                noClaimsMsg.style.display = 'none';
-            }
+            // Get today's and tomorrow's date strings (local time, not UTC)
+            const now = new Date();
+            const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+            const tmrw = new Date(now.getTime() + 86400000);
+            const tomorrow = tmrw.getFullYear() + '-' + String(tmrw.getMonth() + 1).padStart(2, '0') + '-' + String(tmrw.getDate()).padStart(2, '0');
+            
+            cards.forEach(card => {
+                let show = true;
+                const cardDate = card.dataset.date;
+                const cardTimestamp = parseInt(card.dataset.timestamp) || 0;
+                
+                // Apply dropdown filter
+                if (filterValue === 'all') {
+                    show = true;
+                } else if (filterValue === 'my-claims') {
+                    show = card.dataset.myClaim === 'true';
+                } else if (filterValue === 'open-slots') {
+                    show = card.dataset.hasOpen === 'true';
+                } else if (filterValue === 'live-soon') {
+                    show = card.dataset.status === 'live' || card.dataset.status === 'soon';
+                } else if (filterValue === 'today') {
+                    show = cardDate === today;
+                } else if (filterValue === 'tomorrow') {
+                    show = cardDate === tomorrow;
+                } else if (filterValue.startsWith('type:')) {
+                    const matchType = filterValue.substring(5);
+                    show = card.dataset.matchType === matchType;
+                }
+                
+                // Apply datetime filter if set (show matches starting at or after this datetime)
+                if (show && filterDateTime) {
+                    const filterTimestamp = new Date(filterDateTime).getTime() / 1000;
+                    show = cardTimestamp >= filterTimestamp;
+                }
+                
+                if (show) {
+                    card.classList.remove('filtered-out');
+                    visibleCount++;
+                } else {
+                    card.classList.add('filtered-out');
+                }
+            });
+            
+            noClaimsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
         }
         
         // Admin functions
@@ -2126,8 +2496,27 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
     
     my_claim_attr = ' data-my-claim="true"' if has_my_claim else ''
     
+    # Calculate additional filter attributes
+    total_slots = 4  # caster1, caster2, camop, sideline
+    filled_slots = len(claims)
+    has_open = filled_slots < total_slots
+    open_attr = ' data-has-open="true"' if has_open else ''
+    status_attr = f' data-status="{status}"'
+    match_type_attr = f' data-match-type="{match.get("match_type", "")}"' if match.get("match_type") else ''
+    
+    # Date and timestamp for filtering - use timestamp to derive normalized YYYY-MM-DD date
+    match_timestamp = match.get("match_timestamp", 0)
+    if match_timestamp:
+        from datetime import datetime
+        from dateutil import tz as dateutil_tz
+        match_dt = datetime.fromtimestamp(match_timestamp, tz=dateutil_tz.gettz(config.TIMEZONE))
+        normalized_date = match_dt.strftime("%Y-%m-%d")
+    else:
+        normalized_date = match.get("match_date", "")
+    date_attr = f' data-date="{normalized_date}" data-timestamp="{match_timestamp}"'
+    
     return f'''
-        <div class="{card_class}"{my_claim_attr}>
+        <div class="{card_class}"{my_claim_attr}{open_attr}{status_attr}{match_type_attr}{date_attr}>
             <div class="match-header">
                 <span class="teams">{match["team_a"]}<span class="team-vs">vs</span>{match["team_b"]}</span>
                 <span class="match-id">#{match.get("simple_id", "?")}</span>
@@ -2460,18 +2849,42 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 </div>
             '''
     
+    # Build schedule content - fetch matches first (needed for filter bar)
+    matches = await db.get_all_matches_sorted_by_time()
+    
     # Build filter bar (only for logged in users)
     if session:
-        filter_bar = '''
+        # Collect unique match types for filter options
+        match_types = set()
+        match_types.add("Challenge")  # Always include Challenge
+        for match in matches:
+            if match.get("match_type"):
+                match_types.add(match["match_type"])
+        
+        match_type_options = ''.join(f'<option value="type:{mt}">{mt}</option>' for mt in sorted(match_types))
+        
+        # Add optgroup separators for better organization
+        filter_bar = f'''
             <div class="filter-bar">
-                <button class="filter-btn" id="filter-my-claims" onclick="toggleMyClaimsFilter()">Show My Claims Only</button>
+                <select class="filter-select" id="schedule-filter" onchange="applyScheduleFilter()">
+                    <option value="all">All Matches</option>
+                    <optgroup label="Status">
+                        <option value="my-claims">My Claims Only</option>
+                        <option value="open-slots">Matches With Open Slots</option>
+                        <option value="live-soon">Live / Starting Soon</option>
+                    </optgroup>
+                    <optgroup label="Date">
+                        <option value="today">Today</option>
+                        <option value="tomorrow">Tomorrow</option>
+                    </optgroup>
+                    <optgroup label="Match Type">{match_type_options}</optgroup>
+                </select>
+                <input type="datetime-local" class="filter-datetime" id="filter-datetime" onchange="applyDateTimeFilter()" title="Filter by date/time (matches starting at or after)">
+                <button class="filter-clear-btn" onclick="clearFilters()">Clear</button>
             </div>
         '''
     else:
         filter_bar = ''
-    
-    # Build schedule content
-    matches = await db.get_all_matches_sorted_by_time()
     
     if not matches:
         content = '''
