@@ -124,6 +124,10 @@ class CasterBot(commands.Bot):
         await self.wait_until_ready()
         try:
             await sync_matches(self)
+            # Check if leaderboard cycle has ended
+            cycle_id = await db.check_cycle_end()
+            if cycle_id:
+                log.info(f"Leaderboard cycle ended and archived (#{cycle_id})")
         except Exception as e:
             log.exception(f"Sync loop error: {e}")
 

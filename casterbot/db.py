@@ -414,8 +414,17 @@ async def set_cast_count(user_id: int, count: int) -> None:
 # -- Leaderboard Cycle Functions --
 
 
-async def archive_cycle(cycle_name: str, weeks: int, start_date: str, end_date: str) -> int:
-    """Archive current leaderboard to a new cycle. Returns the cycle_id."""
+async def archive_cycle(cycle_name: str, weeks: int = 0, start_date: str = "", end_date: str = "") -> int:
+    """Archive current leaderboard to a new cycle and reset. Returns the cycle_id."""
+    from datetime import datetime
+    
+    # Auto-set today's date as end date if not provided
+    today = datetime.now().strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = today
+    if not start_date:
+        start_date = today
+    
     async with aiosqlite.connect(config.DB_PATH) as db:
         # Create the cycle record
         cursor = await db.execute(
@@ -438,8 +447,159 @@ async def archive_cycle(cycle_name: str, weeks: int, start_date: str, end_date: 
         
         # Reset current leaderboard
         await db.execute("DELETE FROM caster_stats")
+        
+        # Clear active cycle
+        await db.execute("DELETE FROM settings WHERE key LIKE 'active_cycle_%'")
+        
         await db.commit()
         return cycle_id
+
+
+async def start_cycle(cycle_name: str, weeks: int) -> dict:
+    """Start a new active cycle. Archives current leaderboard first if there's data."""
+    from datetime import datetime, timedelta
+    
+    today = datetime.now()
+    start_date = today.strftime("%Y-%m-%d")
+    end_date = (today + timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+    
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # Check if there's existing stats to archive
+        cursor = await db.execute("SELECT COUNT(*) FROM caster_stats WHERE cast_count > 0")
+        row = await cursor.fetchone()
+        has_stats = row[0] > 0
+        
+        # Check if there's an active cycle
+        cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_name'")
+        row = await cursor.fetchone()
+        old_cycle_name = row[0] if row else None
+        
+        # Archive if there's data
+        archived_id = None
+        if has_stats and old_cycle_name:
+            # Get old cycle dates
+            cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_start'")
+            row = await cursor.fetchone()
+            old_start = row[0] if row else start_date
+            
+            cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_weeks'")
+            row = await cursor.fetchone()
+            old_weeks = int(row[0]) if row else weeks
+            
+            cursor = await db.execute(
+                """
+                INSERT INTO leaderboard_cycles (cycle_name, weeks, start_date, end_date)
+                VALUES (?, ?, ?, ?)
+                """,
+                (old_cycle_name, old_weeks, old_start, start_date),
+            )
+            archived_id = cursor.lastrowid
+            
+            await db.execute(
+                """
+                INSERT INTO leaderboard_archive (cycle_id, user_id, cast_count)
+                SELECT ?, user_id, cast_count FROM caster_stats WHERE cast_count > 0
+                """,
+                (archived_id,),
+            )
+            await db.execute("DELETE FROM caster_stats")
+        
+        # Set new active cycle
+        await db.execute("DELETE FROM settings WHERE key LIKE 'active_cycle_%'")
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_cycle_name', ?)", (cycle_name,))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_cycle_weeks', ?)", (str(weeks),))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_cycle_start', ?)", (start_date,))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_cycle_end', ?)", (end_date,))
+        
+        await db.commit()
+        
+        return {
+            "name": cycle_name,
+            "weeks": weeks,
+            "start_date": start_date,
+            "end_date": end_date,
+            "archived_id": archived_id,
+        }
+
+
+async def get_active_cycle() -> dict | None:
+    """Get the currently active cycle, or None."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_name'")
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        
+        name = row[0]
+        
+        cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_weeks'")
+        row = await cursor.fetchone()
+        weeks = int(row[0]) if row else 0
+        
+        cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_start'")
+        row = await cursor.fetchone()
+        start_date = row[0] if row else ""
+        
+        cursor = await db.execute("SELECT value FROM settings WHERE key = 'active_cycle_end'")
+        row = await cursor.fetchone()
+        end_date = row[0] if row else ""
+        
+        return {
+            "name": name,
+            "weeks": weeks,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
+
+async def end_active_cycle() -> int | None:
+    """End the active cycle now and archive. Returns cycle_id or None."""
+    from datetime import datetime
+    
+    active = await get_active_cycle()
+    if not active:
+        return None
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # Archive
+        cursor = await db.execute(
+            """
+            INSERT INTO leaderboard_cycles (cycle_name, weeks, start_date, end_date)
+            VALUES (?, ?, ?, ?)
+            """,
+            (active["name"], active["weeks"], active["start_date"], today),
+        )
+        cycle_id = cursor.lastrowid
+        
+        await db.execute(
+            """
+            INSERT INTO leaderboard_archive (cycle_id, user_id, cast_count)
+            SELECT ?, user_id, cast_count FROM caster_stats WHERE cast_count > 0
+            """,
+            (cycle_id,),
+        )
+        await db.execute("DELETE FROM caster_stats")
+        await db.execute("DELETE FROM settings WHERE key LIKE 'active_cycle_%'")
+        
+        await db.commit()
+        return cycle_id
+
+
+async def check_cycle_end() -> int | None:
+    """Check if active cycle has ended. If so, archive it. Returns cycle_id if archived."""
+    from datetime import datetime
+    
+    active = await get_active_cycle()
+    if not active or not active["end_date"]:
+        return None
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    if today >= active["end_date"]:
+        return await end_active_cycle()
+    
+    return None
 
 
 async def get_cycles() -> list[dict]:

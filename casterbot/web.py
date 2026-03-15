@@ -48,6 +48,45 @@ async def _is_admin(bot, user_id: int) -> bool:
         return False
 
 
+async def _is_crew_member(bot, user_id: int) -> bool:
+    """Check if a user has any caster/camop role (including training)."""
+    if not bot or not config.GUILD_ID:
+        return False
+    
+    # Get all allowed role IDs
+    allowed_roles = set()
+    if config.CASTER_ROLE_ID:
+        allowed_roles.add(config.CASTER_ROLE_ID)
+    if config.CAMOP_ROLE_ID:
+        allowed_roles.add(config.CAMOP_ROLE_ID)
+    if config.CASTER_TRAINING_ROLE_ID:
+        allowed_roles.add(config.CASTER_TRAINING_ROLE_ID)
+    if config.CAMOP_TRAINING_ROLE_ID:
+        allowed_roles.add(config.CAMOP_TRAINING_ROLE_ID)
+    if config.WEB_LEAD_ROLE_ID:
+        allowed_roles.add(config.WEB_LEAD_ROLE_ID)
+    
+    # If no roles configured, deny access
+    if not allowed_roles:
+        return False
+    
+    try:
+        guild = bot.get_guild(config.GUILD_ID)
+        if not guild:
+            return False
+        
+        member = guild.get_member(user_id)
+        if not member:
+            try:
+                member = await guild.fetch_member(user_id)
+            except Exception:
+                return False
+        
+        return any(role.id in allowed_roles for role in member.roles)
+    except Exception:
+        return False
+
+
 def _get_base_url(request: web.Request) -> str:
     """Get the base URL for OAuth redirects."""
     # Check for forwarded headers (behind proxy)
@@ -88,14 +127,14 @@ HTML_TEMPLATE = """
     <style>
         :root {
             --echo-orange: #ff6a00;
-            --echo-orange-glow: rgba(255, 106, 0, 0.4);
+            --echo-orange-glow: rgba(255, 106, 0, 0.6);
             --echo-cyan: #00d4ff;
-            --echo-cyan-glow: rgba(0, 212, 255, 0.4);
+            --echo-cyan-glow: rgba(0, 212, 255, 0.6);
             --echo-blue: #1a4fff;
             --echo-dark: #0a0a12;
             --echo-darker: #050508;
-            --echo-panel: rgba(15, 15, 25, 0.9);
-            --echo-border: rgba(255, 106, 0, 0.3);
+            --echo-panel: rgba(15, 15, 25, 0.97);
+            --echo-border: rgba(255, 106, 0, 0.5);
             --echo-text: #e8e8f0;
             --echo-text-dim: #8888a0;
             --echo-success: #00ff88;
@@ -370,6 +409,92 @@ HTML_TEMPLATE = """
         }
         .unclaim-btn:hover { 
             box-shadow: 0 0 20px rgba(255,51,102,0.5);
+        }
+        .assign-btn {
+            background: linear-gradient(180deg, var(--echo-cyan) 0%, #00a8cc 100%);
+            color: #001a1a;
+            box-shadow: 0 0 10px rgba(0,212,255,0.3);
+        }
+        .assign-btn:hover {
+            box-shadow: 0 0 20px rgba(0,212,255,0.5);
+            transform: translateY(-1px);
+        }
+        .slot-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .assign-modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .assign-modal-box {
+            background: #12121a;
+            border: 2px solid var(--echo-orange);
+            border-radius: 12px;
+            padding: 24px;
+            min-width: 320px;
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8), 0 0 20px var(--echo-orange-glow);
+        }
+        .assign-modal-box h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            margin-bottom: 16px;
+        }
+        .assign-modal-box p {
+            color: var(--echo-text-dim);
+            margin-bottom: 16px;
+            font-size: 0.9em;
+        }
+        .assign-user-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+        }
+        .assign-user-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            background: #1a1a24;
+            border: 1px solid var(--echo-border);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .assign-user-item:hover {
+            background: #252535;
+            border-color: var(--echo-cyan);
+        }
+        .assign-user-item img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+        }
+        .assign-user-item span {
+            flex: 1;
+        }
+        .assign-modal-close {
+            background: #2a2a3a;
+            color: var(--echo-text);
+            border: 1px solid var(--echo-border);
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+        }
+        .assign-modal-close:hover {
+            background: #3a3a4a;
+            border-color: var(--echo-orange);
         }
         .no-matches { 
             text-align: center; padding: 80px 20px; 
@@ -652,11 +777,32 @@ HTML_TEMPLATE = """
         }
         .leaderboard-row {
             display: grid;
-            grid-template-columns: 60px 1fr 120px;
+            grid-template-columns: 60px 1fr 120px 50px;
             align-items: center;
             padding: 16px 24px;
             border-bottom: 1px solid rgba(255,106,0,0.1);
             transition: all 0.3s;
+        }
+        .save-avatar-btn {
+            background: transparent;
+            border: 1px solid var(--echo-border);
+            color: var(--echo-text-dim);
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+        .save-avatar-btn:hover {
+            border-color: var(--echo-cyan);
+            color: var(--echo-cyan);
+            background: rgba(0,212,255,0.1);
+        }
+        .save-avatar-btn.saved {
+            border-color: #3ba55c;
+            color: #3ba55c;
+            background: rgba(59,165,92,0.1);
         }
         .leaderboard-row:hover {
             background: rgba(255,106,0,0.05);
@@ -1053,6 +1199,236 @@ HTML_TEMPLATE = """
             color: var(--echo-orange);
             font-size: 0.85em;
         }
+        
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .container {
+                max-width: 100%;
+            }
+            .header h1 {
+                font-size: 1.8em;
+                letter-spacing: 3px;
+            }
+            .header .subtitle {
+                font-size: 0.75em;
+                letter-spacing: 4px;
+            }
+            .season-badge {
+                flex-direction: column;
+                gap: 4px;
+                padding: 8px 12px;
+            }
+            .season-badge .separator {
+                display: none;
+            }
+            .user-bar {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+                padding: 12px;
+            }
+            .tabs {
+                flex-wrap: wrap;
+                gap: 0;
+            }
+            .tab-btn {
+                flex: 1;
+                min-width: 45%;
+                padding: 12px 10px;
+                font-size: 0.75em;
+                letter-spacing: 1px;
+            }
+            .filter-bar {
+                justify-content: center;
+            }
+            .filter-btn {
+                width: 100%;
+                text-align: center;
+            }
+            .match-card {
+                padding: 16px;
+            }
+            .match-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .match-header .teams {
+                font-size: 1.1em;
+                line-height: 1.3;
+            }
+            .match-header .team-vs {
+                display: block;
+                margin: 4px 0;
+            }
+            .match-time {
+                font-size: 0.85em;
+            }
+            .time-relative {
+                display: block;
+                margin-top: 4px;
+            }
+            .claims {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .claim-slot {
+                padding: 10px;
+            }
+            .slot-info {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+            .broadcast-controls {
+                padding: 12px;
+            }
+            .broadcast-btns {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .broadcast-btn {
+                width: 100%;
+                padding: 12px;
+            }
+            .slot-buttons {
+                width: 100%;
+                margin-top: 8px;
+            }
+            .slot-buttons .claim-btn,
+            .slot-buttons .assign-btn {
+                flex: 1;
+                padding: 10px 8px;
+                font-size: 0.75em;
+            }
+            /* Leaderboard mobile */
+            .leaderboard-row {
+                grid-template-columns: 50px 1fr 60px 40px;
+                padding: 12px 14px;
+            }
+            .save-avatar-btn {
+                padding: 4px 6px;
+                font-size: 0.75em;
+            }
+            .caster-avatar {
+                width: 32px;
+                height: 32px;
+            }
+            .caster-name {
+                font-size: 0.9em;
+            }
+            .cast-count {
+                font-size: 1.2em;
+            }
+            .cast-label {
+                font-size: 0.65em;
+            }
+            .cycle-selector {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .cycle-select {
+                width: 100%;
+            }
+            .cycle-info {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .cycle-info-item {
+                flex-direction: row;
+                justify-content: space-between;
+            }
+            .cycle-history {
+                grid-template-columns: 1fr;
+            }
+            .cycle-card {
+                padding: 14px;
+            }
+            /* Admin panel mobile */
+            .admin-section {
+                padding: 14px;
+            }
+            .admin-row {
+                padding: 12px 0;
+            }
+            .admin-form {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .admin-input-group {
+                width: 100%;
+            }
+            .admin-input, .admin-select {
+                width: 100%;
+            }
+            .admin-btn {
+                width: 100%;
+                padding: 12px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 8px;
+            }
+            .header h1 {
+                font-size: 1.4em;
+                letter-spacing: 2px;
+            }
+            .header .subtitle {
+                font-size: 0.65em;
+            }
+            .tab-btn {
+                padding: 10px 8px;
+                font-size: 0.7em;
+            }
+            .match-header .teams {
+                font-size: 1em;
+            }
+            .leaderboard-row {
+                grid-template-columns: 40px 1fr 50px 36px;
+                padding: 10px;
+            }
+            .save-avatar-btn {
+                padding: 3px 5px;
+                font-size: 0.7em;
+            }
+            .rank {
+                font-size: 0.9em;
+            }
+            .caster-avatar {
+                width: 28px;
+                height: 28px;
+            }
+            .caster-name {
+                font-size: 0.85em;
+            }
+        }
+        
+        /* Touch-friendly improvements */
+        @media (pointer: coarse) {
+            .claim-btn, .unclaim-btn, .assign-btn, .broadcast-btn, .admin-btn, .filter-btn, .tab-btn {
+                min-height: 44px;
+            }
+            .claim-slot {
+                min-height: 50px;
+            }
+            .assign-user-item {
+                min-height: 48px;
+            }
+        }
+        
+        /* Safe area for notched phones */
+        @supports (padding: max(0px)) {
+            body {
+                padding-left: max(10px, env(safe-area-inset-left));
+                padding-right: max(10px, env(safe-area-inset-right));
+                padding-bottom: max(10px, env(safe-area-inset-bottom));
+            }
+        }
     </style>
 </head>
 <body>
@@ -1121,6 +1497,80 @@ HTML_TEMPLATE = """
                 }
             } catch (e) {
                 showToast('Network error', 'error');
+            }
+        }
+        
+        let crewMembersCache = null;
+        async function showAssignModal(matchId, role, slot, label) {
+            // Fetch crew members if not cached
+            if (!crewMembersCache) {
+                try {
+                    const resp = await fetch('/api/crew-members');
+                    const data = await resp.json();
+                    if (data.success) {
+                        crewMembersCache = data.members;
+                    } else {
+                        showToast(data.error || 'Failed to load crew', 'error');
+                        return;
+                    }
+                } catch (e) {
+                    showToast('Network error', 'error');
+                    return;
+                }
+            }
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.className = 'assign-modal';
+            
+            let userList = crewMembersCache.map(m => `
+                <div class="assign-user-item" onclick="assignSlot('${matchId}', '${role}', ${slot}, '${m.user_id}', this)">
+                    <img src="${m.avatar_url}" alt="">
+                    <span>${m.display_name}</span>
+                </div>
+            `).join('');
+            
+            modal.innerHTML = `
+                <div class="assign-modal-box">
+                    <h3>Assign ${label}</h3>
+                    <p>Select a crew member to assign to this slot:</p>
+                    <div class="assign-user-list">
+                        ${userList || '<p>No crew members found</p>'}
+                    </div>
+                    <button class="assign-modal-close" onclick="this.closest('.assign-modal').remove()">Cancel</button>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Close on backdrop click
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
+        }
+        
+        async function assignSlot(matchId, role, slot, userId, btn) {
+            btn.style.opacity = '0.5';
+            btn.style.pointerEvents = 'none';
+            try {
+                const resp = await fetch('/api/claim', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId, role: role, slot: slot, assign_user_id: userId})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Assigned!', 'success');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast(data.error || 'Failed to assign', 'error');
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto';
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
             }
         }
         
@@ -1414,16 +1864,14 @@ HTML_TEMPLATE = """
         
         async function adminStartCycle() {
             const name = document.getElementById('cycle-name').value;
-            const weeks = document.getElementById('cycle-weeks').value;
-            const startDate = document.getElementById('cycle-start').value;
-            const endDate = document.getElementById('cycle-end').value;
+            const weeks = parseInt(document.getElementById('cycle-weeks').value) || 5;
             const result = document.getElementById('result-cycle');
             
             if (!name) {
                 result.innerHTML = '<span class="error">Enter a cycle name</span>';
                 return;
             }
-            if (!confirm('Archive current leaderboard as "' + name + '" and reset? This preserves history.')) {
+            if (!confirm('Start new ' + weeks + '-week cycle "' + name + '"? Current leaderboard will be archived.')) {
                 return;
             }
             try {
@@ -1431,17 +1879,13 @@ HTML_TEMPLATE = """
                     method: 'POST',
                     credentials: 'include',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        name: name,
-                        weeks: parseInt(weeks) || null,
-                        start_date: startDate || null,
-                        end_date: endDate || null
-                    })
+                    body: JSON.stringify({ name: name, weeks: weeks })
                 });
                 const data = await resp.json();
                 if (data.success) {
                     result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
-                    showToast('Cycle archived', 'success');
+                    showToast('Cycle started', 'success');
+                    setTimeout(() => location.reload(), 1000);
                 } else {
                     result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
                 }
@@ -1450,11 +1894,93 @@ HTML_TEMPLATE = """
             }
         }
         
+        async function adminEndCycle() {
+            const result = document.getElementById('result-cycle');
+            if (!confirm('End the current cycle now and archive the leaderboard?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/end-cycle', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Cycle ended', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
+        // Load active cycle info
+        (async function() {
+            try {
+                const resp = await fetch('/api/active-cycle');
+                const data = await resp.json();
+                const container = document.getElementById('active-cycle-info');
+                if (container && data.active) {
+                    const daysLeft = Math.ceil((new Date(data.end_date) - new Date()) / (1000*60*60*24));
+                    container.innerHTML = `
+                        <div style="padding: 15px; background: rgba(0,212,255,0.1); border: 1px solid var(--echo-cyan); border-radius: 8px; margin-bottom: 15px;">
+                            <div style="font-family: 'Orbitron', sans-serif; color: var(--echo-cyan); font-size: 1.1em; margin-bottom: 8px;">Active Cycle: ${data.name}</div>
+                            <div style="color: var(--echo-text-dim);">Started: ${data.start_date} | Ends: ${data.end_date} (${daysLeft > 0 ? daysLeft + ' days left' : 'Ending soon'})</div>
+                        </div>
+                    `;
+                } else if (container) {
+                    container.innerHTML = '<div style="color: var(--echo-text-dim); margin-bottom: 10px;">No active cycle. Start one below.</div>';
+                }
+            } catch(e) {}
+        })();
+        
         setTimeout(() => location.reload(), 60000);
         
         // Register Service Worker for PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
+        
+        // Save avatar image for OBS
+        async function saveAvatar(btn, avatarUrl, username) {
+            try {
+                btn.disabled = true;
+                btn.textContent = '...';
+                
+                // Fetch the image through our proxy to avoid CORS
+                const resp = await fetch('/api/proxy-avatar?url=' + encodeURIComponent(avatarUrl));
+                if (!resp.ok) throw new Error('Failed to fetch');
+                
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                
+                // Create download link
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = username.replace(/[^a-zA-Z0-9]/g, '_') + '.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                btn.textContent = '✓';
+                btn.classList.add('saved');
+                showToast('Avatar saved!', 'success');
+                setTimeout(() => {
+                    btn.textContent = 'Save';
+                    btn.classList.remove('saved');
+                    btn.disabled = false;
+                }, 2000);
+            } catch(e) {
+                btn.textContent = 'Save';
+                btn.disabled = false;
+                showToast('Failed to save avatar', 'error');
+            }
         }
     </script>
 </body>
@@ -1493,7 +2019,7 @@ def _format_time_web(match: dict) -> tuple[str, str, str]:
         return formatted, f"In {days}d", ""
 
 
-def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], current_user_id: int | None) -> str:
+def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], current_user_id: int | None, is_lead: bool = False) -> str:
     """Build HTML for a single match card."""
     formatted_time, relative, status = _format_time_web(match)
     match_id = match["match_id"]
@@ -1519,7 +2045,8 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
             is_mine = claim["user_id"] == current_user_id
             slot_class = "claim-slot mine" if is_mine else "claim-slot filled"
             
-            if is_mine and current_user_id:
+            # Show unclaim button if it's the user's own claim OR they're a lead
+            if is_mine or is_lead:
                 button = f'<button class="unclaim-btn" onclick="unclaimSlot(\'{match_id}\', \'{role}\', {slot})">Unclaim</button>'
             else:
                 button = ""
@@ -1534,8 +2061,15 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
                 </div>
             '''
         else:
+            # Anyone logged in can claim an open slot
             if current_user_id:
-                button = f'<button class="claim-btn" onclick="claimSlot(\'{match_id}\', \'{role}\', {slot})">Claim</button>'
+                claim_btn = f'<button class="claim-btn" onclick="claimSlot(\'{match_id}\', \'{role}\', {slot})">Claim</button>'
+                if is_lead:
+                    # Leads also get an assign button
+                    assign_btn = f'<button class="assign-btn" onclick="showAssignModal(\'{match_id}\', \'{role}\', {slot}, \'{label}\')">Assign</button>'
+                    button = f'{claim_btn}{assign_btn}'
+                else:
+                    button = claim_btn
             else:
                 button = ""
             return f'''
@@ -1544,7 +2078,7 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
                         <span class="role-label">{label}:</span>
                         <span class="open-text">Open</span>
                     </div>
-                    {button}
+                    <div class="slot-buttons">{button}</div>
                 </div>
             '''
     
@@ -1568,9 +2102,9 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
     can_ready = has_channel
     can_go_live = has_channel and has_caster and has_camop
     
-    # Build broadcast controls (only show if logged in)
+    # Build broadcast controls (show for leads OR users with a claim on this match)
     broadcast_html = ""
-    if current_user_id:
+    if is_lead or has_my_claim:
         create_disabled = "" if can_create else "disabled"
         ready_disabled = "" if can_ready else "disabled"
         live_disabled = "" if can_go_live else "disabled"
@@ -1701,6 +2235,163 @@ async def schedule_handler(request: web.Request) -> web.Response:
     session = _get_session(request)
     current_user_id = session["user_id"] if session else None
     
+    # Require login and crew role to view the page
+    if not session:
+        oauth_configured = config.DISCORD_CLIENT_ID and config.DISCORD_CLIENT_SECRET
+        if oauth_configured:
+            # Show login page
+            return web.Response(text=f'''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CasterBot - Login Required</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --echo-bg: #0a0a0f;
+            --echo-card: #12121a;
+            --echo-border: #2a2a3a;
+            --echo-orange: #ff6a00;
+            --echo-cyan: #00d4ff;
+            --echo-text: #e4e4e7;
+            --echo-text-dim: #8e9297;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: 'Inter', sans-serif;
+            background: var(--echo-bg);
+            color: var(--echo-text);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }}
+        .login-container {{
+            text-align: center;
+            padding: 40px;
+            background: var(--echo-card);
+            border: 1px solid var(--echo-border);
+            border-radius: 16px;
+            max-width: 400px;
+        }}
+        h1 {{
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-orange);
+            margin-bottom: 16px;
+        }}
+        p {{
+            color: var(--echo-text-dim);
+            margin-bottom: 24px;
+        }}
+        .login-btn {{
+            display: inline-block;
+            background: linear-gradient(135deg, #5865F2, #7289DA);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }}
+        .login-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(88,101,242,0.4);
+        }}
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>CASTERBOT</h1>
+        <p>Login with Discord to access the casting schedule.<br>Requires a Caster or CamOp role.</p>
+        <a href="/login" class="login-btn">Login with Discord</a>
+    </div>
+</body>
+</html>
+            ''', content_type='text/html')
+        else:
+            return web.Response(text="OAuth not configured", status=500)
+    
+    # Check if user has a crew role
+    is_crew = await _is_crew_member(bot, current_user_id)
+    if not is_crew:
+        display_name = session.get("global_name") or session["username"]
+        return web.Response(text=f'''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CasterBot - Access Denied</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --echo-bg: #0a0a0f;
+            --echo-card: #12121a;
+            --echo-border: #2a2a3a;
+            --echo-orange: #ff6a00;
+            --echo-cyan: #00d4ff;
+            --echo-text: #e4e4e7;
+            --echo-text-dim: #8e9297;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: 'Inter', sans-serif;
+            background: var(--echo-bg);
+            color: var(--echo-text);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }}
+        .denied-container {{
+            text-align: center;
+            padding: 40px;
+            background: var(--echo-card);
+            border: 1px solid var(--echo-border);
+            border-radius: 16px;
+            max-width: 450px;
+        }}
+        h1 {{
+            font-family: 'Orbitron', sans-serif;
+            color: #ed4245;
+            margin-bottom: 16px;
+        }}
+        p {{
+            color: var(--echo-text-dim);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }}
+        .user-info {{
+            color: var(--echo-text);
+            margin-bottom: 16px;
+        }}
+        .logout-btn {{
+            display: inline-block;
+            background: var(--echo-border);
+            color: var(--echo-text);
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+        }}
+        .logout-btn:hover {{
+            background: #3a3a4a;
+        }}
+    </style>
+</head>
+<body>
+    <div class="denied-container">
+        <h1>ACCESS DENIED</h1>
+        <p class="user-info">Logged in as <strong>{display_name}</strong></p>
+        <p>You need a Caster, CamOp, or Training role to access the casting schedule.</p>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+</body>
+</html>
+        ''', content_type='text/html')
+    
     # Check if user is admin
     is_admin = await _is_admin(bot, current_user_id) if current_user_id else False
     
@@ -1801,8 +2492,16 @@ async def schedule_handler(request: web.Request) -> web.Response:
         
         users: dict[int, str] = {}
         if bot:
+            guild = bot.get_guild(config.GUILD_ID)
             for user_id in all_user_ids:
                 try:
+                    # Try guild member first (more reliable)
+                    if guild:
+                        member = guild.get_member(user_id)
+                        if member:
+                            users[user_id] = member.display_name
+                            continue
+                    # Fall back to user lookup
                     user = bot.get_user(user_id) or await bot.fetch_user(user_id)
                     users[user_id] = user.display_name if hasattr(user, "display_name") else user.name
                 except Exception:
@@ -1811,7 +2510,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
         cards = []
         for match in matches:
             claims = match_claims.get(match["match_id"], [])
-            cards.append(_build_match_card(match, claims, users, current_user_id))
+            cards.append(_build_match_card(match, claims, users, current_user_id, is_admin))
         
         content = "\n".join(cards)
     
@@ -1909,6 +2608,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
         '''
     else:
         rows = []
+        guild = bot.get_guild(config.GUILD_ID) if bot else None
         for idx, entry in enumerate(leaderboard_data, start=1):
             user_id = entry["user_id"]
             cast_count = entry["cast_count"]
@@ -1919,10 +2619,17 @@ async def schedule_handler(request: web.Request) -> web.Response:
             
             if bot:
                 try:
-                    user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-                    user_name = user.display_name if hasattr(user, "display_name") else user.name
-                    if user.avatar:
-                        avatar_url = user.avatar.url
+                    # Try guild member first
+                    member = guild.get_member(user_id) if guild else None
+                    if member:
+                        user_name = member.display_name
+                        if member.avatar:
+                            avatar_url = member.avatar.url
+                    else:
+                        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+                        user_name = user.display_name if hasattr(user, "display_name") else user.name
+                        if user.avatar:
+                            avatar_url = user.avatar.url
                 except Exception:
                     pass
             
@@ -1940,6 +2647,9 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 rank_class = "rank-other"
                 row_class = "leaderboard-row"
             
+            # Escape quotes in avatar URL for JS, and username for filename
+            avatar_url_escaped = avatar_url.replace("'", "\\'")
+            user_name_escaped = user_name.replace("'", "\\'")
             rows.append(f'''
                 <div class="{row_class}">
                     <div class="rank {rank_class}">{idx}</div>
@@ -1951,6 +2661,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
                         {cast_count}
                         <div class="cast-label">casts</div>
                     </div>
+                    <button class="save-avatar-btn" onclick="saveAvatar(this, '{avatar_url_escaped}', '{user_name_escaped}')" title="Save profile picture">Save</button>
                 </div>
             ''')
         
@@ -2123,28 +2834,22 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 
                 <div class="admin-section">
                     <div class="admin-section-header">
-                        <h3>Archive Season</h3>
+                        <h3>Leaderboard Cycles</h3>
                     </div>
+                    <div class="admin-row" id="active-cycle-info"></div>
                     <div class="admin-row">
-                        <div class="admin-row-desc">Archive the current leaderboard and start a new cycle. This preserves all stats in history.</div>
+                        <div class="admin-row-desc">Start a new cycle. Leaderboard will auto-archive when the cycle ends.</div>
                         <div class="admin-form">
                             <div class="admin-input-group">
                                 <label>Cycle Name</label>
-                                <input type="text" class="admin-input" id="cycle-name" placeholder="e.g. Season 5">
+                                <input type="text" class="admin-input" id="cycle-name" placeholder="e.g. Season 5 Cycle 1" style="width: 200px;">
                             </div>
                             <div class="admin-input-group">
                                 <label>Weeks</label>
-                                <input type="number" class="admin-input" id="cycle-weeks" placeholder="10" min="1" style="width: 80px;">
+                                <input type="number" class="admin-input" id="cycle-weeks" placeholder="5" min="1" value="5" style="width: 80px;">
                             </div>
-                            <div class="admin-input-group">
-                                <label>Start Date</label>
-                                <input type="date" class="admin-input" id="cycle-start">
-                            </div>
-                            <div class="admin-input-group">
-                                <label>End Date</label>
-                                <input type="date" class="admin-input" id="cycle-end">
-                            </div>
-                            <button class="admin-btn success" onclick="adminStartCycle()">Archive & Start</button>
+                            <button class="admin-btn success" onclick="adminStartCycle()">Start Cycle</button>
+                            <button class="admin-btn danger" onclick="adminEndCycle()">End Now</button>
                         </div>
                         <div class="admin-result" id="result-cycle"></div>
                     </div>
@@ -2188,11 +2893,36 @@ async def api_claim_handler(request: web.Request) -> web.Response:
     match_id = data.get("match_id")
     role = data.get("role")
     slot = data.get("slot")
+    assign_user_id = data.get("assign_user_id")  # Optional: for leads to assign others
+    
+    # Convert assign_user_id to int if it's a string (preserves precision from JS)
+    if assign_user_id and isinstance(assign_user_id, str):
+        try:
+            assign_user_id = int(assign_user_id)
+        except ValueError:
+            return web.json_response({"success": False, "error": "Invalid user ID"}, status=400)
     
     if not all([match_id, role, slot]):
         return web.json_response({"success": False, "error": "Missing parameters"}, status=400)
     
     user_id = session["user_id"]
+    
+    # If assigning someone else, check if requester is a lead
+    if assign_user_id and assign_user_id != user_id:
+        bot = request.app.get("bot")
+        is_lead = False
+        if bot and config.WEB_LEAD_ROLE_ID:
+            guild = bot.get_guild(config.GUILD_ID)
+            if guild:
+                member = guild.get_member(user_id)
+                if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                    is_lead = True
+        
+        if not is_lead:
+            return web.json_response({"success": False, "error": "Only leads can assign others"}, status=403)
+        
+        # Use the assigned user ID
+        user_id = assign_user_id
     
     # Claim the slot
     await db.claim_slot(match_id, user_id, role, slot)
@@ -2225,13 +2955,27 @@ async def api_unclaim_handler(request: web.Request) -> web.Response:
     
     user_id = session["user_id"]
     
-    # Verify user owns this slot
+    # Check if user owns this slot OR is a lead
     current_holder = await db.get_slot_holder(match_id, role, slot)
-    if current_holder != user_id:
-        return web.json_response({"success": False, "error": "You don't hold this slot"}, status=403)
+    is_own_slot = (current_holder == user_id)
     
-    # Unclaim the slot
-    await db.unclaim_slot(match_id, user_id, role, slot)
+    # Check if user is a lead
+    is_lead = False
+    bot = request.app.get("bot")
+    if bot and config.WEB_LEAD_ROLE_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                is_lead = True
+    
+    # Allow if it's their own slot OR they're a lead
+    if not is_own_slot and not is_lead:
+        return web.json_response({"success": False, "error": "You can only unclaim your own slots"}, status=403)
+    
+    # Unclaim the slot - use current_holder if lead is removing someone else's claim
+    target_user_id = current_holder if (is_lead and not is_own_slot) else user_id
+    await db.unclaim_slot(match_id, target_user_id, role, slot)
     
     # Refresh Discord message if bot available
     bot = request.app.get("bot")
@@ -2285,6 +3029,22 @@ async def api_create_channel_handler(request: web.Request) -> web.Response:
     if not match:
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
+    # Check if user is lead OR has a claim on this match
+    user_id = session["user_id"]
+    claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in claims)
+    
+    is_lead = False
+    if config.WEB_LEAD_ROLE_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "Only crew members can manage broadcasts"}, status=403)
+    
     # Check if channel already exists
     if match.get("private_channel_id"):
         guild = bot.get_guild(config.GUILD_ID)
@@ -2294,8 +3054,7 @@ async def api_create_channel_handler(request: web.Request) -> web.Response:
                 return web.json_response({"success": False, "error": "Channel already exists"}, status=400)
         await db.clear_private_channel(match_id)
     
-    # Check requirements
-    claims = await db.get_claims(match_id)
+    # Check requirements (reuse claims from above)
     casters = [c for c in claims if c["role"] == "caster"]
     camops = [c for c in claims if c["role"] == "camop"]
     if not casters or not camops:
@@ -2333,6 +3092,22 @@ async def api_crew_ready_handler(request: web.Request) -> web.Response:
     match = await db.get_match(match_id)
     if not match:
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    # Check if user is lead OR has a claim on this match
+    user_id = session["user_id"]
+    claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in claims)
+    
+    is_lead = False
+    if config.WEB_LEAD_ROLE_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "Only crew members can manage broadcasts"}, status=403)
     
     if not match.get("private_channel_id"):
         return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
@@ -2388,12 +3163,28 @@ async def api_go_live_handler(request: web.Request) -> web.Response:
     if not match:
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
+    # Check if user is lead OR has a claim on this match
+    user_id = session["user_id"]
+    match_claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in match_claims)
+    
+    is_lead = False
+    if config.WEB_LEAD_ROLE_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "Only crew members can manage broadcasts"}, status=403)
+    
     if not match.get("private_channel_id"):
         return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
     
-    claims = await db.get_claims(match_id)
-    casters = [c for c in claims if c["role"] == "caster"]
-    camops = [c for c in claims if c["role"] == "camop"]
+    # Reuse match_claims from above
+    casters = [c for c in match_claims if c["role"] == "caster"]
+    camops = [c for c in match_claims if c["role"] == "camop"]
     if not casters or not camops:
         return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
     
@@ -2443,6 +3234,184 @@ async def api_go_live_handler(request: web.Request) -> web.Response:
     
     await live_channel.send(announcement)
     return web.json_response({"success": True})
+
+
+async def api_user_avatar_handler(request: web.Request) -> web.Response:
+    """API endpoint to get a user's avatar URL."""
+    user_id_str = request.query.get("user_id")
+    if not user_id_str:
+        return web.json_response({"success": False, "error": "Missing user_id parameter"}, status=400)
+    
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return web.json_response({"success": False, "error": "Invalid user_id"}, status=400)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        # Return default avatar if bot not available
+        default_avatar = (user_id >> 22) % 6
+        return web.json_response({
+            "success": True,
+            "user_id": user_id,
+            "avatar_url": f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png",
+            "username": f"User #{user_id}",
+            "display_name": f"User #{user_id}"
+        })
+    
+    try:
+        # Try guild member first
+        guild = bot.get_guild(config.GUILD_ID)
+        member = guild.get_member(user_id) if guild else None
+        
+        if member:
+            if member.avatar:
+                avatar_url = member.avatar.url
+            else:
+                default_avatar = (user_id >> 22) % 6
+                avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
+            
+            return web.json_response({
+                "success": True,
+                "user_id": user_id,
+                "avatar_url": avatar_url,
+                "username": member.name,
+                "display_name": member.display_name
+            })
+        
+        # Fall back to user lookup
+        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+        
+        if user.avatar:
+            avatar_url = user.avatar.url
+        else:
+            # Default avatar based on user ID
+            default_avatar = (user_id >> 22) % 6
+            avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
+        
+        return web.json_response({
+            "success": True,
+            "user_id": user_id,
+            "avatar_url": avatar_url,
+            "username": user.name,
+            "display_name": user.display_name if hasattr(user, "display_name") else user.name
+        })
+    except Exception as e:
+        # Return default avatar on error
+        default_avatar = (user_id >> 22) % 6
+        return web.json_response({
+            "success": True,
+            "user_id": user_id,
+            "avatar_url": f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png",
+            "username": f"User #{user_id}",
+            "display_name": f"User #{user_id}"
+        })
+
+
+async def api_proxy_avatar_handler(request: web.Request) -> web.Response:
+    """Proxy endpoint to download avatar images (bypasses CORS). Requires login."""
+    import aiohttp as aiohttp_client
+    
+    # Require login
+    session = _get_session(request)
+    if not session:
+        return web.Response(text="Login required", status=401)
+    
+    url = request.query.get("url")
+    if not url:
+        return web.Response(text="Missing url parameter", status=400)
+    
+    # Only allow Discord CDN URLs for security
+    allowed_domains = ["cdn.discordapp.com", "discord.com"]
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.netloc not in allowed_domains:
+        return web.Response(text="Invalid URL domain", status=400)
+    
+    try:
+        async with aiohttp_client.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return web.Response(text="Failed to fetch image", status=resp.status)
+                
+                content_type = resp.headers.get("Content-Type", "image/png")
+                data = await resp.read()
+                
+                return web.Response(
+                    body=data,
+                    content_type=content_type,
+                    headers={
+                        "Content-Disposition": "attachment",
+                        "Cache-Control": "public, max-age=3600"
+                    }
+                )
+    except Exception as e:
+        log.error(f"Avatar proxy error: {e}")
+        return web.Response(text="Failed to fetch image", status=500)
+
+
+async def api_crew_members_handler(request: web.Request) -> web.Response:
+    """API endpoint to get list of crew members (for lead assignment dropdown)."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    # Check if user is a lead
+    user_id = session["user_id"]
+    is_lead = False
+    guild = bot.get_guild(config.GUILD_ID)
+    if guild and config.WEB_LEAD_ROLE_ID:
+        member = guild.get_member(user_id)
+        if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+            is_lead = True
+    
+    if not is_lead:
+        return web.json_response({"success": False, "error": "Only leads can access crew list"}, status=403)
+    
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    # Get all crew role IDs
+    crew_role_ids = set()
+    if config.CASTER_ROLE_ID:
+        crew_role_ids.add(config.CASTER_ROLE_ID)
+    if config.CAMOP_ROLE_ID:
+        crew_role_ids.add(config.CAMOP_ROLE_ID)
+    if config.CASTER_TRAINING_ROLE_ID:
+        crew_role_ids.add(config.CASTER_TRAINING_ROLE_ID)
+    if config.CAMOP_TRAINING_ROLE_ID:
+        crew_role_ids.add(config.CAMOP_TRAINING_ROLE_ID)
+    
+    if not crew_role_ids:
+        return web.json_response({"success": False, "error": "No crew roles configured"}, status=500)
+    
+    # Fetch members from each crew role to ensure we have all of them
+    crew_members = []
+    seen_ids = set()
+    
+    for role_id in crew_role_ids:
+        role = guild.get_role(role_id)
+        if role:
+            for member in role.members:
+                if member.bot or member.id in seen_ids:
+                    continue
+                seen_ids.add(member.id)
+                avatar_url = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(member.id >> 22) % 6}.png"
+                crew_members.append({
+                    "user_id": str(member.id),  # String to preserve precision in JS
+                    "username": member.name,
+                    "display_name": member.display_name,
+                    "avatar_url": avatar_url
+                })
+    
+    # Sort by display name
+    crew_members.sort(key=lambda m: m["display_name"].lower())
+    
+    return web.json_response({"success": True, "members": crew_members})
 
 
 # Admin API helpers
@@ -2633,7 +3602,7 @@ async def api_admin_reset_leaderboard_handler(request: web.Request) -> web.Respo
 
 
 async def api_admin_start_cycle_handler(request: web.Request) -> web.Response:
-    """Admin API: Archive current leaderboard and start new cycle."""
+    """Admin API: Start a new leaderboard cycle."""
     session, error = await _check_admin(request)
     if error:
         return error
@@ -2644,19 +3613,46 @@ async def api_admin_start_cycle_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
     
     name = data.get("name")
+    weeks = data.get("weeks", 5)
+    
     if not name:
         return web.json_response({"success": False, "error": "Missing cycle name"}, status=400)
     
-    weeks = data.get("weeks") or 0
-    start_date = data.get("start_date") or ""
-    end_date = data.get("end_date") or ""
-    
     try:
-        cycle_id = await db.archive_cycle(name, weeks, start_date, end_date)
-        return web.json_response({"success": True, "message": f"Archived as '{name}' (cycle #{cycle_id})"})
+        result = await db.start_cycle(name, weeks)
+        msg = f"Started '{name}' ({weeks} weeks, ends {result['end_date']})"
+        if result.get("archived_id"):
+            msg += f" - Previous cycle archived"
+        return web.json_response({"success": True, "message": msg})
     except Exception as e:
         log.error(f"Admin start cycle failed: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_admin_end_cycle_handler(request: web.Request) -> web.Response:
+    """Admin API: End active cycle now."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        cycle_id = await db.end_active_cycle()
+        if cycle_id:
+            return web.json_response({"success": True, "message": f"Cycle ended and archived (#{cycle_id})"})
+        else:
+            return web.json_response({"success": False, "error": "No active cycle to end"}, status=400)
+    except Exception as e:
+        log.error(f"Admin end cycle failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+async def api_active_cycle_handler(request: web.Request) -> web.Response:
+    """API endpoint to get active cycle info."""
+    active = await db.get_active_cycle()
+    if active:
+        return web.json_response({"active": True, **active})
+    else:
+        return web.json_response({"active": False})
 
 
 async def health_handler(request: web.Request) -> web.Response:
@@ -2843,6 +3839,9 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/create_channel", api_create_channel_handler)
     app.router.add_post("/api/crew_ready", api_crew_ready_handler)
     app.router.add_post("/api/go_live", api_go_live_handler)
+    app.router.add_get("/api/user/avatar", api_user_avatar_handler)
+    app.router.add_get("/api/proxy-avatar", api_proxy_avatar_handler)
+    app.router.add_get("/api/crew-members", api_crew_members_handler)
     # Admin API routes
     app.router.add_post("/api/admin/sync", api_admin_sync_handler)
     app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
@@ -2851,6 +3850,8 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/edit-leaderboard", api_admin_edit_leaderboard_handler)
     app.router.add_post("/api/admin/reset-leaderboard", api_admin_reset_leaderboard_handler)
     app.router.add_post("/api/admin/start-cycle", api_admin_start_cycle_handler)
+    app.router.add_post("/api/admin/end-cycle", api_admin_end_cycle_handler)
+    app.router.add_get("/api/active-cycle", api_active_cycle_handler)
     app.router.add_get("/health", health_handler)
     # PWA routes
     app.router.add_get("/manifest.json", manifest_handler)
