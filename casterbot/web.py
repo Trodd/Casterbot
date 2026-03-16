@@ -852,32 +852,46 @@ HTML_TEMPLATE = """
         }
         .leaderboard-row {
             display: grid;
-            grid-template-columns: 60px 1fr 120px 50px;
+            grid-template-columns: 60px 1fr 120px;
             align-items: center;
             padding: 16px 24px;
             border-bottom: 1px solid rgba(255,106,0,0.1);
             transition: all 0.3s;
         }
-        .save-avatar-btn {
-            background: transparent;
-            border: 1px solid var(--echo-border);
-            color: var(--echo-text-dim);
-            padding: 6px 10px;
-            border-radius: 6px;
+        .caster-avatar-btn {
+            position: relative;
+            background: none;
+            border: none;
+            padding: 0;
             cursor: pointer;
-            font-size: 0.85em;
+            border-radius: 50%;
             transition: all 0.3s;
-            white-space: nowrap;
         }
-        .save-avatar-btn:hover {
+        .caster-avatar-btn:hover {
+            transform: scale(1.1);
+        }
+        .caster-avatar-btn:hover .caster-avatar {
             border-color: var(--echo-cyan);
-            color: var(--echo-cyan);
-            background: rgba(0,212,255,0.1);
+            box-shadow: 0 0 10px var(--echo-cyan-glow);
         }
-        .save-avatar-btn.saved {
+        .caster-avatar-btn::after {
+            content: 'Copy URL';
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.7em;
+            color: var(--echo-cyan);
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .caster-avatar-btn:hover::after {
+            opacity: 1;
+        }
+        .caster-avatar-btn.copied .caster-avatar {
             border-color: #3ba55c;
-            color: #3ba55c;
-            background: rgba(59,165,92,0.1);
+            box-shadow: 0 0 10px rgba(59,165,92,0.5);
         }
         .leaderboard-row:hover {
             background: rgba(255,106,0,0.05);
@@ -1453,7 +1467,7 @@ HTML_TEMPLATE = """
                 font-size: 1em;
             }
             .leaderboard-row {
-                grid-template-columns: 45px 1fr 55px 42px;
+                grid-template-columns: 45px 1fr 55px;
                 padding: 14px 12px;
                 gap: 10px;
             }
@@ -1473,9 +1487,8 @@ HTML_TEMPLATE = """
             .cast-label {
                 font-size: 0.6em;
             }
-            .save-avatar-btn {
-                padding: 5px 7px;
-                font-size: 0.7em;
+            .caster-avatar-btn::after {
+                display: none;
             }
             .cycle-selector {
                 flex-direction: column;
@@ -1603,7 +1616,7 @@ HTML_TEMPLATE = """
                 font-size: 1em;
             }
             .leaderboard-row {
-                grid-template-columns: 38px 1fr 48px 38px;
+                grid-template-columns: 38px 1fr 48px;
                 padding: 12px 10px;
                 gap: 8px;
             }
@@ -2316,40 +2329,28 @@ HTML_TEMPLATE = """
             navigator.serviceWorker.register('/sw.js').catch(() => {});
         }
         
-        // Save avatar image for OBS
-        async function saveAvatar(btn, avatarUrl, username) {
+        // Copy avatar URL to clipboard
+        async function copyAvatarUrl(btn, avatarUrl) {
             try {
-                btn.disabled = true;
-                btn.textContent = '...';
-                
-                // Fetch the image through our proxy to avoid CORS
-                const resp = await fetch('/api/proxy-avatar?url=' + encodeURIComponent(avatarUrl));
-                if (!resp.ok) throw new Error('Failed to fetch');
-                
-                const blob = await resp.blob();
-                const url = URL.createObjectURL(blob);
-                
-                // Create download link
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = username.replace(/[^a-zA-Z0-9]/g, '_') + '.png';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                btn.textContent = '✓';
-                btn.classList.add('saved');
-                showToast('Avatar saved!', 'success');
+                await navigator.clipboard.writeText(avatarUrl);
+                btn.classList.add('copied');
+                showToast('Avatar URL copied!', 'success');
                 setTimeout(() => {
-                    btn.textContent = 'Save';
-                    btn.classList.remove('saved');
-                    btn.disabled = false;
+                    btn.classList.remove('copied');
                 }, 2000);
             } catch(e) {
-                btn.textContent = 'Save';
-                btn.disabled = false;
-                showToast('Failed to save avatar', 'error');
+                // Fallback for older browsers
+                const textarea = document.createElement('textarea');
+                textarea.value = avatarUrl;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                btn.classList.add('copied');
+                showToast('Avatar URL copied!', 'success');
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                }, 2000);
             }
         }
     </script>
@@ -3060,21 +3061,21 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 rank_class = "rank-other"
                 row_class = "leaderboard-row"
             
-            # Escape quotes in avatar URL for JS, and username for filename
+            # Escape quotes in avatar URL for JS
             avatar_url_escaped = avatar_url.replace("'", "\\'")
-            user_name_escaped = user_name.replace("'", "\\'")
             rows.append(f'''
                 <div class="{row_class}">
                     <div class="rank {rank_class}">{idx}</div>
                     <div class="caster-info">
-                        <img src="{avatar_url}" class="caster-avatar" alt="">
+                        <button class="caster-avatar-btn" onclick="copyAvatarUrl(this, '{avatar_url_escaped}')" title="Copy avatar URL">
+                            <img src="{avatar_url}" class="caster-avatar" alt="">
+                        </button>
                         <span class="caster-name">{user_name}</span>
                     </div>
                     <div class="cast-count">
                         {cast_count}
                         <div class="cast-label">casts</div>
                     </div>
-                    <button class="save-avatar-btn" onclick="saveAvatar(this, '{avatar_url_escaped}', '{user_name_escaped}')" title="Save profile picture">Save</button>
                 </div>
             ''')
         
