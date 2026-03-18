@@ -166,49 +166,68 @@ async def sync_matches(bot: CasterBot) -> int:
     # this is likely a fetch failure - don't mark anything as missing
     if len(matches) == 0 and len(existing_matches) > 0:
         log.warning("Sheet returned 0 matches but we have existing matches - skipping (possible fetch failure)")
-    else:
-        channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        return 0
+    
+    channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+    current_time = int(time.time())
+    
+    for match in existing_matches:
+        # Check if match has expired (past match time) and has no private channel
+        match_ts = match.get("match_timestamp")
+        if match_ts and match_ts < current_time and not match.get("private_channel_id"):
+            # Match time has passed and no private channel was created - clean up
+            if channel and match.get("message_id"):
+                try:
+                    msg = await channel.fetch_message(match["message_id"])
+                    await msg.delete()
+                    log.info(f"Deleted expired claim message: {match['team_a']} vs {match['team_b']}")
+                except discord.NotFound:
+                    log.debug(f"Message already deleted for expired match: {match['match_id']}")
+                except Exception as e:
+                    log.error(f"Failed to delete message for expired match {match['match_id']}: {e}")
+            await db.delete_match(match["match_id"])
+            log.info(f"Removed expired match from DB: {match['team_a']} vs {match['team_b']}")
+            continue
         
-        for match in existing_matches:
-            if match["match_id"] not in sheet_match_ids:
-                # Match not in sheet
-                # Keep match if there's still an active private channel
-                if match.get("private_channel_id"):
-                    log.debug(f"Keeping {match['team_a']} vs {match['team_b']} - private channel still active")
-                    continue
-                
-                # Mark as missing and check if it's been missing long enough (5 minutes)
-                await db.mark_match_missing(match["match_id"])
-                missing_since = await db.get_missing_since(match["match_id"])
-                
-                if missing_since and (time.time() - missing_since) >= 300:  # 5 minutes
-                    # Been missing for 5+ minutes, safe to delete
-                    if channel and match.get("message_id"):
-                        try:
-                            msg = await channel.fetch_message(match["message_id"])
-                            await msg.delete()
-                            log.info(f"Deleted message for removed match: {match['team_a']} vs {match['team_b']}")
-                        except discord.NotFound:
-                            log.debug(f"Message already deleted for match: {match['match_id']}")
-                        except Exception as e:
-                            log.error(f"Failed to delete message for {match['match_id']}: {e}")
-                    await db.delete_match(match["match_id"])
-                    log.info(f"Removed match from DB (missing 5+ min): {match['team_a']} vs {match['team_b']}")
-                else:
-                    log.debug(f"Match {match['team_a']} vs {match['team_b']} missing from sheet, waiting before deletion...")
-            else:
-                # Match still on sheet - clear missing flag and verify message exists
-                await db.clear_match_missing(match["match_id"])
-                
+        if match["match_id"] not in sheet_match_ids:
+            # Match not in sheet
+            # Keep match if there's still an active private channel
+            if match.get("private_channel_id"):
+                log.debug(f"Keeping {match['team_a']} vs {match['team_b']} - private channel still active")
+                continue
+            
+            # Mark as missing and check if it's been missing long enough (5 minutes)
+            await db.mark_match_missing(match["match_id"])
+            missing_since = await db.get_missing_since(match["match_id"])
+            
+            if missing_since and (time.time() - missing_since) >= 300:  # 5 minutes
+                # Been missing for 5+ minutes, safe to delete
                 if channel and match.get("message_id"):
                     try:
-                        await channel.fetch_message(match["message_id"])
+                        msg = await channel.fetch_message(match["message_id"])
+                        await msg.delete()
+                        log.info(f"Deleted message for removed match: {match['team_a']} vs {match['team_b']}")
                     except discord.NotFound:
-                        # Message was deleted externally, clear ID so it gets reposted
-                        await db.clear_message_id(match["match_id"])
-                        log.info(f"Message missing for {match['team_a']} vs {match['team_b']}, will repost")
+                        log.debug(f"Message already deleted for match: {match['match_id']}")
                     except Exception as e:
-                        log.error(f"Error checking message for {match['match_id']}: {e}")
+                        log.error(f"Failed to delete message for {match['match_id']}: {e}")
+                await db.delete_match(match["match_id"])
+                log.info(f"Removed match from DB (missing 5+ min): {match['team_a']} vs {match['team_b']}")
+            else:
+                log.debug(f"Match {match['team_a']} vs {match['team_b']} missing from sheet, waiting before deletion...")
+        else:
+            # Match still on sheet - clear missing flag and verify message exists
+            await db.clear_match_missing(match["match_id"])
+            
+            if channel and match.get("message_id"):
+                try:
+                    await channel.fetch_message(match["message_id"])
+                except discord.NotFound:
+                    # Message was deleted externally, clear ID so it gets reposted
+                    await db.clear_message_id(match["match_id"])
+                    log.info(f"Message missing for {match['team_a']} vs {match['team_b']}, will repost")
+                except Exception as e:
+                    log.error(f"Error checking message for {match['match_id']}: {e}")
 
     new_count = 0
     for m in matches:
