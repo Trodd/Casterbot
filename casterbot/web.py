@@ -2302,6 +2302,37 @@ HTML_TEMPLATE = """
             }
         }
         
+        async function adminForceDelete() {
+            const matchId = document.getElementById('force-delete-match').value;
+            const result = document.getElementById('result-force-delete');
+            
+            if (!matchId) {
+                result.innerHTML = '<span class="error">Select a match</span>';
+                return;
+            }
+            if (!confirm('Force delete this match? This will delete the private channel (if any) and claim message. Leaderboard will NOT be updated.')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/force-delete', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ match_id: matchId })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Match force deleted', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
         // Load active cycle info
         (async function() {
             try {
@@ -3193,6 +3224,25 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 
                 <div class="admin-section">
                     <div class="admin-section-header">
+                        <h3>Force Delete Match</h3>
+                    </div>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Force delete a match without counting toward leaderboard. Deletes private channel and claim message.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Match</label>
+                                <select class="admin-select" id="force-delete-match">
+                                    {match_options}
+                                </select>
+                            </div>
+                            <button class="admin-btn danger" onclick="adminForceDelete()">Force Delete</button>
+                        </div>
+                        <div class="admin-result" id="result-force-delete"></div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
                         <h3>Season & Week</h3>
                     </div>
                     <div class="admin-row">
@@ -4060,6 +4110,64 @@ async def api_admin_end_cycle_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+async def api_admin_force_delete_handler(request: web.Request) -> web.Response:
+    """Admin API: Force delete a match without counting toward leaderboard."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    try:
+        deleted_items = []
+        
+        # Delete private channel if it exists
+        if match.get("private_channel_id") and bot:
+            try:
+                private_channel = bot.get_channel(match["private_channel_id"])
+                if private_channel:
+                    await private_channel.delete(reason="Force deleted via admin panel")
+                    deleted_items.append("private channel")
+            except Exception as e:
+                log.error(f"Failed to delete private channel: {e}")
+        
+        # Delete claim message if it exists
+        if match.get("message_id") and bot:
+            try:
+                from . import config
+                claim_channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+                if claim_channel:
+                    msg = await claim_channel.fetch_message(match["message_id"])
+                    await msg.delete()
+                    deleted_items.append("claim message")
+            except Exception as e:
+                log.error(f"Failed to delete claim message: {e}")
+        
+        # Delete match from DB (does NOT increment leaderboard)
+        await db.delete_match(match_id)
+        deleted_items.append("match data")
+        
+        return web.json_response({
+            "success": True, 
+            "message": f"Force deleted {match['team_a']} vs {match['team_b']}. Deleted: {', '.join(deleted_items)}"
+        })
+    except Exception as e:
+        log.error(f"Admin force delete failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 async def api_active_cycle_handler(request: web.Request) -> web.Response:
     """API endpoint to get active cycle info."""
     active = await db.get_active_cycle()
@@ -4265,6 +4373,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/reset-leaderboard", api_admin_reset_leaderboard_handler)
     app.router.add_post("/api/admin/start-cycle", api_admin_start_cycle_handler)
     app.router.add_post("/api/admin/end-cycle", api_admin_end_cycle_handler)
+    app.router.add_post("/api/admin/force-delete", api_admin_force_delete_handler)
     app.router.add_get("/api/active-cycle", api_active_cycle_handler)
     app.router.add_get("/health", health_handler)
     # PWA routes

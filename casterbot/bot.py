@@ -408,6 +408,57 @@ def _register_commands(bot: CasterBot) -> None:
         
         await interaction.response.send_message(result_msg, ephemeral=True)
 
+    @bot.tree.command(name="force_delete", description="Force delete a match and its private channel without counting toward leaderboard (admin)")
+    @app_commands.describe(
+        match_id="The match ID number (shown on claim message)"
+    )
+    async def cmd_force_delete(interaction: discord.Interaction, match_id: int):
+        match = await db.get_match_by_simple_id(match_id)
+        if not match:
+            await interaction.response.send_message("Match not found.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        internal_match_id = match["match_id"]
+        deleted_items = []
+        
+        # Delete private channel if it exists
+        if match.get("private_channel_id"):
+            try:
+                private_channel = interaction.client.get_channel(match["private_channel_id"])
+                if private_channel:
+                    await private_channel.delete(reason=f"Force deleted by {interaction.user}")
+                    deleted_items.append("private channel")
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                log.error(f"Failed to delete private channel: {e}")
+        
+        # Delete claim message if it exists
+        if match.get("message_id"):
+            try:
+                claim_channel = interaction.client.get_channel(config.CLAIM_CHANNEL_ID)
+                if claim_channel:
+                    msg = await claim_channel.fetch_message(match["message_id"])
+                    await msg.delete()
+                    deleted_items.append("claim message")
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                log.error(f"Failed to delete claim message: {e}")
+        
+        # Delete match from DB (does NOT increment leaderboard)
+        await db.delete_match(internal_match_id)
+        deleted_items.append("match data")
+        
+        await interaction.followup.send(
+            f"Force deleted match **{match['team_a']} vs {match['team_b']}** (ID: {match_id}).\n"
+            f"Deleted: {', '.join(deleted_items)}.\n"
+            f"⚠️ Leaderboard was NOT updated.",
+            ephemeral=True
+        )
+
     @bot.tree.command(name="margarita", description="Request a margarita from the margarita machine")
     async def cmd_margarita(interaction: discord.Interaction):
         import random
