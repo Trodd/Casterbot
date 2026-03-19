@@ -619,9 +619,13 @@ class CloseChannelView(LayoutView):
             claims = await db.get_claims(self.match_id)
             
             # Increment cast count for all casters, cam ops, and sideline
+            # Use a set to ensure each user is only counted once, even if they claimed multiple slots
+            credited_users: set[int] = set()
             for claim in claims:
                 if claim["role"] in ("caster", "camop", "sideline"):
-                    await db.increment_cast_count(claim["user_id"])
+                    credited_users.add(claim["user_id"])
+            for user_id in credited_users:
+                await db.increment_cast_count(user_id)
             
             # Generate and post transcript if configured
             if config.TRANSCRIPT_CHANNEL_ID and interaction.channel:
