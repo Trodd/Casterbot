@@ -162,7 +162,7 @@ HTML_TEMPLATE = """
             pointer-events: none;
             z-index: -1;
         }
-        .container { max-width: 950px; margin: 0 auto; }
+        .container { max-width: 950px; margin: 0 auto; padding-left: 180px; }
         .header {
             text-align: center;
             margin-bottom: 30px;
@@ -592,6 +592,55 @@ HTML_TEMPLATE = """
             opacity: 0.5;
             box-shadow: none;
         }
+        .stream-select {
+            padding: 10px 16px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--echo-orange);
+            border-radius: 4px;
+            color: var(--echo-orange);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85em;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 180px;
+            margin-right: 10px;
+        }
+        .stream-select:hover {
+            background: rgba(255,106,0,0.1);
+            box-shadow: 0 0 10px var(--echo-orange-glow);
+        }
+        .stream-select:focus {
+            outline: none;
+            border-color: var(--echo-orange);
+            box-shadow: 0 0 15px var(--echo-orange-glow);
+        }
+        .stream-select option {
+            background: #1a1a2e;
+            color: var(--echo-text);
+            padding: 10px;
+        }
+        .stream-select.warning {
+            border-color: var(--echo-danger);
+            animation: streamWarning 1s infinite;
+        }
+        @keyframes streamWarning {
+            0%, 100% { border-color: var(--echo-danger); box-shadow: 0 0 10px rgba(255,51,102,0.3); }
+            50% { border-color: var(--echo-orange); box-shadow: 0 0 5px var(--echo-orange-glow); }
+        }
+        .stream-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .stream-label {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
         .toast {
             position: fixed; bottom: 20px; right: 20px; padding: 14px 24px;
             border-radius: 6px; color: white; font-weight: 600; z-index: 1000;
@@ -675,42 +724,69 @@ HTML_TEMPLATE = """
             background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,5 95,27.5 95,72.5 50,95 5,72.5 5,27.5' fill='none' stroke='%23ff6a00' stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
             pointer-events: none;
         }
-        /* Tab Navigation */
+        /* Sidebar Navigation */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 160px;
+            height: 100vh;
+            background: var(--echo-panel);
+            border-right: 1px solid var(--echo-border);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            padding-top: 20px;
+        }
+        .sidebar-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--echo-border);
+            margin-bottom: 10px;
+        }
+        .sidebar-header h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75em;
+            color: var(--echo-orange);
+            letter-spacing: 2px;
+            margin: 0;
+        }
+        .sidebar-overlay {
+            display: none;
+        }
+        .sidebar-toggle {
+            display: none;
+        }
         .tabs {
             display: flex;
+            flex-direction: column;
             gap: 0;
-            margin-bottom: 30px;
-            border-bottom: 2px solid var(--echo-border);
         }
         .tab-btn {
-            padding: 14px 30px;
+            padding: 20px 24px;
             background: transparent;
             border: none;
+            border-left: 4px solid transparent;
             color: var(--echo-text-dim);
-            font-family: 'Orbitron', sans-serif;
-            font-size: 0.95em;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.2em;
             font-weight: 600;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
             text-transform: uppercase;
+            text-align: left;
             cursor: pointer;
-            position: relative;
             transition: all 0.3s;
         }
         .tab-btn:hover {
             color: var(--echo-text);
+            background: rgba(255,255,255,0.05);
         }
         .tab-btn.active {
             color: var(--echo-orange);
+            border-left-color: var(--echo-orange);
+            background: rgba(255,106,0,0.1);
         }
         .tab-btn.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: var(--echo-orange);
-            box-shadow: 0 0 10px var(--echo-orange-glow);
+            display: none;
         }
         .tab-content {
             display: none;
@@ -718,22 +794,47 @@ HTML_TEMPLATE = """
         .tab-content.active {
             display: block;
         }
-        /* Filter bar */
+        /* Compact Filter Bar - Inline with icon toggle */
         .filter-bar {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
-            flex-wrap: wrap;
         }
-        .filter-btn {
-            padding: 10px 20px;
+        .filter-toggle {
+            display: none;
+            padding: 8px 12px;
             background: rgba(0,212,255,0.1);
             border: 1px solid var(--echo-cyan);
             border-radius: 4px;
             color: var(--echo-cyan);
             font-family: 'Orbitron', sans-serif;
-            font-size: 0.8em;
+            font-size: 0.75em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .filter-toggle:hover {
+            background: rgba(0,212,255,0.2);
+        }
+        .filter-toggle.active {
+            background: var(--echo-cyan);
+            color: var(--echo-dark);
+        }
+        .filter-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+        .filter-btn {
+            padding: 8px 14px;
+            background: rgba(0,212,255,0.1);
+            border: 1px solid var(--echo-cyan);
+            border-radius: 4px;
+            color: var(--echo-cyan);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75em;
             letter-spacing: 1px;
             cursor: pointer;
             transition: all 0.3s;
@@ -744,21 +845,21 @@ HTML_TEMPLATE = """
         }
         .filter-btn.active {
             background: var(--echo-cyan);
-            color: var(--echo-bg);
+            color: var(--echo-dark);
             box-shadow: 0 0 15px rgba(0,212,255,0.5);
         }
         .filter-select {
-            padding: 10px 20px;
+            padding: 8px 12px;
             background: rgba(0,0,0,0.3);
             border: 1px solid var(--echo-cyan);
             border-radius: 4px;
             color: var(--echo-cyan);
             font-family: 'Orbitron', sans-serif;
-            font-size: 0.8em;
+            font-size: 0.75em;
             letter-spacing: 1px;
             cursor: pointer;
             transition: all 0.3s;
-            min-width: 200px;
+            min-width: 140px;
         }
         .filter-select:hover {
             background: rgba(0,212,255,0.1);
@@ -781,13 +882,13 @@ HTML_TEMPLATE = """
             font-style: normal;
         }
         .filter-datetime {
-            padding: 10px 12px;
+            padding: 8px 10px;
             background: rgba(0,0,0,0.3);
             border: 1px solid var(--echo-cyan);
             border-radius: 4px;
             color: var(--echo-cyan);
             font-family: 'Orbitron', sans-serif;
-            font-size: 0.8em;
+            font-size: 0.75em;
             cursor: pointer;
             transition: all 0.3s;
         }
@@ -804,14 +905,28 @@ HTML_TEMPLATE = """
             filter: invert(1);
             cursor: pointer;
         }
+        /* Desktop: hide quick chips and toggle, show controls inline */
+        .filter-quick {
+            display: none;
+        }
+        .filter-toggle {
+            display: none;
+        }
+        .filter-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex: 1;
+        }
         .filter-clear-btn {
-            padding: 10px 16px;
+            padding: 8px 12px;
             background: rgba(255,106,0,0.1);
             border: 1px solid var(--echo-orange);
             border-radius: 4px;
             color: var(--echo-orange);
             font-family: 'Orbitron', sans-serif;
-            font-size: 0.75em;
+            font-size: 0.7em;
             letter-spacing: 1px;
             cursor: pointer;
             transition: all 0.3s;
@@ -1296,219 +1411,423 @@ HTML_TEMPLATE = """
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             body {
-                padding: 12px;
+                padding: 10px;
+                background-image: none;
+                background-color: var(--echo-darker);
             }
             .container {
                 max-width: 100%;
             }
+            /* Simplified header */
             .header {
-                margin-bottom: 20px;
-                padding-bottom: 16px;
-                border-bottom: 1px solid var(--echo-border);
+                margin-bottom: 16px;
+                padding-bottom: 12px;
+                border-bottom: 1px solid rgba(255,106,0,0.3);
+            }
+            .header::before {
+                display: none;
             }
             .header h1 {
-                font-size: 1.6em;
-                letter-spacing: 2px;
-                margin-bottom: 6px;
+                font-size: 1.4em;
+                letter-spacing: 1px;
             }
             .header .subtitle {
-                font-size: 0.7em;
-                letter-spacing: 3px;
+                font-size: 0.65em;
+                letter-spacing: 2px;
+                margin-top: 4px;
             }
             .season-badge {
-                flex-direction: row;
-                gap: 8px;
-                padding: 8px 14px;
-                margin-top: 12px;
-                font-size: 0.85em;
+                padding: 6px 12px;
+                margin-top: 10px;
+                font-size: 0.75em;
+                border-radius: 15px;
             }
+            /* Compact user bar */
             .user-bar {
-                flex-direction: column;
-                gap: 12px;
-                text-align: center;
-                padding: 16px;
-                margin-bottom: 20px;
-            }
-            .user-info {
-                justify-content: center;
-            }
-            .tabs {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-                gap: 0;
-                margin-bottom: 24px;
-            }
-            .tab-btn {
-                padding: 14px 10px;
-                font-size: 0.7em;
-                letter-spacing: 1px;
-                text-align: center;
-            }
-            /* Filter bar mobile redesign */
-            .filter-bar {
-                flex-direction: column;
-                gap: 12px;
-                padding: 16px;
-                background: rgba(0,0,0,0.2);
-                border-radius: 8px;
-                margin-bottom: 20px;
-            }
-            .filter-select {
-                width: 100%;
-                padding: 14px 16px;
-                font-size: 0.85em;
-            }
-            .filter-datetime {
-                width: 100%;
-                padding: 14px 16px;
-            }
-            .filter-clear-btn {
-                width: 100%;
-                padding: 14px 16px;
-            }
-            /* Match cards mobile */
-            .match-card {
-                padding: 18px;
-                margin-bottom: 16px;
-            }
-            .match-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-                margin-bottom: 14px;
-            }
-            .match-header .teams {
-                font-size: 1.15em;
-                line-height: 1.4;
-                letter-spacing: 1px;
-            }
-            .match-header .team-vs {
-                display: inline;
-                margin: 0 8px;
-                font-size: 0.75em;
-            }
-            .match-id {
-                padding: 5px 10px;
-                font-size: 0.75em;
-            }
-            .match-time {
-                font-size: 0.9em;
-                margin-bottom: 16px;
-                padding-bottom: 14px;
-            }
-            .time-relative {
-                display: block;
-                margin-top: 6px;
-            }
-            .match-type {
-                font-size: 0.8em;
-                margin-top: 12px;
-            }
-            /* Claims grid mobile */
-            .claims {
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-            .claim-slot {
-                padding: 14px;
-                flex-direction: column;
-                align-items: stretch;
-                gap: 12px;
-            }
-            .slot-info {
                 flex-direction: row;
                 justify-content: space-between;
-                align-items: center;
+                gap: 10px;
+                padding: 10px 14px;
+                margin-bottom: 14px;
+            }
+            .user-info {
                 gap: 8px;
             }
-            .role-label {
+            .user-avatar {
+                width: 28px;
+                height: 28px;
+            }
+            .user-name {
+                font-size: 0.9em;
+            }
+            .login-btn, .logout-btn {
+                padding: 8px 14px;
                 font-size: 0.75em;
             }
-            .holder-name, .open-text {
-                font-size: 0.95em;
+            /* Mobile Swipeable Sidebar */
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: -280px;
+                width: 260px;
+                height: 100vh;
+                background: var(--echo-panel);
+                border-right: 1px solid var(--echo-border);
+                z-index: 200;
+                transition: transform 0.3s ease;
+                padding-top: 0;
+            }
+            .sidebar.open {
+                transform: translateX(280px);
+            }
+            .sidebar-header {
+                padding: 20px;
+                border-bottom: 1px solid var(--echo-border);
+            }
+            .sidebar-header h2 {
+                font-size: 0.9em;
+            }
+            .sidebar-overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.6);
+                z-index: 150;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+            .sidebar-overlay.show {
+                display: block;
+                opacity: 1;
+            }
+            .sidebar-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                width: 56px;
+                height: 56px;
+                background: var(--echo-panel);
+                border: 2px solid var(--echo-orange);
+                border-radius: 12px;
+                z-index: 110;
+                cursor: pointer;
+                padding: 0;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+            }
+            .sidebar-toggle:active {
+                background: rgba(255,106,0,0.2);
+                transform: scale(0.95);
+            }
+            .sidebar-toggle svg {
+                width: 30px;
+                height: 30px;
+                fill: var(--echo-orange);
+            }
+            .tabs {
+                flex-direction: column;
+                gap: 0;
+            }
+            .tab-btn {
+                padding: 24px 30px;
+                font-size: 1.4em;
+                text-align: left;
+                border-left: 5px solid transparent;
+                border-radius: 0;
+                min-height: 70px;
+                display: flex;
+                align-items: center;
+            }
+            .tab-btn.active {
+                border-left-color: var(--echo-orange);
+                background: rgba(255,106,0,0.15);
+            }
+            /* Remove bottom nav padding */
+            .container {
+                padding-left: 0;
+                padding-bottom: 20px;
+                padding-top: 60px;
+            }
+            /* Collapsible Filter - Single row with toggle */
+            .filter-bar {
+                flex-direction: row;
+                gap: 6px;
+                padding: 0;
+                background: none;
+                margin-bottom: 12px;
+                align-items: center;
+            }
+            .filter-toggle {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 8px 10px;
+                font-size: 0.7em;
+                flex-shrink: 0;
+            }
+            .filter-toggle svg {
+                width: 14px;
+                height: 14px;
+                fill: currentColor;
+            }
+            .filter-controls {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                padding: 10px;
+                background: var(--echo-panel);
+                border: 1px solid var(--echo-border);
+                border-radius: 6px;
+                z-index: 50;
+                flex-direction: column;
+                gap: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            }
+            .filter-controls.show {
+                display: flex;
+            }
+            .filter-bar {
+                position: relative;
+            }
+            /* Inline quick filters */
+            .filter-quick {
+                display: flex;
+                gap: 4px;
+                flex: 1;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                padding: 2px 0;
+            }
+            .filter-quick::-webkit-scrollbar {
+                display: none;
+            }
+            .filter-chip {
+                padding: 6px 10px;
+                background: rgba(0,0,0,0.3);
+                border: 1px solid rgba(255,255,255,0.2);
+                border-radius: 20px;
+                color: var(--echo-text-dim);
+                font-family: 'Rajdhani', sans-serif;
+                font-size: 0.75em;
+                font-weight: 600;
+                white-space: nowrap;
+                cursor: pointer;
+                transition: all 0.2s;
+                flex-shrink: 0;
+            }
+            .filter-chip:hover, .filter-chip.active {
+                background: rgba(0,212,255,0.2);
+                border-color: var(--echo-cyan);
+                color: var(--echo-cyan);
+            }
+            .filter-select, .filter-datetime, .filter-clear-btn {
+                width: 100%;
+                padding: 10px 12px;
+                font-size: 0.8em;
+            }
+            
+            /* REDESIGNED MATCH CARDS - Clean & Compact */
+            .match-card {
+                padding: 14px;
+                margin-bottom: 12px;
+                border-radius: 10px;
+            }
+            .match-card::before {
+                height: 2px;
+            }
+            .match-header {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+            .match-header .teams {
+                font-size: 1em;
+                line-height: 1.3;
+                letter-spacing: 0.5px;
+            }
+            .match-header .team-vs {
+                display: block;
+                margin: 2px 0;
+                font-size: 0.6em;
+                color: var(--echo-text-dim);
+            }
+            .match-id {
+                padding: 4px 8px;
+                font-size: 0.65em;
+                flex-shrink: 0;
+            }
+            .match-time {
+                font-size: 0.8em;
+                margin-bottom: 10px;
+                padding-bottom: 10px;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+            .time-relative {
+                display: inline;
+                margin-left: 8px;
+            }
+            .status-badge {
+                padding: 2px 6px;
+                font-size: 0.6em;
+                margin-left: 6px;
+            }
+            
+            /* COMPACT CLAIMS - 2x2 Grid */
+            .claims {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 6px;
+            }
+            .claim-slot {
+                padding: 8px 10px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 6px;
+                border-radius: 6px;
+            }
+            .slot-info {
+                flex-direction: column;
+                gap: 2px;
+                width: 100%;
+            }
+            .role-label {
+                font-size: 0.65em;
+                opacity: 0.8;
+            }
+            .holder-name {
+                font-size: 0.8em;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+            }
+            .open-text {
+                font-size: 0.75em;
             }
             .slot-buttons {
                 width: 100%;
                 display: flex;
-                gap: 8px;
+                flex-direction: row;
+                gap: 4px;
             }
             .slot-buttons .claim-btn,
             .slot-buttons .unclaim-btn,
             .slot-buttons .assign-btn {
                 flex: 1;
-                padding: 12px 10px;
-                font-size: 0.75em;
-                min-height: 44px;
+                padding: 6px 4px;
+                font-size: 0.6em;
+                min-height: 28px;
             }
-            /* Broadcast controls mobile */
+            
+            .match-type {
+                font-size: 0.7em;
+                margin-top: 8px;
+                opacity: 0.7;
+            }
+            
+            /* STREAMLINED BROADCAST CONTROLS */
             .broadcast-controls {
-                padding: 16px;
-                margin-top: 16px;
+                padding: 12px;
+                margin-top: 10px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 8px;
             }
             .broadcast-controls h4 {
-                font-size: 0.85em;
-                margin-bottom: 14px;
+                font-size: 0.7em;
+                margin-bottom: 10px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .broadcast-controls h4 span {
+                font-size: 0.9em;
+            }
+            .stream-row {
+                flex-direction: row;
+                align-items: center;
+                margin-bottom: 10px;
+                gap: 8px;
+            }
+            .stream-label {
+                font-size: 0.7em;
+                flex-shrink: 0;
+            }
+            .stream-select {
+                flex: 1;
+                padding: 8px 10px;
+                font-size: 0.75em;
+                min-width: 0;
             }
             .broadcast-btns {
-                flex-direction: column;
-                gap: 10px;
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 6px;
             }
             .broadcast-btn {
-                width: 100%;
-                padding: 14px;
-                font-size: 0.8em;
+                padding: 10px 6px;
+                font-size: 0.65em;
+                letter-spacing: 0.5px;
             }
+            
             /* Leaderboard mobile */
             .leaderboard-header {
-                padding: 16px;
+                padding: 14px;
             }
             .leaderboard-header h2 {
-                font-size: 1em;
+                font-size: 0.95em;
             }
             .leaderboard-row {
-                grid-template-columns: 45px 1fr 55px;
-                padding: 14px 12px;
+                grid-template-columns: 40px 1fr 50px;
+                padding: 12px;
                 gap: 10px;
             }
             .rank {
-                font-size: 1em;
+                font-size: 0.95em;
             }
             .caster-avatar {
-                width: 32px;
-                height: 32px;
+                width: 30px;
+                height: 30px;
             }
             .caster-name {
-                font-size: 0.9em;
+                font-size: 0.85em;
             }
             .cast-count {
-                font-size: 1.1em;
+                font-size: 1em;
             }
             .cast-label {
-                font-size: 0.6em;
+                font-size: 0.55em;
             }
             .caster-avatar-btn::after {
                 display: none;
             }
             .cycle-selector {
                 flex-direction: column;
-                gap: 10px;
-                margin-bottom: 20px;
+                gap: 8px;
+                margin-bottom: 16px;
             }
             .cycle-select {
                 width: 100%;
-                padding: 12px;
+                padding: 10px;
             }
             .cycle-info {
                 flex-direction: column;
-                gap: 10px;
-                padding: 14px;
-                margin-bottom: 20px;
+                gap: 8px;
+                padding: 12px;
+                margin-bottom: 16px;
             }
             .cycle-info-item {
                 flex-direction: row;
                 justify-content: space-between;
-                padding: 8px 0;
+                padding: 6px 0;
                 border-bottom: 1px solid var(--echo-border);
             }
             .cycle-info-item:last-child {
@@ -1516,76 +1835,85 @@ HTML_TEMPLATE = """
             }
             .cycle-history {
                 grid-template-columns: 1fr;
-                gap: 12px;
+                gap: 10px;
             }
             .cycle-card {
-                padding: 16px;
+                padding: 14px;
             }
             /* Admin panel mobile */
             .admin-section {
-                padding: 16px;
-                margin-bottom: 16px;
+                padding: 14px;
+                margin-bottom: 14px;
             }
             .admin-section-header h3 {
-                font-size: 1em;
+                font-size: 0.9em;
             }
             .admin-row {
-                padding: 14px 0;
+                padding: 12px 0;
             }
             .admin-row-desc {
-                font-size: 0.85em;
-                margin-bottom: 14px;
+                font-size: 0.8em;
+                margin-bottom: 10px;
             }
             .admin-form {
                 flex-direction: column;
-                gap: 12px;
+                gap: 10px;
             }
             .admin-input-group {
                 width: 100%;
             }
             .admin-input-group label {
-                font-size: 0.75em;
-                margin-bottom: 6px;
+                font-size: 0.7em;
+                margin-bottom: 4px;
             }
             .admin-input, .admin-select {
                 width: 100%;
-                padding: 12px;
-                font-size: 0.95em;
+                padding: 10px;
+                font-size: 0.9em;
             }
             .admin-btn {
                 width: 100%;
-                padding: 14px;
-                font-size: 0.85em;
+                padding: 12px;
+                font-size: 0.8em;
             }
             /* Modal mobile */
             .confirm-box {
-                margin: 16px;
-                padding: 24px 20px;
+                margin: 12px;
+                padding: 20px 16px;
+            }
+            .confirm-box h3 {
+                font-size: 1em;
+            }
+            .confirm-box p {
+                font-size: 0.85em;
             }
             .confirm-btns {
-                flex-direction: column;
+                flex-direction: row;
                 gap: 10px;
             }
             .confirm-btns button {
-                width: 100%;
-                padding: 14px;
+                flex: 1;
+                padding: 12px;
+                font-size: 0.8em;
             }
             .assign-modal-box {
-                margin: 12px;
-                padding: 20px;
+                margin: 10px;
+                padding: 16px;
                 max-height: 85vh;
             }
             .assign-user-item {
-                padding: 14px 12px;
+                padding: 12px 10px;
             }
             /* Toast mobile */
             .toast {
-                left: 12px;
-                right: 12px;
-                bottom: 12px;
+                left: 10px;
+                right: 10px;
+                bottom: 10px;
                 text-align: center;
+                padding: 12px 16px;
+                font-size: 0.8em;
             }
-            /* Hide hex decoration on mobile */
+            /* Hide decorations on mobile */
             .hex-bg {
                 display: none;
             }
@@ -1593,67 +1921,141 @@ HTML_TEMPLATE = """
         
         @media (max-width: 480px) {
             body {
-                padding: 10px;
+                padding: 8px;
             }
             .header h1 {
-                font-size: 1.3em;
-                letter-spacing: 1px;
+                font-size: 1.2em;
             }
             .header .subtitle {
-                font-size: 0.6em;
-                letter-spacing: 2px;
+                font-size: 0.55em;
             }
             .season-badge {
-                font-size: 0.75em;
-                padding: 6px 10px;
+                font-size: 0.65em;
+                padding: 5px 10px;
+            }
+            .user-bar {
+                padding: 8px 10px;
+            }
+            .user-avatar {
+                width: 24px;
+                height: 24px;
+            }
+            .user-name {
+                font-size: 0.8em;
             }
             .tab-btn {
-                padding: 12px 8px;
-                font-size: 0.65em;
-                letter-spacing: 0.5px;
+                padding: 8px 12px;
+                font-size: 0.6em;
+            }
+            /* Even more compact match cards */
+            .match-card {
+                padding: 12px;
+                margin-bottom: 10px;
             }
             .match-header .teams {
-                font-size: 1em;
+                font-size: 0.9em;
             }
+            .match-id {
+                padding: 3px 6px;
+                font-size: 0.6em;
+            }
+            .match-time {
+                font-size: 0.75em;
+                padding-bottom: 8px;
+                margin-bottom: 8px;
+            }
+            /* Stack claims 2x2 tighter */
+            .claims {
+                gap: 4px;
+            }
+            .claim-slot {
+                padding: 6px 8px;
+                gap: 4px;
+            }
+            .role-label {
+                font-size: 0.6em;
+            }
+            .holder-name {
+                font-size: 0.75em;
+            }
+            .open-text {
+                font-size: 0.7em;
+            }
+            .slot-buttons .claim-btn,
+            .slot-buttons .unclaim-btn,
+            .slot-buttons .assign-btn {
+                padding: 5px 4px;
+                font-size: 0.55em;
+                min-height: 26px;
+            }
+            /* Compact broadcast */
+            .broadcast-controls {
+                padding: 10px;
+                margin-top: 8px;
+            }
+            .broadcast-controls h4 {
+                font-size: 0.65em;
+                margin-bottom: 8px;
+            }
+            .stream-select {
+                padding: 6px 8px;
+                font-size: 0.7em;
+            }
+            .broadcast-btns {
+                gap: 4px;
+            }
+            .broadcast-btn {
+                padding: 8px 4px;
+                font-size: 0.55em;
+                letter-spacing: 0;
+            }
+            /* Leaderboard tighter */
             .leaderboard-row {
-                grid-template-columns: 38px 1fr 48px;
-                padding: 12px 10px;
+                grid-template-columns: 35px 1fr 45px;
+                padding: 10px 8px;
                 gap: 8px;
             }
             .rank {
-                font-size: 0.9em;
-            }
-            .caster-avatar {
-                width: 28px;
-                height: 28px;
-            }
-            .caster-name {
                 font-size: 0.85em;
             }
+            .caster-avatar {
+                width: 26px;
+                height: 26px;
+            }
+            .caster-name {
+                font-size: 0.8em;
+            }
             .cast-count {
-                font-size: 1em;
+                font-size: 0.9em;
             }
         }
         
         /* Touch-friendly improvements */
         @media (pointer: coarse) {
-            .claim-btn, .unclaim-btn, .assign-btn, .broadcast-btn, .admin-btn, .filter-btn, .tab-btn, .filter-select, .filter-datetime, .filter-clear-btn {
-                min-height: 48px;
-            }
-            .claim-slot {
-                min-height: 60px;
+            .admin-btn, .filter-btn, .filter-select, .filter-datetime, .filter-clear-btn {
+                min-height: 44px;
             }
             .assign-user-item {
-                min-height: 52px;
+                min-height: 48px;
+            }
+        }
+        
+        /* Touch targets on larger touch screens (tablets) */
+        @media (pointer: coarse) and (min-width: 769px) {
+            .claim-btn, .unclaim-btn, .assign-btn, .broadcast-btn, .tab-btn {
+                min-height: 44px;
+            }
+            .claim-slot {
+                min-height: 56px;
             }
         }
         
         /* Safe area for notched phones */
         @supports (padding: max(0px)) {
             body {
-                padding-left: max(12px, env(safe-area-inset-left));
-                padding-right: max(12px, env(safe-area-inset-right));
-                padding-bottom: max(12px, env(safe-area-inset-bottom));
+                padding-left: max(8px, env(safe-area-inset-left));
+                padding-right: max(8px, env(safe-area-inset-right));
+                padding-bottom: max(8px, env(safe-area-inset-bottom));
             }
         }
         
@@ -1704,6 +2106,20 @@ HTML_TEMPLATE = """
         <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
     </div>
     <div class="hex-bg"></div>
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>Navigation</h2>
+        </div>
+        <div class="tabs">
+            <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
+            <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
+            {admin_tab_btn}
+        </div>
+    </div>
+    <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
+        <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+    </button>
     <div class="container">
         <div class="header">
             <h1>Echo Master League</h1>
@@ -1711,11 +2127,6 @@ HTML_TEMPLATE = """
             {season_badge}
         </div>
         {user_bar}
-        <div class="tabs">
-            <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
-            <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
-            {admin_tab_btn}
-        </div>
         <div id="tab-schedule" class="tab-content {schedule_content_active}">
             {filter_bar}
             <div id="schedule-content">
@@ -1799,6 +2210,113 @@ HTML_TEMPLATE = """
                     currentY = 0;
                 }, { passive: true });
             }
+        })();
+        
+        // Sidebar swipe gesture
+        (function() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            let touchStartX = 0;
+            let touchCurrentX = 0;
+            let swiping = false;
+            const edgeThreshold = 30; // Pixels from left edge to start swipe
+            const swipeThreshold = 80; // Distance to trigger open/close
+            
+            function openSidebar() {
+                sidebar.classList.add('open');
+                overlay.classList.add('show');
+                document.body.style.overflow = 'hidden';
+            }
+            
+            function closeSidebar() {
+                sidebar.classList.remove('open');
+                overlay.classList.remove('show');
+                document.body.style.overflow = '';
+            }
+            
+            // Expose globally
+            window.toggleSidebar = function() {
+                if (sidebar.classList.contains('open')) {
+                    closeSidebar();
+                } else {
+                    openSidebar();
+                }
+            };
+            window.closeSidebar = closeSidebar;
+            
+            // Also close sidebar when clicking a tab (on mobile)
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (window.innerWidth <= 768) {
+                        closeSidebar();
+                    }
+                });
+            });
+            
+            // Touch swipe handling
+            document.addEventListener('touchstart', function(e) {
+                const touchX = e.touches[0].clientX;
+                const isOpen = sidebar.classList.contains('open');
+                
+                // Start swipe if near left edge (to open) or sidebar is open (to close)
+                if (touchX < edgeThreshold || isOpen) {
+                    touchStartX = touchX;
+                    swiping = true;
+                }
+            }, { passive: true });
+            
+            document.addEventListener('touchmove', function(e) {
+                if (!swiping) return;
+                touchCurrentX = e.touches[0].clientX;
+                
+                const isOpen = sidebar.classList.contains('open');
+                const diffX = touchCurrentX - touchStartX;
+                
+                // Visual feedback during swipe
+                if (!isOpen && diffX > 0) {
+                    // Swiping right to open
+                    const progress = Math.min(diffX / 260, 1);
+                    sidebar.style.transform = `translateX(${diffX}px)`;
+                    sidebar.style.transition = 'none';
+                    overlay.style.display = 'block';
+                    overlay.style.opacity = progress * 0.6;
+                } else if (isOpen && diffX < 0) {
+                    // Swiping left to close
+                    sidebar.style.transform = `translateX(${280 + diffX}px)`;
+                    sidebar.style.transition = 'none';
+                    overlay.style.opacity = 0.6 + (diffX / 260) * 0.6;
+                }
+            }, { passive: true });
+            
+            document.addEventListener('touchend', function(e) {
+                if (!swiping) return;
+                
+                const diffX = touchCurrentX - touchStartX;
+                const isOpen = sidebar.classList.contains('open');
+                
+                sidebar.style.transition = '';
+                sidebar.style.transform = '';
+                overlay.style.transition = 'opacity 0.3s ease';
+                
+                if (!isOpen && diffX > swipeThreshold) {
+                    openSidebar();
+                } else if (isOpen && diffX < -swipeThreshold) {
+                    closeSidebar();
+                } else {
+                    // Snap back
+                    if (isOpen) {
+                        sidebar.classList.add('open');
+                        overlay.style.opacity = '0.6';
+                    } else {
+                        overlay.style.opacity = '0';
+                        setTimeout(() => { overlay.style.display = ''; }, 300);
+                    }
+                }
+                
+                swiping = false;
+                touchStartX = 0;
+                touchCurrentX = 0;
+            }, { passive: true });
         })();
         
         async function claimSlot(matchId, role, slot) {
@@ -1991,6 +2509,27 @@ HTML_TEMPLATE = """
             }
         }
         
+        async function setStreamChannel(matchId, selectEl) {
+            const channel = selectEl.value;
+            if (!channel) return;
+            try {
+                const resp = await fetch('/api/set_stream_channel', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId, stream_channel: parseInt(channel)})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Stream channel updated!', 'success');
+                    selectEl.classList.remove('warning');
+                } else {
+                    showToast(data.error || 'Failed to update channel', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
         function showToast(msg, type) {
             const toast = document.createElement('div');
             toast.className = 'toast ' + type;
@@ -2046,7 +2585,26 @@ HTML_TEMPLATE = """
         function clearFilters() {
             document.getElementById('schedule-filter').value = 'all';
             document.getElementById('filter-datetime').value = '';
+            // Reset quick filter chips
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            document.querySelector('.filter-chip').classList.add('active'); // Select "All"
             applyFilters();
+        }
+        
+        function quickFilter(value, chip) {
+            // Update chip visual state
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            // Set dropdown value and apply
+            document.getElementById('schedule-filter').value = value;
+            document.getElementById('filter-datetime').value = '';
+            applyFilters();
+        }
+        
+        function toggleFilters(btn) {
+            const controls = document.getElementById('filter-controls');
+            controls.classList.toggle('show');
+            btn.classList.toggle('active');
         }
         
         function applyFilters() {
@@ -2500,9 +3058,10 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
     has_caster = any(c for c in claims if c["role"] == "caster")
     has_camop = any(c for c in claims if c["role"] == "camop")
     has_channel = bool(match.get("private_channel_id"))
+    stream_channel = match.get("stream_channel")
     can_create = has_caster and has_camop and not has_channel
     can_ready = has_channel
-    can_go_live = has_channel and has_caster and has_camop
+    can_go_live = has_channel and has_caster and has_camop and stream_channel
     
     # Build broadcast controls (show for leads OR users with a claim on this match)
     broadcast_html = ""
@@ -2515,9 +3074,22 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
         if has_channel:
             channel_info = '<span style="color: #3ba55c; font-size: 0.85em; margin-left: 8px;">✓ Channel exists</span>'
         
+        # Build stream channel options
+        stream_warning = "warning" if not stream_channel else ""
+        stream_options = '<option value="">⚠️ Select Channel</option>'
+        for ch_num, (label, url) in config.STREAM_CHANNELS.items():
+            selected = "selected" if stream_channel == ch_num else ""
+            stream_options += f'<option value="{ch_num}" {selected}>{label}</option>'
+        
         broadcast_html = f'''
             <div class="broadcast-controls">
                 <h4>Broadcast Controls {channel_info}</h4>
+                <div class="stream-row">
+                    <span class="stream-label">Stream:</span>
+                    <select class="stream-select {stream_warning}" onchange="setStreamChannel('{match_id}', this)">
+                        {stream_options}
+                    </select>
+                </div>
                 <div class="broadcast-btns">
                     <button class="broadcast-btn create" onclick="createChannel('{match_id}')" {create_disabled}>Create Channel</button>
                     <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
@@ -2895,24 +3467,38 @@ async def schedule_handler(request: web.Request) -> web.Response:
         
         match_type_options = ''.join(f'<option value="type:{mt}">{mt}</option>' for mt in sorted(match_types))
         
-        # Add optgroup separators for better organization
+        # Simplified filter bar with quick chips and dropdown
         filter_bar = f'''
-            <div class="filter-bar">
-                <select class="filter-select" id="schedule-filter" onchange="applyScheduleFilter()">
-                    <option value="all">All Matches</option>
-                    <optgroup label="Status">
-                        <option value="my-claims">My Claims Only</option>
-                        <option value="open-slots">Matches With Open Slots</option>
-                        <option value="live-soon">Live / Starting Soon</option>
-                    </optgroup>
-                    <optgroup label="Date">
-                        <option value="today">Today</option>
-                        <option value="tomorrow">Tomorrow</option>
-                    </optgroup>
-                    <optgroup label="Match Type">{match_type_options}</optgroup>
-                </select>
-                <input type="datetime-local" class="filter-datetime" id="filter-datetime" onchange="applyDateTimeFilter()" title="Filter by date/time (matches starting at or after)">
-                <button class="filter-clear-btn" onclick="clearFilters()">Clear</button>
+            <div class="filter-bar-wrapper">
+                <div class="filter-bar">
+                    <div class="filter-quick">
+                        <span class="filter-chip active" onclick="quickFilter('all', this)">All</span>
+                        <span class="filter-chip" onclick="quickFilter('my-claims', this)">Mine</span>
+                        <span class="filter-chip" onclick="quickFilter('open-slots', this)">Open</span>
+                        <span class="filter-chip" onclick="quickFilter('today', this)">Today</span>
+                        <span class="filter-chip" onclick="quickFilter('live-soon', this)">Live</span>
+                    </div>
+                    <button class="filter-toggle" onclick="toggleFilters(this)" title="More filters">
+                        <svg viewBox="0 0 24 24"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
+                    </button>
+                    <div class="filter-controls" id="filter-controls">
+                        <select class="filter-select" id="schedule-filter" onchange="applyScheduleFilter()">
+                            <option value="all">All Matches</option>
+                            <optgroup label="Status">
+                                <option value="my-claims">My Claims Only</option>
+                                <option value="open-slots">Open Slots</option>
+                                <option value="live-soon">Live / Soon</option>
+                            </optgroup>
+                            <optgroup label="Date">
+                                <option value="today">Today</option>
+                                <option value="tomorrow">Tomorrow</option>
+                            </optgroup>
+                            <optgroup label="Type">{match_type_options}</optgroup>
+                        </select>
+                        <input type="datetime-local" class="filter-datetime" id="filter-datetime" onchange="applyDateTimeFilter()" title="Filter by date/time">
+                        <button class="filter-clear-btn" onclick="clearFilters()">Reset All</button>
+                    </div>
+                </div>
             </div>
         '''
     else:
@@ -3652,6 +4238,10 @@ async def api_go_live_handler(request: web.Request) -> web.Response:
     if not casters or not camops:
         return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
     
+    # Check stream channel is selected
+    if not match.get("stream_channel"):
+        return web.json_response({"success": False, "error": "Please select a stream channel first"}, status=400)
+    
     if not config.LIVE_ANNOUNCEMENT_CHANNEL_ID:
         return web.json_response({"success": False, "error": "Live announcement channel not configured"}, status=500)
     
@@ -3691,12 +4281,60 @@ async def api_go_live_handler(request: web.Request) -> web.Response:
         if live_role:
             live_ping = live_role.mention
     
-    twitch_url = config.TWITCH_URL or "https://www.twitch.tv/echomasterleague"
+    # Use selected stream channel
+    stream_channel = match.get("stream_channel")
+    channel_label, twitch_url = config.STREAM_CHANNELS[stream_channel]
     announcement = f"# [EchoMasterLeague]({twitch_url}) We are live now casting {teams_text}"
     if live_ping:
         announcement += f"\n{live_ping}"
     
     await live_channel.send(announcement)
+    return web.json_response({"success": True})
+
+
+async def api_set_stream_channel_handler(request: web.Request) -> web.Response:
+    """API endpoint to set the stream channel for a match."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    stream_channel = data.get("stream_channel")
+    
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    if stream_channel is None or stream_channel not in config.STREAM_CHANNELS:
+        return web.json_response({"success": False, "error": "Invalid stream channel"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    # Check if user is lead OR has a claim on this match
+    user_id = session["user_id"]
+    match_claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in match_claims)
+    
+    is_lead = False
+    if bot and config.WEB_LEAD_ROLE_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "Only crew members can update stream channel"}, status=403)
+    
+    await db.set_stream_channel(match_id, stream_channel)
     return web.json_response({"success": True})
 
 
@@ -4361,6 +4999,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/create_channel", api_create_channel_handler)
     app.router.add_post("/api/crew_ready", api_crew_ready_handler)
     app.router.add_post("/api/go_live", api_go_live_handler)
+    app.router.add_post("/api/set_stream_channel", api_set_stream_channel_handler)
     app.router.add_get("/api/user/avatar", api_user_avatar_handler)
     app.router.add_get("/api/proxy-avatar", api_proxy_avatar_handler)
     app.router.add_get("/api/crew-members", api_crew_members_handler)

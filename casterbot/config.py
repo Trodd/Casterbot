@@ -53,6 +53,13 @@ STAFF_ROLE_ID: int = _int("STAFF_ROLE_ID")
 LIVE_ANNOUNCEMENT_CHANNEL_ID: int = _int("LIVE_ANNOUNCEMENT_CHANNEL_ID")
 LIVE_PING_ROLE_ID: int = _int("LIVE_PING_ROLE_ID")
 TWITCH_URL: str = _get("TWITCH_URL", "https://www.twitch.tv/echomasterleague")
+TWITCH_URL_2: str = _get("TWITCH_URL_2", "https://www.twitch.tv/echomasterleague_2")
+
+# Stream channel options: maps channel number to (label, URL)
+STREAM_CHANNELS: dict = {
+    1: ("Channel 1", TWITCH_URL),
+    2: ("Channel 2", TWITCH_URL_2),
+}
 
 # Transcript channel (optional - logs deleted private channels)
 TRANSCRIPT_CHANNEL_ID: int = _int("TRANSCRIPT_CHANNEL_ID")

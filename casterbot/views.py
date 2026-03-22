@@ -7,8 +7,8 @@ from io import StringIO
 
 import discord
 from dateutil import tz as dateutil_tz
-from discord import ButtonStyle, Interaction
-from discord.ui import ActionRow, Button, Container, LayoutView, Separator, TextDisplay, View
+from discord import ButtonStyle, Interaction, SelectOption
+from discord.ui import ActionRow, Button, Container, LayoutView, Section, Select, Separator, TextDisplay, View
 
 from . import config, db
 
@@ -73,10 +73,19 @@ def _build_claim_text(match: dict | None, claims: list[dict]) -> str:
     if not match:
         return "**Match not found**"
 
+    # Get stream channel info
+    stream_channel = match.get('stream_channel')
+    if stream_channel:
+        channel_label, channel_url = config.STREAM_CHANNELS.get(stream_channel, config.STREAM_CHANNELS[1])
+        stream_text = f"[{channel_label}]({channel_url})"
+    else:
+        stream_text = "⚠️ *Not selected - please choose below*"
+
     lines = [
         f"# `{match['team_a']}` ⚔️ `{match['team_b']}`",
         f"**When:** {_format_match_time(match)}",
         f"**Match ID:** `{match.get('simple_id', '?')}`",
+        f"**Stream:** {stream_text}",
         "",
     ]
 
@@ -168,12 +177,29 @@ class ClaimView(LayoutView):
             custom_id=f"go_live:{match_id}",
         )
         
+        # Stream channel dropdown - get current selection (None means not selected yet)
+        current_stream = match.get('stream_channel') if match else None
+        stream_select = Select(
+            placeholder="⚠️ Select Stream Channel",
+            custom_id=f"stream_channel:{match_id}",
+            options=[
+                SelectOption(
+                    label=label,
+                    value=str(ch_num),
+                    description=url,
+                    default=(current_stream is not None and ch_num == current_stream),
+                )
+                for ch_num, (label, url) in config.STREAM_CHANNELS.items()
+            ],
+        )
+        
         # Build container with all buttons, separated by a line
         container = Container(
             TextDisplay(content),
             ActionRow(*caster_buttons),
             Separator(),
             TextDisplay("**Broadcast Controls**"),
+            ActionRow(stream_select),
             ActionRow(create_channel_btn, ready_btn, go_live_btn),
             accent_color=discord.Color.blurple(),
         )
@@ -191,6 +217,9 @@ class ClaimView(LayoutView):
                 return False
         elif custom_id.startswith("unclaim:"):
             await self._handle_unclaim(interaction)
+            return False
+        elif custom_id.startswith("stream_channel:"):
+            await self._handle_stream_channel(interaction)
             return False
         elif custom_id.startswith("create_channel:"):
             await self._handle_create_channel(interaction)
@@ -244,6 +273,31 @@ class ClaimView(LayoutView):
         for c in user_claims:
             await db.unclaim_slot(self.match_id, c["user_id"], c["role"], c["slot"])
         await interaction.response.send_message("Your claims have been removed.", ephemeral=True)
+        await self._refresh_message(interaction)
+
+    async def _handle_stream_channel(self, interaction: Interaction):
+        """Handle stream channel dropdown selection."""
+        if not _role_allowed(interaction):
+            await interaction.response.send_message(
+                "You don't have the required role to change the stream channel.", ephemeral=True
+            )
+            return
+        
+        # Get selected value from the select menu
+        values = interaction.data.get("values", [])
+        if not values:
+            await interaction.response.send_message(
+                "No channel selected.", ephemeral=True
+            )
+            return
+        
+        stream_channel = int(values[0])
+        channel_label, channel_url = config.STREAM_CHANNELS.get(stream_channel, config.STREAM_CHANNELS[1])
+        
+        await db.set_stream_channel(self.match_id, stream_channel)
+        await interaction.response.send_message(
+            f"Stream channel set to **{channel_label}** ({channel_url})", ephemeral=True
+        )
         await self._refresh_message(interaction)
 
     async def _handle_create_channel(self, interaction: Interaction):
@@ -390,6 +444,13 @@ class ClaimView(LayoutView):
             )
             return
 
+        # Check if stream channel has been selected
+        if not match.get("stream_channel"):
+            await interaction.response.send_message(
+                "Please select a stream channel first using the dropdown above.", ephemeral=True
+            )
+            return
+
         # Check if live announcement channel is configured
         if not config.LIVE_ANNOUNCEMENT_CHANNEL_ID:
             await interaction.response.send_message(
@@ -444,15 +505,16 @@ class ClaimView(LayoutView):
             if live_role:
                 live_ping = live_role.mention
 
-        # Build announcement
-        twitch_url = config.TWITCH_URL or "https://www.twitch.tv/echomasterleague"
+        # Build announcement - use the selected stream channel
+        stream_channel = match.get('stream_channel')
+        channel_label, twitch_url = config.STREAM_CHANNELS[stream_channel]
         announcement = f"# [EchoMasterLeague]({twitch_url}) We are live now casting {teams_text}"
         if live_ping:
             announcement += f"\n{live_ping}"
 
         await live_channel.send(announcement)
         await interaction.followup.send(
-            f"Live announcement posted to <#{config.LIVE_ANNOUNCEMENT_CHANNEL_ID}>!", ephemeral=True
+            f"Live announcement posted to <#{config.LIVE_ANNOUNCEMENT_CHANNEL_ID}> ({channel_label})!", ephemeral=True
         )
 
 

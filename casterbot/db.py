@@ -86,6 +86,9 @@ async def init_db() -> None:
         # Migration: add missing_since column if missing (for delayed deletion)
         if "missing_since" not in columns:
             await db.execute("ALTER TABLE matches ADD COLUMN missing_since INTEGER")
+        # Migration: add stream_channel column if missing (for multi-stream support)
+        if "stream_channel" not in columns:
+            await db.execute("ALTER TABLE matches ADD COLUMN stream_channel INTEGER")
         await db.commit()
 
 
@@ -163,6 +166,16 @@ async def clear_private_channel(match_id: str) -> None:
         await db.execute(
             "UPDATE matches SET private_channel_id = NULL WHERE match_id = ?",
             (match_id,),
+        )
+        await db.commit()
+
+
+async def set_stream_channel(match_id: str, stream_channel: int) -> None:
+    """Set the stream channel (1 or 2) for a match."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "UPDATE matches SET stream_channel = ? WHERE match_id = ?",
+            (stream_channel, match_id),
         )
         await db.commit()
 
