@@ -17,6 +17,49 @@ log = logging.getLogger("casterbot.web")
 # Simple in-memory session store
 _sessions: dict[str, dict] = {}
 
+# Track messages sent via web UI (message_id -> sender info)
+# This allows us to show the web sender's name in the chat UI
+_web_sent_messages: dict[str, dict] = {}
+
+import re
+
+def _convert_mentions_to_names(content: str, guild) -> str:
+    """Convert Discord mention syntax to readable names for web display."""
+    if not guild:
+        return content
+    
+    # Convert user mentions <@123456789> or <@!123456789>
+    def replace_user_mention(match):
+        user_id = int(match.group(1))
+        member = guild.get_member(user_id)
+        if member:
+            return f"@{member.display_name}"
+        return match.group(0)
+    
+    content = re.sub(r'<@!?(\d+)>', replace_user_mention, content)
+    
+    # Convert role mentions <@&123456789>
+    def replace_role_mention(match):
+        role_id = int(match.group(1))
+        role = guild.get_role(role_id)
+        if role:
+            return f"@{role.name}"
+        return match.group(0)
+    
+    content = re.sub(r'<@&(\d+)>', replace_role_mention, content)
+    
+    # Convert channel mentions <#123456789>
+    def replace_channel_mention(match):
+        channel_id = int(match.group(1))
+        channel = guild.get_channel(channel_id)
+        if channel:
+            return f"#{channel.name}"
+        return match.group(0)
+    
+    content = re.sub(r'<#(\d+)>', replace_channel_mention, content)
+    
+    return content
+
 
 def _get_session(request: web.Request) -> dict | None:
     """Get the current user's session."""
@@ -640,6 +683,197 @@ HTML_TEMPLATE = """
             font-size: 0.85em;
             text-transform: uppercase;
             letter-spacing: 1px;
+        }
+        /* Chat Section Styles */
+        .chat-section {
+            display: none;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,106,0,0.2);
+        }
+        .chat-section.chat-open {
+            display: block;
+        }
+        .chat-toggle-btn {
+            padding: 10px 18px;
+            background: linear-gradient(180deg, #5865F2 0%, #4752C4 100%);
+            border: none;
+            border-radius: 4px;
+            color: white;
+            font-size: 0.85em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'Rajdhani', sans-serif;
+            box-shadow: 0 0 10px rgba(88,101,242,0.3);
+        }
+        .chat-toggle-btn:hover {
+            box-shadow: 0 0 20px rgba(88,101,242,0.5);
+        }
+        .chat-toggle-btn.active {
+            background: linear-gradient(180deg, #4752C4 0%, #3a4298 100%);
+        }
+        .chat-messages {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .chat-msg {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .chat-msg-continued {
+            padding-left: 48px;
+            margin-bottom: 4px;
+        }
+        .chat-msg-bot {
+            background: rgba(88,101,242,0.1);
+            border-radius: 8px;
+            padding: 8px;
+            margin: 4px -8px;
+        }
+        .chat-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .chat-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .chat-header {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .chat-author {
+            font-weight: 600;
+            color: var(--echo-cyan);
+            font-size: 0.9em;
+        }
+        .chat-time {
+            font-size: 0.75em;
+            color: var(--echo-text-dim);
+        }
+        .chat-text {
+            color: var(--echo-text);
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        .chat-input-row {
+            display: flex;
+            gap: 10px;
+        }
+        .chat-input {
+            flex: 1;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--echo-border);
+            border-radius: 6px;
+            padding: 12px 14px;
+            color: var(--echo-text);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1em;
+        }
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--echo-cyan);
+            box-shadow: 0 0 10px var(--echo-cyan-glow);
+        }
+        .chat-input::placeholder {
+            color: var(--echo-text-dim);
+        }
+        .chat-send-btn {
+            padding: 12px 20px;
+            background: linear-gradient(180deg, var(--echo-cyan) 0%, #00a8cc 100%);
+            border: none;
+            border-radius: 6px;
+            color: #001a1a;
+            font-weight: 700;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .chat-send-btn:hover {
+            box-shadow: 0 0 15px var(--echo-cyan-glow);
+        }
+        .chat-send-btn:disabled {
+            background: rgba(255,255,255,0.1);
+            color: var(--echo-text-dim);
+            cursor: not-allowed;
+        }
+        .chat-info, .chat-error {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--echo-text-dim);
+            font-style: italic;
+        }
+        .chat-error {
+            color: var(--echo-danger);
+        }
+        .chat-input-container {
+            position: relative;
+        }
+        .mention-suggestions {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            right: 0;
+            background: rgba(20,20,28,0.98);
+            border: 1px solid var(--echo-border);
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+        .mention-suggestion {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .mention-suggestion:hover {
+            background: rgba(0,255,255,0.1);
+        }
+        .mention-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+        }
+        .mention-role-badge {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: white;
+        }
+        .mention-role {
+            background: rgba(255,255,255,0.03);
+        }
+        .chat-mention {
+            background: rgba(0,255,255,0.15);
+            color: var(--echo-cyan);
+            padding: 1px 4px;
+            border-radius: 3px;
         }
         .toast {
             position: fixed; bottom: 20px; right: 20px; padding: 14px 24px;
@@ -1769,10 +2003,10 @@ HTML_TEMPLATE = """
             }
             .broadcast-btns {
                 display: grid;
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(2, 1fr);
                 gap: 6px;
             }
-            .broadcast-btn {
+            .broadcast-btn, .chat-toggle-btn {
                 padding: 10px 6px;
                 font-size: 0.65em;
                 letter-spacing: 0.5px;
@@ -2027,6 +2261,21 @@ HTML_TEMPLATE = """
             }
             .cast-count {
                 font-size: 0.9em;
+            }
+            /* Chat mobile */
+            .chat-messages {
+                height: 200px;
+            }
+            .chat-avatar {
+                width: 30px;
+                height: 30px;
+            }
+            .chat-msg-continued {
+                padding-left: 40px;
+            }
+            .chat-toggle-btn {
+                font-size: 0.65em;
+                padding: 8px 10px;
             }
         }
         
@@ -2942,6 +3191,284 @@ HTML_TEMPLATE = """
                 }, 2000);
             }
         }
+        
+        // Chat functionality
+        const chatIntervals = {};
+        const chatMentionableUsers = {};  // match_id -> array of {id, name, avatar}
+        const chatMentionableRoles = {};  // match_id -> array of {id, name, color}
+        
+        function toggleChat(matchId, btn) {
+            const chatSection = document.getElementById('chat-' + matchId);
+            if (!chatSection) return;
+            
+            if (chatSection.classList.contains('chat-open')) {
+                chatSection.classList.remove('chat-open');
+                btn.textContent = 'Open Chat';
+                btn.classList.remove('active');
+                // Stop polling
+                if (chatIntervals[matchId]) {
+                    clearInterval(chatIntervals[matchId]);
+                    delete chatIntervals[matchId];
+                }
+            } else {
+                chatSection.classList.add('chat-open');
+                btn.textContent = 'Close Chat';
+                btn.classList.add('active');
+                loadChatMessages(matchId);
+                // Start polling for new messages every 5 seconds
+                chatIntervals[matchId] = setInterval(() => loadChatMessages(matchId), 5000);
+            }
+        }
+        
+        async function loadChatMessages(matchId) {
+            const messagesDiv = document.getElementById('chat-messages-' + matchId);
+            if (!messagesDiv) return;
+            
+            try {
+                const resp = await fetch('/api/chat/messages?match_id=' + encodeURIComponent(matchId));
+                const data = await resp.json();
+                
+                if (!data.success) {
+                    messagesDiv.innerHTML = '<div class="chat-error">' + (data.error || 'Failed to load messages') + '</div>';
+                    return;
+                }
+                
+                if (!data.channel_exists) {
+                    messagesDiv.innerHTML = '<div class="chat-info">Private channel not created yet. Create the channel first.</div>';
+                    return;
+                }
+                
+                // Store mentionable users and roles for this match
+                if (data.mentionable_users) {
+                    chatMentionableUsers[matchId] = data.mentionable_users;
+                }
+                if (data.mentionable_roles) {
+                    chatMentionableRoles[matchId] = data.mentionable_roles;
+                }
+                
+                if (data.messages.length === 0) {
+                    messagesDiv.innerHTML = '<div class="chat-info">No messages yet. Say hello!</div>';
+                    return;
+                }
+                
+                // Build messages HTML
+                let html = '';
+                let lastAuthor = null;
+                for (const msg of data.messages) {
+                    const isNewAuthor = msg.author_id !== lastAuthor;
+                    lastAuthor = msg.author_id;
+                    
+                    const time = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                    const botClass = msg.is_bot ? ' chat-msg-bot' : '';
+                    
+                    // Format content with highlighted mentions
+                    const formattedContent = formatMentions(escapeHtml(msg.content));
+                    
+                    if (isNewAuthor) {
+                        html += `<div class="chat-msg${botClass}">
+                            <img src="${msg.author_avatar}" class="chat-avatar" alt="">
+                            <div class="chat-content">
+                                <div class="chat-header">
+                                    <span class="chat-author">${escapeHtml(msg.author_name)}</span>
+                                    <span class="chat-time">${time}</span>
+                                </div>
+                                <div class="chat-text">${formattedContent}</div>
+                            </div>
+                        </div>`;
+                    } else {
+                        html += `<div class="chat-msg chat-msg-continued${botClass}">
+                            <div class="chat-content">
+                                <div class="chat-text">${formattedContent}</div>
+                            </div>
+                        </div>`;
+                    }
+                }
+                
+                const wasAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop <= messagesDiv.clientHeight + 50;
+                messagesDiv.innerHTML = html;
+                
+                // Auto-scroll to bottom if user was already at bottom
+                if (wasAtBottom) {
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                }
+            } catch (e) {
+                messagesDiv.innerHTML = '<div class="chat-error">Network error loading messages</div>';
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatMentions(text) {
+            // Highlight @mentions in the text
+            return text.replace(/@([^ @]+)/g, '<span class="chat-mention">@$1</span>');
+        }
+        
+        function convertMentionsToDiscord(text, matchId) {
+            // Convert @username to <@user_id> and @role to <@&role_id> for Discord
+            const users = chatMentionableUsers[matchId] || [];
+            const roles = chatMentionableRoles[matchId] || [];
+            let result = text;
+            
+            // Convert role mentions first (to avoid partial matches with usernames)
+            // Match both "@Team: Name" and "@Name" for team roles
+            for (const role of roles) {
+                // Try full role name first
+                const fullRegex = new RegExp('@' + escapeRegex(role.name) + '(?![\\\\w])', 'gi');
+                result = result.replace(fullRegex, '<@&' + role.id + '>');
+                // Also try display name (without Team: prefix)
+                if (role.displayName) {
+                    const shortRegex = new RegExp('@' + escapeRegex(role.displayName) + '(?![\\\\w])', 'gi');
+                    result = result.replace(shortRegex, '<@&' + role.id + '>');
+                }
+            }
+            
+            // Convert user mentions
+            for (const user of users) {
+                const regex = new RegExp('@' + escapeRegex(user.name) + '(?![\\\\w])', 'gi');
+                result = result.replace(regex, '<@' + user.id + '>');
+            }
+            
+            return result;
+        }
+        
+        function escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+        }
+        
+        async function sendChatMessage(matchId, event) {
+            if (event) event.preventDefault();
+            
+            const input = document.getElementById('chat-input-' + matchId);
+            const btn = document.getElementById('chat-send-' + matchId);
+            if (!input || !btn) return;
+            
+            let message = input.value.trim();
+            if (!message) return;
+            
+            // Convert @mentions to Discord format
+            message = convertMentionsToDiscord(message, matchId);
+            
+            btn.disabled = true;
+            
+            try {
+                const resp = await fetch('/api/chat/send', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({match_id: matchId, message: message})
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    input.value = '';
+                    hideMentionSuggestions(matchId);
+                    // Immediately reload messages
+                    await loadChatMessages(matchId);
+                } else {
+                    showToast(data.error || 'Failed to send message', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+            
+            btn.disabled = false;
+            input.focus();
+        }
+        
+        function handleChatKeypress(matchId, event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendChatMessage(matchId);
+            }
+        }
+        
+        function handleChatInput(matchId, event) {
+            const input = event.target;
+            const value = input.value;
+            const cursorPos = input.selectionStart;
+            
+            // Find if we're typing a mention (@ followed by partial name)
+            const textBeforeCursor = value.substring(0, cursorPos);
+            // Match @ followed by any non-space characters (to support "Team: Name")
+            const mentionMatch = textBeforeCursor.match(/@([^ ]*)$/);
+            
+            if (mentionMatch) {
+                const partial = mentionMatch[1].toLowerCase();
+                showMentionSuggestions(matchId, partial, cursorPos - mentionMatch[0].length);
+            } else {
+                hideMentionSuggestions(matchId);
+            }
+        }
+        
+        function showMentionSuggestions(matchId, partial, mentionStart) {
+            const suggestionsDiv = document.getElementById('chat-suggestions-' + matchId);
+            if (!suggestionsDiv) return;
+            
+            const users = chatMentionableUsers[matchId] || [];
+            const roles = chatMentionableRoles[matchId] || [];
+            
+            const filteredUsers = users.filter(u => u.name.toLowerCase().includes(partial));
+            // Filter roles by displayName (team name without "Team:" prefix)
+            const filteredRoles = roles.filter(r => 
+                (r.displayName && r.displayName.toLowerCase().includes(partial)) ||
+                r.name.toLowerCase().includes(partial)
+            );
+            
+            if (filteredUsers.length === 0 && filteredRoles.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+            
+            let html = '';
+            
+            // Show roles first (with role icon/badge) - use displayName for easier typing
+            for (const role of filteredRoles.slice(0, 4)) {
+                const insertName = role.displayName || role.name;
+                html += `<div class="mention-suggestion mention-role" onclick="insertMention('${matchId}', '${escapeHtml(insertName)}', ${mentionStart})">
+                    <span class="mention-role-badge" style="background: ${role.color}">@</span>
+                    <span>${escapeHtml(role.displayName || role.name)}</span>
+                </div>`;
+            }
+            
+            // Then show users
+            for (const user of filteredUsers.slice(0, 6)) {
+                html += `<div class="mention-suggestion" onclick="insertMention('${matchId}', '${escapeHtml(user.name)}', ${mentionStart})">
+                    <img src="${user.avatar}" class="mention-avatar" alt="">
+                    <span>${escapeHtml(user.name)}</span>
+                </div>`;
+            }
+            
+            suggestionsDiv.innerHTML = html;
+            suggestionsDiv.style.display = 'block';
+        }
+        
+        function hideMentionSuggestions(matchId) {
+            const suggestionsDiv = document.getElementById('chat-suggestions-' + matchId);
+            if (suggestionsDiv) {
+                suggestionsDiv.style.display = 'none';
+            }
+        }
+        
+        function insertMention(matchId, name, mentionStart) {
+            const input = document.getElementById('chat-input-' + matchId);
+            if (!input) return;
+            
+            const value = input.value;
+            const beforeMention = value.substring(0, mentionStart);
+            const afterCursor = value.substring(input.selectionStart);
+            
+            input.value = beforeMention + '@' + name + ' ' + afterCursor;
+            input.focus();
+            
+            // Set cursor after the inserted mention
+            const newPos = mentionStart + name.length + 2;
+            input.setSelectionRange(newPos, newPos);
+            
+            hideMentionSuggestions(matchId);
+        }
     </script>
 </body>
 </html>
@@ -3094,6 +3621,22 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
                     <button class="broadcast-btn create" onclick="createChannel('{match_id}')" {create_disabled}>Create Channel</button>
                     <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
                     <button class="broadcast-btn golive" onclick="goLive('{match_id}')" {live_disabled}>Go Live</button>
+                    <button class="chat-toggle-btn" onclick="toggleChat('{match_id}', this)">Open Chat</button>
+                </div>
+            </div>
+            <div class="chat-section" id="chat-{match_id}">
+                <div class="chat-messages" id="chat-messages-{match_id}">
+                    <div class="chat-info">Loading messages...</div>
+                </div>
+                <div class="chat-input-container">
+                    <div class="mention-suggestions" id="chat-suggestions-{match_id}"></div>
+                    <form class="chat-input-row" onsubmit="sendChatMessage('{match_id}', event); return false;">
+                        <input type="text" class="chat-input" id="chat-input-{match_id}" 
+                               placeholder="Type a message as EML Bot... (Use @ to mention)" 
+                               onkeypress="handleChatKeypress('{match_id}', event)"
+                               oninput="handleChatInput('{match_id}', event)" autocomplete="off">
+                        <button type="submit" class="chat-send-btn" id="chat-send-{match_id}">Send</button>
+                    </form>
                 </div>
             </div>
         '''
@@ -4983,6 +5526,224 @@ async def leaderboard_handler(request: web.Request) -> web.Response:
     raise web.HTTPFound("/?tab=leaderboard")
 
 
+async def api_chat_messages_handler(request: web.Request) -> web.Response:
+    """API endpoint to get recent messages from a private match channel."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    match_id = request.query.get("match_id")
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    # Check if user has access to this match (has a claim or is lead)
+    user_id = session["user_id"]
+    claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in claims)
+    
+    is_lead = False
+    if config.WEB_LEAD_ROLE_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "No access to this match chat"}, status=403)
+    
+    # Check if private channel exists
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": True, "messages": [], "channel_exists": False})
+    
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    channel = guild.get_channel(match["private_channel_id"])
+    if not channel:
+        return web.json_response({"success": True, "messages": [], "channel_exists": False, "mentionable_users": [], "mentionable_roles": []})
+    
+    # Get mentionable users (members with access to the channel)
+    mentionable_users = []
+    try:
+        for member in channel.members:
+            if member.bot:
+                continue
+            avatar_url = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(member.id >> 22) % 6}.png"
+            mentionable_users.append({
+                "id": str(member.id),
+                "name": member.display_name,
+                "avatar": avatar_url,
+            })
+        mentionable_users.sort(key=lambda m: m["name"].lower())
+    except Exception as e:
+        log.error(f"Failed to get mentionable users: {e}")
+    
+    # Get mentionable roles (only team roles for teams in this match)
+    mentionable_roles = []
+    try:
+        team_a_lower = match.get("team_a", "").lower()
+        team_b_lower = match.get("team_b", "").lower()
+        for role in guild.roles:
+            # Only include "Team:" roles that match this match's teams
+            if role.name.lower().startswith("team:"):
+                team_name = role.name[5:].strip()
+                team_name_lower = team_name.lower()
+                if team_name_lower == team_a_lower or team_name_lower == team_b_lower:
+                    # Use role color or default gray
+                    color = f"#{role.color.value:06x}" if role.color.value else "#99aab5"
+                    mentionable_roles.append({
+                        "id": str(role.id),
+                        "name": role.name,
+                        "displayName": team_name,  # Team name without "Team:" prefix
+                        "color": color,
+                    })
+        mentionable_roles.sort(key=lambda r: r["name"].lower())
+    except Exception as e:
+        log.error(f"Failed to get mentionable roles: {e}")
+    
+    # Get recent messages (last 50)
+    messages = []
+    try:
+        async for msg in channel.history(limit=50, oldest_first=False):
+            msg_id = str(msg.id)
+            
+            # Convert Discord mentions to readable names
+            content = _convert_mentions_to_names(msg.content, guild)
+            
+            # Check if this is a bot message sent via web UI
+            web_sender = _web_sent_messages.get(msg_id)
+            if msg.author.bot and web_sender:
+                # Use the web sender's info for display
+                messages.append({
+                    "id": msg_id,
+                    "author_id": web_sender["sender_id"],
+                    "author_name": web_sender["sender_name"],
+                    "author_avatar": web_sender["sender_avatar"],
+                    "is_bot": False,  # Show as user message in UI
+                    "is_web_sent": True,  # Flag to indicate it was sent via web
+                    "content": content,
+                    "timestamp": msg.created_at.isoformat(),
+                })
+            else:
+                avatar_url = msg.author.avatar.url if msg.author.avatar else f"https://cdn.discordapp.com/embed/avatars/{(msg.author.id >> 22) % 6}.png"
+                messages.append({
+                    "id": msg_id,
+                    "author_id": str(msg.author.id),
+                    "author_name": msg.author.display_name,
+                    "author_avatar": avatar_url,
+                    "is_bot": msg.author.bot,
+                    "content": content,
+                    "timestamp": msg.created_at.isoformat(),
+                })
+        messages.reverse()  # Show oldest first
+    except Exception as e:
+        log.error(f"Failed to fetch chat messages: {e}")
+        return web.json_response({"success": False, "error": "Failed to fetch messages"}, status=500)
+    
+    return web.json_response({
+        "success": True, 
+        "messages": messages, 
+        "channel_exists": True,
+        "mentionable_users": mentionable_users,
+        "mentionable_roles": mentionable_roles,
+    })
+
+
+async def api_chat_send_handler(request: web.Request) -> web.Response:
+    """API endpoint to send a message to a private match channel as the bot."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    match_id = data.get("match_id")
+    message = data.get("message", "").strip()
+    
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    if not message:
+        return web.json_response({"success": False, "error": "Message cannot be empty"}, status=400)
+    if len(message) > 2000:
+        return web.json_response({"success": False, "error": "Message too long (max 2000 characters)"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    # Check if user has access to this match (has a claim or is lead)
+    user_id = session["user_id"]
+    claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in claims)
+    
+    is_lead = False
+    guild = bot.get_guild(config.GUILD_ID)
+    if config.WEB_LEAD_ROLE_ID and guild:
+        member = guild.get_member(user_id)
+        if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+            is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "No access to this match chat"}, status=403)
+    
+    # Check if private channel exists
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Private channel has not been created yet"}, status=400)
+    
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    channel = guild.get_channel(match["private_channel_id"])
+    if not channel:
+        return web.json_response({"success": False, "error": "Channel not found"}, status=404)
+    
+    # Get sender info for web UI display
+    sender_name = session.get("global_name") or session["username"]
+    sender_id = session["user_id"]
+    avatar_hash = session.get("avatar")
+    if avatar_hash:
+        sender_avatar = f"https://cdn.discordapp.com/avatars/{sender_id}/{avatar_hash}.png?size=64"
+    else:
+        default_avatar = (sender_id >> 22) % 6
+        sender_avatar = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
+    
+    # Send message as the bot (no sender attribution in Discord)
+    try:
+        sent_msg = await channel.send(message)
+        
+        # Store sender info for web UI display
+        _web_sent_messages[str(sent_msg.id)] = {
+            "sender_id": str(sender_id),
+            "sender_name": sender_name,
+            "sender_avatar": sender_avatar,
+        }
+        
+        return web.json_response({
+            "success": True, 
+            "message_id": str(sent_msg.id),
+        })
+    except Exception as e:
+        log.error(f"Failed to send chat message: {e}")
+        return web.json_response({"success": False, "error": "Failed to send message"}, status=500)
+
+
 def create_app(bot=None) -> web.Application:
     """Create the aiohttp web application."""
     app = web.Application()
@@ -5003,6 +5764,9 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/api/user/avatar", api_user_avatar_handler)
     app.router.add_get("/api/proxy-avatar", api_proxy_avatar_handler)
     app.router.add_get("/api/crew-members", api_crew_members_handler)
+    # Chat API routes
+    app.router.add_get("/api/chat/messages", api_chat_messages_handler)
+    app.router.add_post("/api/chat/send", api_chat_send_handler)
     # Admin API routes
     app.router.add_post("/api/admin/sync", api_admin_sync_handler)
     app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
