@@ -37,6 +37,10 @@ def _bool(key: str, default: bool = False) -> bool:
 # Discord
 DISCORD_TOKEN: str = _get("DISCORD_TOKEN", required=True)
 GUILD_ID: int = _int("GUILD_ID")
+
+# League branding
+LEAGUE_NAME: str = _get("LEAGUE_NAME", "Echo Master League")
+
 CLAIM_CHANNEL_ID: int = _int("CLAIM_CHANNEL_ID")
 PRIVATE_CATEGORY_ID: int = _int("PRIVATE_CATEGORY_ID")
 
@@ -82,6 +86,10 @@ WEB_ENABLED: bool = _bool("WEB_ENABLED", False)
 WEB_HOST: str = _get("WEB_HOST", "0.0.0.0")
 WEB_PORT: int = _int("WEB_PORT", 8080)
 WEB_PUBLIC_URL: str = _get("WEB_PUBLIC_URL", "")  # e.g., "http://yourdomain.com:8080"
+
+# SSL/HTTPS (optional - provide paths to cert and key files)
+WEB_SSL_CERT: str = _get("WEB_SSL_CERT", "")  # Path to SSL certificate file (.pem or .crt)
+WEB_SSL_KEY: str = _get("WEB_SSL_KEY", "")    # Path to SSL private key file (.pem or .key)
 
 # Discord OAuth2 (for web login - optional)
 DISCORD_CLIENT_ID: str = _get("DISCORD_CLIENT_ID", "")

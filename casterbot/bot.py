@@ -82,6 +82,8 @@ class CasterBot(commands.Bot):
                 bot=self,
                 host=config.WEB_HOST,
                 port=config.WEB_PORT,
+                ssl_cert=config.WEB_SSL_CERT,
+                ssl_key=config.WEB_SSL_KEY,
             )
 
         # Sync slash commands

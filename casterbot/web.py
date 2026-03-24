@@ -22,6 +22,8 @@ _sessions: dict[str, dict] = {}
 _web_sent_messages: dict[str, dict] = {}
 
 import re
+import json
+import asyncio
 
 def _convert_mentions_to_names(content: str, guild) -> str:
     """Convert Discord mention syntax to readable names for web display."""
@@ -164,7 +166,18 @@ HTML_TEMPLATE = """
     <link rel="apple-touch-icon" href="/icon-192.png">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="application-name" content="EML Caster">
-    <meta name="description" content="Echo Master League Broadcast Hub - Claim matches and manage casts">
+    <meta name="description" content="{league_name} Broadcast Hub - Claim matches and manage casts">
+    
+    <!-- Discord/Social Embed -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{site_url}">
+    <meta property="og:title" content="Broadcast Hub">
+    <meta property="og:description" content="Claim matches and manage casts for {league_name}">
+    <meta property="og:site_name" content="{league_name}">
+    <meta name="theme-color" content="#ff6a00">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Broadcast Hub">
+    <meta name="twitter:description" content="Claim matches and manage casts for {league_name}">
     
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -205,27 +218,37 @@ HTML_TEMPLATE = """
             pointer-events: none;
             z-index: -1;
         }
-        .container { max-width: 950px; margin: 0 auto; padding-left: 180px; }
+        .container { max-width: 950px; margin: 0 auto; padding-left: 300px; padding-top: 100px; }
+        .top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 150;
+            background: linear-gradient(180deg, var(--echo-darker) 0%, var(--echo-dark) 100%);
+            border-bottom: 1px solid var(--echo-border);
+            padding: 12px 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .top-bar-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
         .header {
-            text-align: center;
-            margin-bottom: 30px;
+            text-align: left;
             position: relative;
+            flex-shrink: 0;
         }
         .header::before {
-            content: '';
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 300px; height: 300px;
-            background: radial-gradient(circle, var(--echo-orange-glow) 0%, transparent 70%);
-            opacity: 0.3;
-            pointer-events: none;
+            display: none;
         }
         h1 {
             font-family: 'Orbitron', sans-serif;
-            font-size: 2.5em;
+            font-size: 1.6em;
             font-weight: 900;
-            letter-spacing: 4px;
+            letter-spacing: 3px;
             text-transform: uppercase;
             background: linear-gradient(180deg, var(--echo-orange) 0%, #ff8533 50%, var(--echo-orange) 100%);
             -webkit-background-clip: text;
@@ -233,28 +256,30 @@ HTML_TEMPLATE = """
             background-clip: text;
             text-shadow: 0 0 40px var(--echo-orange-glow);
             position: relative;
+            margin: 0;
+            line-height: 1.2;
         }
         .subtitle {
             font-family: 'Orbitron', sans-serif;
             color: var(--echo-cyan);
-            font-size: 0.85em;
-            letter-spacing: 3px;
+            font-size: 0.7em;
+            letter-spacing: 2px;
             text-transform: uppercase;
-            margin-top: 8px;
+            margin-top: 4px;
         }
         .season-badge {
             display: inline-block;
-            margin-top: 16px;
-            padding: 8px 20px;
+            margin-top: 8px;
+            padding: 5px 14px;
             background: linear-gradient(135deg, rgba(255,106,0,0.2), rgba(0,212,255,0.2));
             border: 1px solid var(--echo-orange);
-            border-radius: 20px;
+            border-radius: 15px;
             font-family: 'Orbitron', sans-serif;
-            font-size: 0.9em;
+            font-size: 0.75em;
             font-weight: 600;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
             color: var(--echo-text);
-            box-shadow: 0 0 15px var(--echo-orange-glow);
+            box-shadow: 0 0 10px var(--echo-orange-glow);
         }
         .season-badge .season-num {
             color: var(--echo-orange);
@@ -267,12 +292,13 @@ HTML_TEMPLATE = """
             margin: 0 8px;
         }
         .user-bar {
-            display: flex; justify-content: center; align-items: center; gap: 15px;
-            margin-bottom: 30px; padding: 14px 20px;
-            background: var(--echo-panel);
-            border: 1px solid var(--echo-border);
-            border-radius: 4px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+            display: flex; justify-content: flex-end; align-items: center; gap: 15px;
+            padding: 0;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            flex-shrink: 0;
         }
         .user-info { display: flex; align-items: center; gap: 12px; }
         .user-avatar { 
@@ -310,6 +336,24 @@ HTML_TEMPLATE = """
         .logout-btn:hover { 
             background: rgba(255,255,255,0.2);
             color: var(--echo-text);
+        }
+        .user-bar .refresh-btn {
+            background: transparent;
+            border: 1px solid var(--echo-orange);
+            color: var(--echo-orange);
+            padding: 8px 16px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+            margin-left: auto;
+        }
+        .user-bar .refresh-btn:hover {
+            background: rgba(255,106,0,0.2);
+            box-shadow: 0 0 15px rgba(255,106,0,0.3);
         }
         .match-card {
             background: var(--echo-panel);
@@ -548,14 +592,6 @@ HTML_TEMPLATE = """
             color: var(--echo-orange);
             font-family: 'Orbitron', sans-serif;
         }
-        .refresh-info { 
-            text-align: center; 
-            color: var(--echo-text-dim); 
-            font-size: 0.85em; 
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255,106,0,0.2);
-        }
         .status-badge {
             display: inline-block; padding: 4px 10px; border-radius: 4px;
             font-size: 0.7em; font-weight: 700; text-transform: uppercase; 
@@ -684,16 +720,7 @@ HTML_TEMPLATE = """
             text-transform: uppercase;
             letter-spacing: 1px;
         }
-        /* Chat Section Styles */
-        .chat-section {
-            display: none;
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(255,106,0,0.2);
-        }
-        .chat-section.chat-open {
-            display: block;
-        }
+        /* Chat Styles */
         .chat-toggle-btn {
             padding: 10px 18px;
             background: linear-gradient(180deg, #5865F2 0%, #4752C4 100%);
@@ -712,38 +739,55 @@ HTML_TEMPLATE = """
         .chat-toggle-btn:hover {
             box-shadow: 0 0 20px rgba(88,101,242,0.5);
         }
-        .chat-toggle-btn.active {
-            background: linear-gradient(180deg, #4752C4 0%, #3a4298 100%);
-        }
         .chat-messages {
             background: rgba(0,0,0,0.4);
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 8px;
             height: 300px;
             overflow-y: auto;
-            padding: 12px;
+            padding: 16px;
             margin-bottom: 12px;
+        }
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: var(--echo-border);
+            border-radius: 3px;
         }
         .chat-msg {
             display: flex;
-            gap: 10px;
-            margin-bottom: 12px;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .chat-msg:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
         }
         .chat-msg-continued {
-            padding-left: 48px;
-            margin-bottom: 4px;
+            padding-left: 52px;
+            margin-bottom: 6px;
+            padding-top: 0;
+            border-bottom: none;
         }
         .chat-msg-bot {
             background: rgba(88,101,242,0.1);
             border-radius: 8px;
-            padding: 8px;
+            padding: 10px 12px;
             margin: 4px -8px;
+            border-left: 3px solid rgba(88,101,242,0.5);
         }
         .chat-avatar {
-            width: 38px;
-            height: 38px;
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
             flex-shrink: 0;
+            border: 2px solid rgba(255,255,255,0.1);
         }
         .chat-content {
             flex: 1;
@@ -752,22 +796,25 @@ HTML_TEMPLATE = """
         .chat-header {
             display: flex;
             align-items: baseline;
-            gap: 8px;
-            margin-bottom: 4px;
+            gap: 10px;
+            margin-bottom: 6px;
         }
         .chat-author {
-            font-weight: 600;
+            font-weight: 700;
             color: var(--echo-cyan);
-            font-size: 0.9em;
+            font-size: 1em;
+            letter-spacing: 0.3px;
         }
         .chat-time {
-            font-size: 0.75em;
+            font-size: 0.8em;
             color: var(--echo-text-dim);
+            font-weight: 500;
         }
         .chat-text {
             color: var(--echo-text);
             word-wrap: break-word;
-            line-height: 1.4;
+            line-height: 1.5;
+            font-size: 1em;
         }
         .chat-input-row {
             display: flex;
@@ -875,6 +922,281 @@ HTML_TEMPLATE = """
             padding: 1px 4px;
             border-radius: 3px;
         }
+        .chat-date-separator {
+            display: flex;
+            align-items: center;
+            margin: 20px 0 16px 0;
+            padding: 0;
+        }
+        .chat-date-separator::before,
+        .chat-date-separator::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+        }
+        .chat-date-separator span {
+            padding: 4px 16px;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--echo-text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(255,106,0,0.1);
+            border-radius: 12px;
+            border: 1px solid rgba(255,106,0,0.2);
+        }
+        /* Chats Tab Styles */
+        .chats-header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,106,0,0.2);
+        }
+        .chats-header h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-orange);
+            font-size: 1.3em;
+            margin: 0 0 5px 0;
+        }
+        .chats-subtitle {
+            color: var(--echo-text-dim);
+            font-size: 0.9em;
+            margin: 0;
+        }
+        .chat-group {
+            background: var(--echo-card);
+            border: 1px solid var(--echo-border);
+            border-radius: 8px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .chat-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            background: rgba(255,106,0,0.05);
+            border-bottom: 1px solid var(--echo-border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .chat-group-header:hover {
+            background: rgba(255,106,0,0.1);
+        }
+        .chat-group-title {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            font-size: 0.95em;
+            letter-spacing: 1px;
+        }
+        .chat-group-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .chat-group-time {
+            font-size: 0.8em;
+            color: var(--echo-text-dim);
+        }
+        .chat-group-expand {
+            color: var(--echo-orange);
+            font-size: 1.2em;
+            transition: transform 0.3s;
+        }
+        .chat-group.expanded .chat-group-expand {
+            transform: rotate(180deg);
+        }
+        .chat-group-body {
+            display: none;
+            padding: 0;
+        }
+        .chat-group.expanded .chat-group-body {
+            display: block;
+        }
+        .chat-group .chat-messages {
+            border-radius: 0;
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            margin: 0;
+            height: 350px;
+        }
+        .chat-group .chat-input-container {
+            padding: 12px 16px;
+            background: rgba(0,0,0,0.2);
+        }
+        .chats-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--echo-text-dim);
+        }
+        .chats-empty-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        .channel-status {
+            font-size: 0.75em;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .channel-status.exists {
+            background: rgba(0,255,136,0.15);
+            color: var(--echo-success);
+        }
+        .channel-status.pending {
+            background: rgba(255,106,0,0.15);
+            color: var(--echo-orange);
+        }
+        .broadcast-controls-inline {
+            padding: 16px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .broadcast-controls-inline .stream-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .broadcast-controls-inline .stream-label {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            min-width: 60px;
+        }
+        .broadcast-controls-inline .stream-select {
+            flex: 1;
+            min-width: 150px;
+            max-width: 250px;
+        }
+        .broadcast-controls-inline .broadcast-btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .chat-section {
+            padding: 0;
+        }
+        .chat-section .chat-messages {
+            border-radius: 0;
+            border: none;
+            margin: 0;
+            height: 350px;
+        }
+        .chat-section .chat-input-container {
+            padding: 12px 16px;
+            background: rgba(0,0,0,0.2);
+        }
+        .chat-section-placeholder {
+            padding: 30px 20px;
+            text-align: center;
+            color: var(--echo-text-dim);
+            background: rgba(0,0,0,0.1);
+        }
+        .chat-section-placeholder p {
+            margin: 0;
+            font-size: 0.9em;
+        }
+        /* Match tab panel styles */
+        .match-tab-content {
+            padding: 0;
+        }
+        .match-panel-header {
+            padding: 20px;
+            background: rgba(255,106,0,0.05);
+            border-bottom: 1px solid var(--echo-border);
+        }
+        .match-panel-header h2 {
+            margin: 0 0 6px 0;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.3em;
+            color: var(--echo-cyan);
+            letter-spacing: 1px;
+        }
+        .match-panel-time {
+            margin: 0;
+            color: var(--echo-text-dim);
+            font-size: 0.9em;
+        }
+        .match-panel-controls {
+            padding: 16px 20px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .match-panel-controls .stream-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .match-panel-controls .stream-label {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            min-width: 60px;
+        }
+        .match-panel-controls .stream-select {
+            flex: 1;
+            min-width: 150px;
+            max-width: 280px;
+        }
+        .match-panel-controls .broadcast-btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .match-chat-section {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 320px);
+            min-height: 350px;
+        }
+        .match-chat-section .chat-messages {
+            flex: 1;
+            border: none;
+            border-radius: 0;
+            margin: 0;
+            min-height: 250px;
+            padding: 20px;
+            font-size: 1.05em;
+        }
+        .match-chat-section .chat-msg {
+            margin-bottom: 18px;
+            padding: 10px 0;
+        }
+        .match-chat-section .chat-avatar {
+            width: 44px;
+            height: 44px;
+        }
+        .match-chat-section .chat-author {
+            font-size: 1.05em;
+        }
+        .match-chat-section .chat-text {
+            font-size: 1.05em;
+            line-height: 1.6;
+        }
+        .match-chat-section .chat-input-container {
+            padding: 16px 20px;
+            background: rgba(0,0,0,0.3);
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .match-chat-section .chat-input {
+            font-size: 1.05em;
+            padding: 14px 16px;
+        }
+        .match-no-chat {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--echo-text-dim);
+            background: rgba(0,0,0,0.1);
+        }
+        .match-no-chat p {
+            margin: 0;
+            font-size: 0.95em;
+        }
         .toast {
             position: fixed; bottom: 20px; right: 20px; padding: 14px 24px;
             border-radius: 6px; color: white; font-weight: 600; z-index: 1000;
@@ -961,16 +1283,16 @@ HTML_TEMPLATE = """
         /* Sidebar Navigation */
         .sidebar {
             position: fixed;
-            top: 0;
+            top: 100px;
             left: 0;
-            width: 160px;
-            height: 100vh;
+            width: 280px;
+            height: calc(100vh - 100px);
             background: var(--echo-panel);
             border-right: 1px solid var(--echo-border);
             z-index: 100;
             display: flex;
             flex-direction: column;
-            padding-top: 20px;
+            padding-top: 10px;
         }
         .sidebar-header {
             padding: 15px 20px;
@@ -1021,6 +1343,110 @@ HTML_TEMPLATE = """
         }
         .tab-btn.active::after {
             display: none;
+        }
+        /* Tab category (collapsible group) */
+        .tab-category {
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+        .tab-category-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 24px;
+            color: var(--echo-text-dim);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9em;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(0,0,0,0.2);
+        }
+        .tab-category-header:hover {
+            color: var(--echo-text);
+            background: rgba(255,255,255,0.03);
+        }
+        .tab-category-arrow {
+            font-size: 0.8em;
+            transition: transform 0.3s;
+        }
+        .tab-category.expanded .tab-category-arrow {
+            transform: rotate(180deg);
+        }
+        .tab-category-items {
+            display: none;
+            padding-left: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .tab-category.expanded .tab-category-items {
+            display: block;
+        }
+        .tab-category-items::-webkit-scrollbar {
+            width: 4px;
+        }
+        .tab-category-items::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .tab-category-items::-webkit-scrollbar-thumb {
+            background: var(--echo-border);
+            border-radius: 2px;
+        }
+        .tab-match-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            border-left: 3px solid transparent;
+            color: var(--echo-text-dim);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.95em;
+            font-weight: 500;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .tab-match-btn:hover {
+            color: var(--echo-text);
+            background: rgba(255,255,255,0.03);
+        }
+        .tab-match-btn.active {
+            color: var(--echo-cyan);
+            border-left-color: var(--echo-cyan);
+            background: rgba(0,212,255,0.08);
+        }
+        .tab-match-btn .match-label {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tab-match-btn .match-time-label {
+            display: block;
+            font-size: 0.75em;
+            color: var(--echo-text-dim);
+            margin-top: 2px;
+        }
+        .tab-match-btn .match-status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .tab-match-btn .match-status-dot.has-channel {
+            background: var(--echo-success);
+        }
+        .tab-match-btn .match-status-dot.no-channel {
+            background: var(--echo-orange);
+        }
+        .tab-category-empty {
+            padding: 12px 20px;
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            font-style: italic;
         }
         .tab-content {
             display: none;
@@ -1651,12 +2077,24 @@ HTML_TEMPLATE = """
             }
             .container {
                 max-width: 100%;
+                padding-top: 0;
+            }
+            /* Mobile top bar */
+            .top-bar {
+                position: relative;
+                left: 0;
+                padding: 10px 15px;
+                margin-bottom: 15px;
+            }
+            .top-bar-inner {
+                flex-direction: column;
+                gap: 10px;
+                align-items: stretch;
             }
             /* Simplified header */
             .header {
-                margin-bottom: 16px;
-                padding-bottom: 12px;
-                border-bottom: 1px solid rgba(255,106,0,0.3);
+                text-align: center;
+                border-bottom: none;
             }
             .header::before {
                 display: none;
@@ -1679,10 +2117,12 @@ HTML_TEMPLATE = """
             /* Compact user bar */
             .user-bar {
                 flex-direction: row;
-                justify-content: space-between;
+                justify-content: center;
                 gap: 10px;
-                padding: 10px 14px;
-                margin-bottom: 14px;
+                padding: 8px 12px;
+                background: var(--echo-panel);
+                border: 1px solid var(--echo-border);
+                border-radius: 4px;
             }
             .user-info {
                 gap: 8px;
@@ -1749,7 +2189,7 @@ HTML_TEMPLATE = """
                 background: var(--echo-panel);
                 border: 2px solid var(--echo-orange);
                 border-radius: 12px;
-                z-index: 110;
+                z-index: 200;
                 cursor: pointer;
                 padding: 0;
                 box-shadow: 0 2px 12px rgba(0,0,0,0.4);
@@ -1785,7 +2225,11 @@ HTML_TEMPLATE = """
             .container {
                 padding-left: 0;
                 padding-bottom: 20px;
-                padding-top: 60px;
+                padding-top: 0;
+            }
+            .top-bar {
+                position: relative;
+                left: 0;
             }
             /* Collapsible Filter - Single row with toggle */
             .filter-bar {
@@ -2364,18 +2808,23 @@ HTML_TEMPLATE = """
             <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
             <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
             {admin_tab_btn}
+            {broadcast_tabs}
         </div>
     </div>
     <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
         <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
     </button>
-    <div class="container">
-        <div class="header">
-            <h1>Echo Master League</h1>
-            <p class="subtitle">Broadcast Hub</p>
-            {season_badge}
+    <div class="top-bar">
+        <div class="top-bar-inner">
+            <div class="header">
+                <h1>{league_name}</h1>
+                <p class="subtitle">Broadcast Hub</p>
+                {season_badge}
+            </div>
+            {user_bar}
         </div>
-        {user_bar}
+    </div>
+    <div class="container">
         <div id="tab-schedule" class="tab-content {schedule_content_active}">
             {filter_bar}
             <div id="schedule-content">
@@ -2389,10 +2838,31 @@ HTML_TEMPLATE = """
             {leaderboard_content}
             {cycle_history}
         </div>
+        {broadcast_tab_contents}
         {admin_tab_content}
-        <p class="refresh-info">// AUTO-REFRESH: 60 SECONDS //</p>
     </div>
     <script>
+        // Refresh function that preserves scroll position and tab state
+        function refreshPage() {
+            const scrollPos = window.scrollY;
+            const activeTab = new URL(window.location).searchParams.get('tab') || 'schedule';
+            sessionStorage.setItem('refreshScrollPos', scrollPos);
+            sessionStorage.setItem('refreshTab', activeTab);
+            location.reload();
+        }
+        
+        // Restore scroll position after refresh
+        (function() {
+            const savedScroll = sessionStorage.getItem('refreshScrollPos');
+            if (savedScroll !== null) {
+                sessionStorage.removeItem('refreshScrollPos');
+                sessionStorage.removeItem('refreshTab');
+                setTimeout(() => {
+                    window.scrollTo(0, parseInt(savedScroll, 10));
+                }, 100);
+            }
+        })();
+        
         // Pull-to-refresh for mobile
         (function() {
             const indicator = document.getElementById('pull-indicator');
@@ -2446,7 +2916,7 @@ HTML_TEMPLATE = """
                         indicator.querySelector('svg').style.transform = '';
                         
                         setTimeout(() => {
-                            location.reload();
+                            refreshPage();
                         }, 300);
                     } else {
                         indicator.style.transform = 'translateX(-50%) translateY(-60px)';
@@ -2468,7 +2938,6 @@ HTML_TEMPLATE = """
             let touchStartX = 0;
             let touchCurrentX = 0;
             let swiping = false;
-            const edgeThreshold = 30; // Pixels from left edge to start swipe
             const swipeThreshold = 80; // Distance to trigger open/close
             
             function openSidebar() {
@@ -2505,13 +2974,10 @@ HTML_TEMPLATE = """
             // Touch swipe handling
             document.addEventListener('touchstart', function(e) {
                 const touchX = e.touches[0].clientX;
-                const isOpen = sidebar.classList.contains('open');
                 
-                // Start swipe if near left edge (to open) or sidebar is open (to close)
-                if (touchX < edgeThreshold || isOpen) {
-                    touchStartX = touchX;
-                    swiping = true;
-                }
+                // Start swipe from anywhere on screen
+                touchStartX = touchX;
+                swiping = true;
             }, { passive: true });
             
             document.addEventListener('touchmove', function(e) {
@@ -2793,13 +3259,48 @@ HTML_TEMPLATE = """
             url.searchParams.set('tab', tab);
             window.history.pushState({}, '', url);
             
-            // Update button states
+            // Update button states - handle both main tabs and match tabs
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+            document.querySelectorAll('.tab-match-btn').forEach(btn => btn.classList.remove('active'));
+            
+            const mainTabBtn = document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`);
+            if (mainTabBtn) {
+                mainTabBtn.classList.add('active');
+            } else {
+                // It's a match tab
+                const matchTabBtn = document.querySelector(`.tab-match-btn[data-tab="${tab}"]`);
+                if (matchTabBtn) {
+                    matchTabBtn.classList.add('active');
+                }
+            }
             
             // Update content visibility
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.getElementById('tab-' + tab).classList.add('active');
+            const tabContent = document.getElementById('tab-' + tab);
+            if (tabContent) {
+                tabContent.classList.add('active');
+                // If it's a match tab, start loading chat
+                if (tab.startsWith('match-')) {
+                    const matchId = tabContent.dataset.matchId;
+                    if (matchId) {
+                        loadChatMessages(matchId);
+                        // Start polling
+                        if (!chatIntervals[matchId]) {
+                            chatIntervals[matchId] = setInterval(() => loadChatMessages(matchId), 5000);
+                        }
+                    }
+                }
+            }
+            
+            // Close sidebar on mobile
+            closeSidebar();
+        }
+        
+        function toggleCategory(categoryId) {
+            const category = document.getElementById(categoryId);
+            if (category) {
+                category.classList.toggle('expanded');
+            }
         }
         
         function selectCycle(cycleId) {
@@ -3160,9 +3661,7 @@ HTML_TEMPLATE = """
             } catch(e) {}
         })();
         
-        setTimeout(() => location.reload(), 60000);
-        
-        // Register Service Worker for PWA
+// Register Service Worker for PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(() => {});
         }
@@ -3198,26 +3697,14 @@ HTML_TEMPLATE = """
         const chatMentionableRoles = {};  // match_id -> array of {id, name, color}
         
         function toggleChat(matchId, btn) {
-            const chatSection = document.getElementById('chat-' + matchId);
-            if (!chatSection) return;
-            
-            if (chatSection.classList.contains('chat-open')) {
-                chatSection.classList.remove('chat-open');
-                btn.textContent = 'Open Chat';
-                btn.classList.remove('active');
-                // Stop polling
-                if (chatIntervals[matchId]) {
-                    clearInterval(chatIntervals[matchId]);
-                    delete chatIntervals[matchId];
-                }
-            } else {
-                chatSection.classList.add('chat-open');
-                btn.textContent = 'Close Chat';
-                btn.classList.add('active');
-                loadChatMessages(matchId);
-                // Start polling for new messages every 5 seconds
-                chatIntervals[matchId] = setInterval(() => loadChatMessages(matchId), 5000);
-            }
+            // Navigate directly to the match's broadcast tab
+            switchTab('match-' + matchId);
+        }
+        
+        function toggleChatGroup(matchId) {
+            // Legacy function - no longer used with new individual tabs
+            // Keep for backwards compatibility, just switch to the match tab
+            switchTab('match-' + matchId);
         }
         
         async function loadChatMessages(matchId) {
@@ -3254,11 +3741,36 @@ HTML_TEMPLATE = """
                 // Build messages HTML
                 let html = '';
                 let lastAuthor = null;
+                let lastMsgDate = null;
+                
                 for (const msg of data.messages) {
+                    const msgDate = new Date(msg.timestamp);
+                    const today = new Date();
+                    const isToday = msgDate.toDateString() === today.toDateString();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const isYesterday = msgDate.toDateString() === yesterday.toDateString();
+                    
+                    // Show date separator if different day
+                    const currentDateStr = msgDate.toDateString();
+                    if (currentDateStr !== lastMsgDate) {
+                        let dateLabel;
+                        if (isToday) {
+                            dateLabel = 'Today';
+                        } else if (isYesterday) {
+                            dateLabel = 'Yesterday';
+                        } else {
+                            dateLabel = msgDate.toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'});
+                        }
+                        html += `<div class="chat-date-separator"><span>${dateLabel}</span></div>`;
+                        lastMsgDate = currentDateStr;
+                        lastAuthor = null; // Reset author grouping on new day
+                    }
+                    
                     const isNewAuthor = msg.author_id !== lastAuthor;
                     lastAuthor = msg.author_id;
                     
-                    const time = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                    const time = msgDate.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
                     const botClass = msg.is_bot ? ' chat-msg-bot' : '';
                     
                     // Format content with highlighted mentions
@@ -3581,66 +4093,6 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
     if match.get("match_type"):
         match_type_html = f'<p class="match-type">{match["match_type"]}</p>'
     
-    # Check if requirements met for controls
-    has_caster = any(c for c in claims if c["role"] == "caster")
-    has_camop = any(c for c in claims if c["role"] == "camop")
-    has_channel = bool(match.get("private_channel_id"))
-    stream_channel = match.get("stream_channel")
-    can_create = has_caster and has_camop and not has_channel
-    can_ready = has_channel
-    can_go_live = has_channel and has_caster and has_camop and stream_channel
-    
-    # Build broadcast controls (show for leads OR users with a claim on this match)
-    broadcast_html = ""
-    if is_lead or has_my_claim:
-        create_disabled = "" if can_create else "disabled"
-        ready_disabled = "" if can_ready else "disabled"
-        live_disabled = "" if can_go_live else "disabled"
-        
-        channel_info = ""
-        if has_channel:
-            channel_info = '<span style="color: #3ba55c; font-size: 0.85em; margin-left: 8px;">✓ Channel exists</span>'
-        
-        # Build stream channel options
-        stream_warning = "warning" if not stream_channel else ""
-        stream_options = '<option value="">⚠️ Select Channel</option>'
-        for ch_num, (label, url) in config.STREAM_CHANNELS.items():
-            selected = "selected" if stream_channel == ch_num else ""
-            stream_options += f'<option value="{ch_num}" {selected}>{label}</option>'
-        
-        broadcast_html = f'''
-            <div class="broadcast-controls">
-                <h4>Broadcast Controls {channel_info}</h4>
-                <div class="stream-row">
-                    <span class="stream-label">Stream:</span>
-                    <select class="stream-select {stream_warning}" onchange="setStreamChannel('{match_id}', this)">
-                        {stream_options}
-                    </select>
-                </div>
-                <div class="broadcast-btns">
-                    <button class="broadcast-btn create" onclick="createChannel('{match_id}')" {create_disabled}>Create Channel</button>
-                    <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
-                    <button class="broadcast-btn golive" onclick="goLive('{match_id}')" {live_disabled}>Go Live</button>
-                    <button class="chat-toggle-btn" onclick="toggleChat('{match_id}', this)">Open Chat</button>
-                </div>
-            </div>
-            <div class="chat-section" id="chat-{match_id}">
-                <div class="chat-messages" id="chat-messages-{match_id}">
-                    <div class="chat-info">Loading messages...</div>
-                </div>
-                <div class="chat-input-container">
-                    <div class="mention-suggestions" id="chat-suggestions-{match_id}"></div>
-                    <form class="chat-input-row" onsubmit="sendChatMessage('{match_id}', event); return false;">
-                        <input type="text" class="chat-input" id="chat-input-{match_id}" 
-                               placeholder="Type a message as EML Bot... (Use @ to mention)" 
-                               onkeypress="handleChatKeypress('{match_id}', event)"
-                               oninput="handleChatInput('{match_id}', event)" autocomplete="off">
-                        <button type="submit" class="chat-send-btn" id="chat-send-{match_id}">Send</button>
-                    </form>
-                </div>
-            </div>
-        '''
-    
     my_claim_attr = ' data-my-claim="true"' if has_my_claim else ''
     
     # Calculate additional filter attributes
@@ -3671,7 +4123,6 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
             <p class="match-time">{formatted_time} <span class="time-relative">{status_badge} {relative}</span></p>
             <div class="claims">{"".join(slots)}</div>
             {match_type_html}
-            {broadcast_html}
         </div>
     '''
 
@@ -3782,7 +4233,19 @@ async def schedule_handler(request: web.Request) -> web.Response:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CasterBot - Login Required</title>
+    <title>{config.LEAGUE_NAME} - Broadcast Hub</title>
+    
+    <!-- Discord/Social Embed -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{config.WEB_PUBLIC_URL or f"https://casterbot.mooo.com:{config.WEB_PORT}"}">
+    <meta property="og:title" content="Broadcast Hub">
+    <meta property="og:description" content="Claim matches and manage casts for {config.LEAGUE_NAME}">
+    <meta property="og:site_name" content="{config.LEAGUE_NAME}">
+    <meta name="theme-color" content="#ff6a00">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Broadcast Hub">
+    <meta name="twitter:description" content="Claim matches and manage casts for {config.LEAGUE_NAME}">
+    
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {{
@@ -3839,8 +4302,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
 </head>
 <body>
     <div class="login-container">
-        <h1>CASTERBOT</h1>
-        <p>Login with Discord to access the casting schedule.<br>Requires a Caster or CamOp role.</p>
+        <h1>{config.LEAGUE_NAME}</h1>
+        <p>Login with Discord to access the Broadcast Hub.<br>Requires a Caster or CamOp role.</p>
         <a href="/login" class="login-btn">Login with Discord</a>
     </div>
 </body>
@@ -3936,7 +4399,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
     valid_tabs = ["schedule", "leaderboard"]
     if is_admin:
         valid_tabs.append("admin")
-    if active_tab not in valid_tabs:
+    # Match tabs (match-*) are also valid
+    if active_tab not in valid_tabs and not active_tab.startswith("match-"):
         active_tab = "schedule"
     
     schedule_active = "active" if active_tab == "schedule" else ""
@@ -3972,12 +4436,13 @@ async def schedule_handler(request: web.Request) -> web.Response:
             avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
         
         user_bar = f'''
-            <div class="user-bar">
+            <div class="user-bar" data-user-id="{user_id}">
                 <div class="user-info">
                     <img src="{avatar_url}" class="user-avatar" alt="">
                     <span class="user-name">{display_name}</span>
                 </div>
                 <a href="/logout" class="logout-btn">Logout</a>
+                <button class="refresh-btn" onclick="refreshPage()">&#x21bb; Refresh</button>
             </div>
         '''
     else:
@@ -3987,12 +4452,14 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 <div class="user-bar">
                     <span style="color: #8e9297;">Login to claim matches</span>
                     <a href="/login" class="login-btn">Login with Discord</a>
+                    <button class="refresh-btn" onclick="refreshPage()">&#x21bb; Refresh</button>
                 </div>
             '''
         else:
             user_bar = '''
                 <div class="user-bar">
                     <span style="color: #8e9297;">View-only mode (OAuth not configured)</span>
+                    <button class="refresh-btn" onclick="refreshPage()">&#x21bb; Refresh</button>
                 </div>
             '''
     
@@ -4291,6 +4758,145 @@ async def schedule_handler(request: web.Request) -> web.Response:
     else:
         cycle_history = ''
     
+    # Build broadcast tabs - individual tabs for each match user has claimed
+    broadcast_tabs = ''
+    broadcast_tab_contents = ''
+    if current_user_id and matches:
+        tab_buttons = []
+        tab_contents = []
+        for match in matches:
+            # Check if user has a claim on this match OR is admin
+            claims = match_claims.get(match["match_id"], [])
+            user_has_claim = any(c["user_id"] == current_user_id for c in claims)
+            
+            # Show match if user has a claim (or is admin)
+            if user_has_claim or is_admin:
+                match_id = match["match_id"]
+                simple_id = match.get("simple_id", "?")
+                team_a = match.get("team_a", "TBD")
+                team_b = match.get("team_b", "TBD")
+                match_time = match.get("match_time", "")
+                match_date = match.get("match_date", "")
+                
+                # Check if requirements met for controls
+                has_caster = any(c for c in claims if c["role"] == "caster")
+                has_camop = any(c for c in claims if c["role"] == "camop")
+                has_channel = bool(match.get("private_channel_id"))
+                stream_channel = match.get("stream_channel")
+                can_create = has_caster and has_camop and not has_channel
+                can_ready = has_channel
+                can_go_live = has_channel and has_caster and has_camop and stream_channel
+                
+                create_disabled = "" if can_create else "disabled"
+                ready_disabled = "" if can_ready else "disabled"
+                live_disabled = "" if can_go_live else "disabled"
+                
+                status_dot_class = "has-channel" if has_channel else "no-channel"
+                match_timestamp = match.get("match_timestamp", 0)
+                
+                # Build stream channel options
+                stream_warning = "warning" if not stream_channel else ""
+                stream_options = '<option value="">⚠️ Select Channel</option>'
+                for ch_num, (label, url) in config.STREAM_CHANNELS.items():
+                    selected = "selected" if stream_channel == ch_num else ""
+                    stream_options += f'<option value="{ch_num}" {selected}>{label}</option>'
+                
+                # Build chat section (only if channel exists)
+                if has_channel:
+                    chat_section = f'''
+                        <div class="match-chat-section">
+                            <div class="chat-messages" id="chat-messages-{match_id}">
+                                <div class="chat-info">Loading messages...</div>
+                            </div>
+                            <div class="chat-input-container">
+                                <div class="mention-suggestions" id="chat-suggestions-{match_id}"></div>
+                                <form class="chat-input-row" onsubmit="sendChatMessage('{match_id}', event); return false;">
+                                    <input type="text" class="chat-input" id="chat-input-{match_id}" 
+                                           placeholder="Type a message... (Use @ to mention)"
+                                           onkeypress="handleChatKeypress('{match_id}', event)"
+                                           oninput="handleChatInput('{match_id}', event)" autocomplete="off">
+                                    <button type="submit" class="chat-send-btn" id="chat-send-{match_id}">Send</button>
+                                </form>
+                            </div>
+                        </div>
+                    '''
+                else:
+                    chat_section = '''
+                        <div class="match-no-chat">
+                            <p>Create a channel to enable crew chat</p>
+                        </div>
+                    '''
+                
+                # Sidebar tab button
+                tab_buttons.append(f'''
+                    <button class="tab-match-btn" onclick="switchTab('match-{match_id}')" data-tab="match-{match_id}" data-timestamp="{match_timestamp}">
+                        <span class="match-label"><span class="match-status-dot {status_dot_class}"></span>#{simple_id} - {team_a} vs {team_b}</span>
+                        <span class="match-time-label">{match_date} {match_time}</span>
+                    </button>
+                ''')
+                
+                # Tab content panel
+                tab_contents.append(f'''
+                    <div id="tab-match-{match_id}" class="tab-content match-tab-content" data-match-id="{match_id}">
+                        <div class="match-panel-header">
+                            <h2>#{simple_id} - {team_a} vs {team_b}</h2>
+                            <p class="match-panel-time">{match_date} {match_time}</p>
+                        </div>
+                        <div class="match-panel-controls">
+                            <div class="stream-row">
+                                <span class="stream-label">Stream:</span>
+                                <select class="stream-select {stream_warning}" onchange="setStreamChannel('{match_id}', this)">
+                                    {stream_options}
+                                </select>
+                            </div>
+                            <div class="broadcast-btns">
+                                <button class="broadcast-btn create" onclick="createChannel('{match_id}')" {create_disabled}>Create Channel</button>
+                                <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
+                                <button class="broadcast-btn golive" onclick="goLive('{match_id}')" {live_disabled}>Go Live</button>
+                            </div>
+                        </div>
+                        {chat_section}
+                    </div>
+                ''')
+        
+        if tab_buttons:
+            broadcast_tabs = f'''
+                <div class="tab-category expanded" id="broadcast-category">
+                    <div class="tab-category-header" onclick="toggleCategory('broadcast-category')">
+                        <span>Broadcasts</span>
+                        <span class="tab-category-arrow">β–Ό</span>
+                    </div>
+                    <div class="tab-category-items">
+                        {"".join(tab_buttons)}
+                    </div>
+                </div>
+            '''
+            broadcast_tab_contents = "\n".join(tab_contents)
+        else:
+            broadcast_tabs = f'''
+                <div class="tab-category" id="broadcast-category">
+                    <div class="tab-category-header" onclick="toggleCategory('broadcast-category')">
+                        <span>Broadcasts</span>
+                        <span class="tab-category-arrow">β–Ό</span>
+                    </div>
+                    <div class="tab-category-items">
+                        <div class="tab-category-empty">No matches claimed</div>
+                    </div>
+                </div>
+            '''
+    else:
+        broadcast_tabs = f'''
+            <div class="tab-category" id="broadcast-category">
+                <div class="tab-category-header" onclick="toggleCategory('broadcast-category')">
+                    <span>Broadcasts</span>
+                    <span class="tab-category-arrow">β–Ό</span>
+                </div>
+                <div class="tab-category-items">
+                    <div class="tab-category-empty">Login to see your matches</div>
+                </div>
+            </div>
+        '''
+    
     # Build admin tab (only for admins)
     if is_admin:
         admin_tab_btn = f'<button class="tab-btn admin {admin_active}" onclick="switchTab(\'admin\')">Admin</button>'
@@ -4454,6 +5060,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
         admin_tab_content = ''
     
     html = (HTML_TEMPLATE
+        .replace("{league_name}", config.LEAGUE_NAME)
+        .replace("{site_url}", config.WEB_PUBLIC_URL or f"https://{config.WEB_HOST}:{config.WEB_PORT}")
         .replace("{user_bar}", user_bar)
         .replace("{season_badge}", season_badge)
         .replace("{filter_bar}", filter_bar)
@@ -4464,6 +5072,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
         .replace("{cycle_info}", cycle_info)
         .replace("{leaderboard_content}", leaderboard_content)
         .replace("{cycle_history}", cycle_history)
+        .replace("{broadcast_tabs}", broadcast_tabs)
+        .replace("{broadcast_tab_contents}", broadcast_tab_contents)
         .replace("{schedule_active}", schedule_active)
         .replace("{leaderboard_active}", leaderboard_active)
         .replace("{schedule_content_active}", schedule_content_active)
@@ -5368,7 +5978,7 @@ async def manifest_handler(request: web.Request) -> web.Response:
     manifest = {
         "name": "EML Broadcast Hub",
         "short_name": "EML Caster",
-        "description": "Echo Master League Broadcast Hub - Claim matches and manage casts",
+        "description": f"{config.LEAGUE_NAME} Broadcast Hub - Claim matches and manage casts",
         "start_url": "/",
         "display": "standalone",
         "background_color": "#0a0a12",
@@ -5788,14 +6398,31 @@ def create_app(bot=None) -> web.Application:
     return app
 
 
-async def start_web_server(bot=None, host: str = "0.0.0.0", port: int = 8080) -> web.AppRunner:
+async def start_web_server(bot=None, host: str = "0.0.0.0", port: int = 8080, ssl_cert: str = "", ssl_key: str = "") -> web.AppRunner:
     """Start the web server. Returns the runner for cleanup."""
+    import ssl as ssl_module
+    
     app = create_app(bot)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host, port)
+    
+    # Configure SSL if cert and key provided
+    ssl_context = None
+    if ssl_cert and ssl_key:
+        try:
+            ssl_context = ssl_module.create_default_context(ssl_module.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(ssl_cert, ssl_key)
+            log.info("SSL enabled for web server")
+        except Exception as e:
+            log.error(f"Failed to load SSL certificates: {e}")
+            log.warning("Falling back to HTTP")
+            ssl_context = None
+    
+    site = web.TCPSite(runner, host, port, ssl_context=ssl_context)
     await site.start()
-    log.info(f"Web server started at http://{host}:{port}")
+    
+    protocol = "https" if ssl_context else "http"
+    log.info(f"Web server started at {protocol}://{host}:{port}")
     return runner
 
 
