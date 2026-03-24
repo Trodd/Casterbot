@@ -2851,15 +2851,26 @@ HTML_TEMPLATE = """
             location.reload();
         }
         
-        // Restore scroll position after refresh
+        // Restore scroll position and tab after refresh
         (function() {
             const savedScroll = sessionStorage.getItem('refreshScrollPos');
-            if (savedScroll !== null) {
+            const savedTab = sessionStorage.getItem('refreshTab');
+            if (savedScroll !== null || savedTab !== null) {
                 sessionStorage.removeItem('refreshScrollPos');
                 sessionStorage.removeItem('refreshTab');
+                
+                // Wait for DOM to be ready, then restore tab and scroll
                 setTimeout(() => {
-                    window.scrollTo(0, parseInt(savedScroll, 10));
-                }, 100);
+                    if (savedTab && savedTab !== 'schedule') {
+                        // Switch to the saved tab
+                        if (typeof switchTab === 'function') {
+                            switchTab(savedTab);
+                        }
+                    }
+                    if (savedScroll !== null) {
+                        window.scrollTo(0, parseInt(savedScroll, 10));
+                    }
+                }, 150);
             }
         })();
         
@@ -3981,6 +3992,20 @@ HTML_TEMPLATE = """
             
             hideMentionSuggestions(matchId);
         }
+        
+        // Initialize active match tab chat on page load
+        (function() {
+            const activeMatchTab = document.querySelector('.tab-content.match-tab-content.active');
+            if (activeMatchTab) {
+                const matchId = activeMatchTab.dataset.matchId;
+                if (matchId) {
+                    loadChatMessages(matchId);
+                    if (!chatIntervals[matchId]) {
+                        chatIntervals[matchId] = setInterval(() => loadChatMessages(matchId), 5000);
+                    }
+                }
+            }
+        })();
     </script>
 </body>
 </html>
@@ -4828,8 +4853,9 @@ async def schedule_handler(request: web.Request) -> web.Response:
                     '''
                 
                 # Sidebar tab button
+                match_tab_active = "active" if active_tab == f"match-{match_id}" else ""
                 tab_buttons.append(f'''
-                    <button class="tab-match-btn" onclick="switchTab('match-{match_id}')" data-tab="match-{match_id}" data-timestamp="{match_timestamp}">
+                    <button class="tab-match-btn {match_tab_active}" onclick="switchTab('match-{match_id}')" data-tab="match-{match_id}" data-timestamp="{match_timestamp}">
                         <span class="match-label"><span class="match-status-dot {status_dot_class}"></span>#{simple_id} - {team_a} vs {team_b}</span>
                         <span class="match-time-label">{match_date} {match_time}</span>
                     </button>
@@ -4837,7 +4863,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 
                 # Tab content panel
                 tab_contents.append(f'''
-                    <div id="tab-match-{match_id}" class="tab-content match-tab-content" data-match-id="{match_id}">
+                    <div id="tab-match-{match_id}" class="tab-content match-tab-content {match_tab_active}" data-match-id="{match_id}">
                         <div class="match-panel-header">
                             <h2>#{simple_id} - {team_a} vs {team_b}</h2>
                             <p class="match-panel-time">{match_date} {match_time}</p>
