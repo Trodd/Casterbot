@@ -3652,6 +3652,54 @@ HTML_TEMPLATE = """
             }
         }
         
+        async function adminForceCreateMatch() {
+            const teamA = document.getElementById('force-create-team-a').value.trim();
+            const teamB = document.getElementById('force-create-team-b').value.trim();
+            const datetime = document.getElementById('force-create-datetime').value;
+            const matchType = document.getElementById('force-create-type').value.trim();
+            const result = document.getElementById('result-force-create');
+            
+            if (!teamA || !teamB) {
+                result.innerHTML = '<span class="error">Enter both team names</span>';
+                return;
+            }
+            if (!datetime) {
+                result.innerHTML = '<span class="error">Enter a date/time</span>';
+                return;
+            }
+            if (!confirm('Create match: ' + teamA + ' vs ' + teamB + '?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/force-create-match', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        team_a: teamA,
+                        team_b: teamB,
+                        datetime: datetime,
+                        match_type: matchType || null
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Match created', 'success');
+                    // Clear form
+                    document.getElementById('force-create-team-a').value = '';
+                    document.getElementById('force-create-team-b').value = '';
+                    document.getElementById('force-create-datetime').value = '';
+                    document.getElementById('force-create-type').value = '';
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
         // Load active cycle info
         (async function() {
             try {
@@ -5004,6 +5052,35 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 
                 <div class="admin-section">
                     <div class="admin-section-header">
+                        <h3>Force Create Match</h3>
+                    </div>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Create a match manually (not from the Google Sheet). Useful for scrimmages, special events, etc.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Team A</label>
+                                <input type="text" class="admin-input" id="force-create-team-a" placeholder="Team name">
+                            </div>
+                            <div class="admin-input-group">
+                                <label>Team B</label>
+                                <input type="text" class="admin-input" id="force-create-team-b" placeholder="Team name">
+                            </div>
+                            <div class="admin-input-group">
+                                <label>Date/Time</label>
+                                <input type="datetime-local" class="admin-input" id="force-create-datetime">
+                            </div>
+                            <div class="admin-input-group">
+                                <label>Type (optional)</label>
+                                <input type="text" class="admin-input" id="force-create-type" placeholder="e.g. Scrimmage, Playoff">
+                            </div>
+                            <button class="admin-btn success" onclick="adminForceCreateMatch()">Create Match</button>
+                        </div>
+                        <div class="admin-result" id="result-force-create"></div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
                         <h3>Season & Week</h3>
                     </div>
                     <div class="admin-row">
@@ -5985,6 +6062,83 @@ async def api_admin_force_delete_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+async def api_admin_force_create_match_handler(request: web.Request) -> web.Response:
+    """Admin API: Force create a match not from the Google Sheet."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    team_a = data.get("team_a", "").strip()
+    team_b = data.get("team_b", "").strip()
+    datetime_str = data.get("datetime")
+    match_type = data.get("match_type")
+    
+    if not team_a or not team_b:
+        return web.json_response({"success": False, "error": "Missing team names"}, status=400)
+    if not datetime_str:
+        return web.json_response({"success": False, "error": "Missing datetime"}, status=400)
+    
+    try:
+        # Parse datetime (format: YYYY-MM-DDTHH:MM from datetime-local input)
+        from datetime import datetime as dt
+        match_dt = dt.fromisoformat(datetime_str)
+        
+        # Generate a unique match_id (manual matches use a special prefix)
+        import hashlib
+        import time
+        hash_input = f"manual:{team_a}:{team_b}:{int(time.time())}"
+        match_id = f"manual_{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+        
+        # Format date/time strings
+        match_date = match_dt.strftime("%Y-%m-%d")
+        match_time = match_dt.strftime("%H:%M")
+        match_timestamp = int(match_dt.timestamp())
+        
+        # Insert into database
+        await db.upsert_match(
+            match_id=match_id,
+            team_a=team_a,
+            team_b=team_b,
+            match_date=match_date,
+            match_time=match_time,
+            match_timestamp=match_timestamp,
+            match_type=match_type,
+        )
+        
+        # Post claim message if bot is available
+        if bot:
+            from .views import ClaimView
+            claim_channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+            if claim_channel:
+                match = await db.get_match(match_id)
+                claims = await db.get_claims(match_id)
+                view = ClaimView(match_id, match, claims)
+                bot.add_view(view)
+                try:
+                    msg = await claim_channel.send(view=view)
+                    await db.set_message_id(match_id, msg.id, claim_channel.id)
+                    log.info(f"Posted claim message for manual match: {team_a} vs {team_b}")
+                except Exception as e:
+                    log.error(f"Failed to post claim message: {e}")
+        
+        match = await db.get_match(match_id)
+        simple_id = match.get("simple_id", "?") if match else "?"
+        
+        return web.json_response({
+            "success": True,
+            "message": f"Created match #{simple_id}: {team_a} vs {team_b}"
+        })
+    except Exception as e:
+        log.error(f"Admin force create match failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 async def api_active_cycle_handler(request: web.Request) -> web.Response:
     """API endpoint to get active cycle info."""
     active = await db.get_active_cycle()
@@ -6413,6 +6567,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/start-cycle", api_admin_start_cycle_handler)
     app.router.add_post("/api/admin/end-cycle", api_admin_end_cycle_handler)
     app.router.add_post("/api/admin/force-delete", api_admin_force_delete_handler)
+    app.router.add_post("/api/admin/force-create-match", api_admin_force_create_match_handler)
     app.router.add_get("/api/active-cycle", api_active_cycle_handler)
     app.router.add_get("/health", health_handler)
     # PWA routes
