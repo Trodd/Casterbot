@@ -774,6 +774,108 @@ def _register_commands(bot: CasterBot) -> None:
                     ephemeral=True
                 )
 
+    @bot.tree.command(name="team_logo", description="Submit a team's logo for review (leads only)")
+    @app_commands.describe(
+        team="The team role this logo is for",
+        image="The logo image to submit (PNG, JPG, GIF, or WebP)"
+    )
+    async def cmd_submit_logo(
+        interaction: discord.Interaction,
+        team: discord.Role,
+        image: discord.Attachment
+    ):
+        # Check TEAM_LOGO_CHANNEL_ID is configured
+        if not config.TEAM_LOGO_CHANNEL_ID:
+            await interaction.response.send_message(
+                "Team logo submissions are not configured on this server.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if user is a lead
+        member = interaction.user
+        if not config.WEB_LEAD_ROLE_ID or config.WEB_LEAD_ROLE_ID not in [r.id for r in member.roles]:
+            await interaction.response.send_message(
+                "This command is for leads only.",
+                ephemeral=True
+            )
+            return
+        
+        # Validate team role
+        if team.name.lower().startswith("team:"):
+            team_name = team.name[5:].strip()
+        else:
+            await interaction.response.send_message(
+                f"'{team.name}' doesn't look like a team role. Team roles should start with 'Team:'.",
+                ephemeral=True
+            )
+            return
+        
+        if not team_name:
+            await interaction.response.send_message(
+                "Invalid team role.",
+                ephemeral=True
+            )
+            return
+        
+        # Validate image
+        if not image.content_type or not image.content_type.startswith("image/"):
+            await interaction.response.send_message(
+                "Please attach an image file (PNG, JPG, GIF, or WebP).",
+                ephemeral=True
+            )
+            return
+        
+        # Check file size (5MB max)
+        if image.size > 5 * 1024 * 1024:
+            await interaction.response.send_message(
+                "Image is too large. Maximum size is 5MB.",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Get the logo submission channel
+            logo_channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+            if not logo_channel:
+                await interaction.followup.send(
+                    "Could not find the logo submission channel.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if team already has an approved logo
+            existing_logo = await db.get_team_logo(team_name)
+            warning = ""
+            if existing_logo:
+                warning = "\n⚠️ **Note:** This team already has an approved logo. Approving this will replace it."
+            
+            # Post the logo to the channel for review
+            embed = discord.Embed(
+                title="🎨 Team Logo Submission",
+                color=0x00D4FF,
+                description=f"**Team:** {team_name}\n**Submitted by:** {member.mention}{warning}"
+            )
+            embed.set_image(url=image.url)
+            embed.set_footer(text=f"User ID: {member.id} | Review this in the web UI")
+            
+            await logo_channel.send(embed=embed, file=await image.to_file())
+            
+            await interaction.followup.send(
+                f"✅ Your logo for **{team_name}** has been submitted for review!\n"
+                f"A league lead will review it shortly.",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            log.error(f"Logo submission error: {e}")
+            await interaction.followup.send(
+                "Failed to submit logo. Please try again.",
+                ephemeral=True
+            )
+
 
 def run() -> None:
     bot = get_bot()
