@@ -5772,6 +5772,405 @@ async def api_crew_members_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "members": crew_members})
 
 
+def _check_rpc_key(request: web.Request) -> bool:
+    """Check if request has valid RPC API key."""
+    if not config.RPC_API_KEY:
+        return False
+    api_key = request.headers.get("X-API-Key") or request.query.get("api_key")
+    return api_key == config.RPC_API_KEY
+
+
+async def api_matches_handler(request: web.Request) -> web.Response:
+    """Public API endpoint to get all matches with claim info (no auth required)."""
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+    
+    # Get all active matches
+    matches = await db.get_all_matches_sorted_by_time()
+    
+    result = []
+    for match in matches:
+        match_id = match["match_id"]
+        claims = await db.get_claims(match_id)
+        
+        # Build casters list
+        casters = []
+        for slot in range(1, 3):  # Slots 1 and 2
+            claim = next((c for c in claims if c["role"] == "caster" and c["slot"] == slot), None)
+            if claim:
+                user_id = claim["user_id"]
+                user_info = {"user_id": str(user_id), "slot": slot}
+                
+                # Get user display name and avatar from Discord
+                if guild:
+                    member = guild.get_member(user_id)
+                    if member:
+                        user_info["display_name"] = member.display_name
+                        user_info["username"] = member.name
+                        user_info["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+                
+                casters.append(user_info)
+        
+        # Build cam op info
+        cam_op = None
+        cam_claim = next((c for c in claims if c["role"] == "camop" and c["slot"] == 1), None)
+        if cam_claim:
+            user_id = cam_claim["user_id"]
+            cam_op = {"user_id": str(user_id)}
+            
+            if guild:
+                member = guild.get_member(user_id)
+                if member:
+                    cam_op["display_name"] = member.display_name
+                    cam_op["username"] = member.name
+                    cam_op["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+        
+        # Build sideline info (if claimed)
+        sideline = None
+        sideline_claim = next((c for c in claims if c["role"] == "sideline" and c["slot"] == 1), None)
+        if sideline_claim:
+            user_id = sideline_claim["user_id"]
+            sideline = {"user_id": str(user_id)}
+            
+            if guild:
+                member = guild.get_member(user_id)
+                if member:
+                    sideline["display_name"] = member.display_name
+                    sideline["username"] = member.name
+                    sideline["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+        
+        result.append({
+            "id": match.get("simple_id"),
+            "team_a": match["team_a"],
+            "team_b": match["team_b"],
+            "match_date": match["match_date"],
+            "match_time": match["match_time"],
+            "match_timestamp": match.get("match_timestamp"),
+            "week_number": match.get("week_number"),
+            "match_type": match.get("match_type"),
+            "stream_channel": match.get("stream_channel"),
+            "casters": casters,
+            "cam_op": cam_op,
+            "sideline": sideline,
+        })
+    
+    return web.json_response({"success": True, "matches": result})
+
+
+# ============ RPC API (for remote apps with API key) ============
+
+async def rpc_create_channel_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to create private match channel (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    # Accept simple match ID
+    match_id_param = data.get("match_id") or data.get("id")
+    if not match_id_param:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    # Look up by simple_id if numeric
+    if isinstance(match_id_param, int) or (isinstance(match_id_param, str) and match_id_param.isdigit()):
+        match = await db.get_match_by_simple_id(int(match_id_param))
+    else:
+        match = await db.get_match(match_id_param)
+    
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    match_id = match["match_id"]
+    
+    # Check if channel already exists
+    if match.get("private_channel_id"):
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            existing = guild.get_channel(match["private_channel_id"])
+            if existing:
+                return web.json_response({"success": False, "error": "Channel already exists"}, status=400)
+        await db.clear_private_channel(match_id)
+    
+    # Check requirements
+    claims = await db.get_claims(match_id)
+    casters = [c for c in claims if c["role"] == "caster"]
+    camops = [c for c in claims if c["role"] == "camop"]
+    if not casters or not camops:
+        return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
+    
+    # Create channel
+    from .views import create_private_match_channel_web
+    channel = await create_private_match_channel_web(bot, match, claims)
+    if channel:
+        await _refresh_discord_message(bot, match_id)
+        return web.json_response({"success": True, "channel_id": channel.id})
+    else:
+        return web.json_response({"success": False, "error": "Failed to create channel"}, status=500)
+
+
+async def rpc_crew_ready_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to send crew ready message (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    # Accept simple match ID
+    match_id_param = data.get("match_id") or data.get("id")
+    if not match_id_param:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    # Look up by simple_id if numeric
+    if isinstance(match_id_param, int) or (isinstance(match_id_param, str) and match_id_param.isdigit()):
+        match = await db.get_match_by_simple_id(int(match_id_param))
+    else:
+        match = await db.get_match(match_id_param)
+    
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    match_id = match["match_id"]
+    
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
+    
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    channel = guild.get_channel(match["private_channel_id"])
+    if not channel:
+        return web.json_response({"success": False, "error": "Channel not found"}, status=404)
+    
+    # Find team roles
+    team_a_lower = match['team_a'].lower()
+    team_b_lower = match['team_b'].lower()
+    team_pings = []
+    for role in guild.roles:
+        if role.name.lower().startswith("team:"):
+            team_name = role.name[5:].strip().lower()
+            if team_name == team_a_lower or team_name == team_b_lower:
+                team_pings.append(role.mention)
+    
+    if team_pings:
+        pings = " ".join(team_pings)
+        ready_msg = f"{pings}\n\n**The casting crew is ready!** You may start whenever you're ready."
+    else:
+        ready_msg = f"**{match['team_a']}** and **{match['team_b']}**\n\n**The casting crew is ready!** You may start whenever you're ready."
+    
+    await channel.send(ready_msg)
+    return web.json_response({"success": True})
+
+
+async def rpc_go_live_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to post live announcement (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    # Accept simple match ID
+    match_id_param = data.get("match_id") or data.get("id")
+    if not match_id_param:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    # Look up by simple_id if numeric
+    if isinstance(match_id_param, int) or (isinstance(match_id_param, str) and match_id_param.isdigit()):
+        match = await db.get_match_by_simple_id(int(match_id_param))
+    else:
+        match = await db.get_match(match_id_param)
+    
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    match_id = match["match_id"]
+    
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
+    
+    # Check requirements
+    claims = await db.get_claims(match_id)
+    casters = [c for c in claims if c["role"] == "caster"]
+    camops = [c for c in claims if c["role"] == "camop"]
+    if not casters or not camops:
+        return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
+    
+    # Check stream channel is selected
+    if not match.get("stream_channel"):
+        return web.json_response({"success": False, "error": "Please select a stream channel first"}, status=400)
+    
+    if not config.LIVE_ANNOUNCEMENT_CHANNEL_ID:
+        return web.json_response({"success": False, "error": "Live announcement channel not configured"}, status=500)
+    
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    live_channel = guild.get_channel(config.LIVE_ANNOUNCEMENT_CHANNEL_ID)
+    if not live_channel:
+        return web.json_response({"success": False, "error": "Live announcement channel not found"}, status=404)
+    
+    # Find team roles
+    team_a_lower = match['team_a'].lower()
+    team_b_lower = match['team_b'].lower()
+    team_mentions = []
+    for role in guild.roles:
+        if role.name.lower().startswith("team:"):
+            team_name = role.name[5:].strip().lower()
+            if team_name == team_a_lower:
+                team_mentions.append(role.mention)
+            elif team_name == team_b_lower:
+                team_mentions.append(role.mention)
+    
+    if len(team_mentions) >= 2:
+        teams_text = f"{team_mentions[0]} vs {team_mentions[1]}"
+    elif len(team_mentions) == 1:
+        if team_a_lower in team_mentions[0].lower():
+            teams_text = f"{team_mentions[0]} vs {match['team_b']}"
+        else:
+            teams_text = f"{match['team_a']} vs {team_mentions[0]}"
+    else:
+        teams_text = f"{match['team_a']} vs {match['team_b']}"
+    
+    live_ping = ""
+    if config.LIVE_PING_ROLE_ID:
+        live_role = guild.get_role(config.LIVE_PING_ROLE_ID)
+        if live_role:
+            live_ping = live_role.mention
+    
+    # Use selected stream channel
+    stream_channel = match.get("stream_channel")
+    channel_label, twitch_url = config.STREAM_CHANNELS[stream_channel]
+    announcement = f"# [EchoMasterLeague]({twitch_url}) We are live now casting {teams_text}"
+    if live_ping:
+        announcement += f"\n{live_ping}"
+    
+    await live_channel.send(announcement)
+    return web.json_response({"success": True})
+
+
+async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to set the stream channel for a match (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    # Accept simple match ID
+    match_id_param = data.get("match_id") or data.get("id")
+    stream_channel = data.get("stream_channel") or data.get("channel")
+    
+    if not match_id_param:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    
+    if stream_channel is None or stream_channel not in config.STREAM_CHANNELS:
+        return web.json_response({"success": False, "error": "Invalid stream channel (use 1 or 2)"}, status=400)
+    
+    # Look up by simple_id if numeric
+    if isinstance(match_id_param, int) or (isinstance(match_id_param, str) and match_id_param.isdigit()):
+        match = await db.get_match_by_simple_id(int(match_id_param))
+    else:
+        match = await db.get_match(match_id_param)
+    
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    await db.set_stream_channel(match["match_id"], stream_channel)
+    return web.json_response({"success": True})
+
+
+async def rpc_get_match_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to get a single match by ID (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+    
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+    
+    # Accept ID from query param or path
+    match_id_param = request.query.get("id") or request.query.get("match_id")
+    if not match_id_param:
+        return web.json_response({"success": False, "error": "Missing id parameter"}, status=400)
+    
+    # Look up by simple_id if numeric
+    if match_id_param.isdigit():
+        match = await db.get_match_by_simple_id(int(match_id_param))
+    else:
+        match = await db.get_match(match_id_param)
+    
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    match_id = match["match_id"]
+    claims = await db.get_claims(match_id)
+    
+    # Build casters list
+    casters = []
+    for slot in range(1, 3):
+        claim = next((c for c in claims if c["role"] == "caster" and c["slot"] == slot), None)
+        if claim:
+            user_id = claim["user_id"]
+            user_info = {"user_id": str(user_id), "slot": slot}
+            if guild:
+                member = guild.get_member(user_id)
+                if member:
+                    user_info["display_name"] = member.display_name
+                    user_info["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+            casters.append(user_info)
+    
+    # Build cam op info
+    cam_op = None
+    cam_claim = next((c for c in claims if c["role"] == "camop" and c["slot"] == 1), None)
+    if cam_claim:
+        user_id = cam_claim["user_id"]
+        cam_op = {"user_id": str(user_id)}
+        if guild:
+            member = guild.get_member(user_id)
+            if member:
+                cam_op["display_name"] = member.display_name
+                cam_op["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+    
+    result = {
+        "id": match.get("simple_id"),
+        "match_id": match_id,  # Include full match_id for button matching
+        "team_a": match["team_a"],
+        "team_b": match["team_b"],
+        "match_date": match["match_date"],
+        "match_time": match["match_time"],
+        "match_timestamp": match.get("match_timestamp"),
+        "stream_channel": match.get("stream_channel"),
+        "has_channel": bool(match.get("private_channel_id")),
+        "casters": casters,
+        "cam_op": cam_op,
+    }
+    
+    return web.json_response({"success": True, "match": result})
+
+
 # Admin API helpers
 async def _check_admin(request: web.Request) -> tuple[dict | None, web.Response | None]:
     """Check if user is admin. Returns (session, error_response)."""
@@ -6554,9 +6953,16 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/api/user/avatar", api_user_avatar_handler)
     app.router.add_get("/api/proxy-avatar", api_proxy_avatar_handler)
     app.router.add_get("/api/crew-members", api_crew_members_handler)
+    app.router.add_get("/api/matches", api_matches_handler)
     # Chat API routes
     app.router.add_get("/api/chat/messages", api_chat_messages_handler)
     app.router.add_post("/api/chat/send", api_chat_send_handler)
+    # RPC API routes (for remote apps with API key)
+    app.router.add_post("/rpc/create_channel", rpc_create_channel_handler)
+    app.router.add_post("/rpc/crew_ready", rpc_crew_ready_handler)
+    app.router.add_post("/rpc/go_live", rpc_go_live_handler)
+    app.router.add_post("/rpc/set_stream_channel", rpc_set_stream_channel_handler)
+    app.router.add_get("/rpc/match", rpc_get_match_handler)
     # Admin API routes
     app.router.add_post("/api/admin/sync", api_admin_sync_handler)
     app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
