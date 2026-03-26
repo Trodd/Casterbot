@@ -636,6 +636,144 @@ def _register_commands(bot: CasterBot) -> None:
         
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
+    @bot.tree.command(name="profile_pic", description="Upload or reset your custom profile picture")
+    @app_commands.describe(
+        action="What to do with your profile picture",
+        image="The image to use (for upload action only)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Upload new picture", value="upload"),
+        app_commands.Choice(name="Reset to Discord avatar", value="reset"),
+        app_commands.Choice(name="View current", value="view"),
+    ])
+    async def cmd_profile_pic(
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        image: discord.Attachment = None
+    ):
+        # Check if user is a crew member
+        member = interaction.user
+        crew_role_ids = set()
+        if config.CASTER_ROLE_ID:
+            crew_role_ids.add(config.CASTER_ROLE_ID)
+        if config.CAMOP_ROLE_ID:
+            crew_role_ids.add(config.CAMOP_ROLE_ID)
+        if config.CASTER_TRAINING_ROLE_ID:
+            crew_role_ids.add(config.CASTER_TRAINING_ROLE_ID)
+        if config.CAMOP_TRAINING_ROLE_ID:
+            crew_role_ids.add(config.CAMOP_TRAINING_ROLE_ID)
+        if config.WEB_LEAD_ROLE_ID:
+            crew_role_ids.add(config.WEB_LEAD_ROLE_ID)
+        
+        if not any(role.id in crew_role_ids for role in member.roles):
+            await interaction.response.send_message(
+                "Only crew members (casters, cam ops) can use custom profile pictures.",
+                ephemeral=True
+            )
+            return
+        
+        user_id = member.id
+        
+        if action.value == "view":
+            custom_pic = await db.get_profile_picture(user_id)
+            if custom_pic:
+                await interaction.response.send_message(
+                    f"Your current profile picture: {config.WEB_PUBLIC_URL}/profile-pic/{user_id}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "You're using your Discord avatar (no custom picture set).",
+                    ephemeral=True
+                )
+        
+        elif action.value == "reset":
+            old_filename = await db.delete_profile_picture(user_id)
+            if old_filename:
+                # Delete the file
+                old_path = config.PROFILE_PICS_DIR / old_filename
+                if old_path.exists():
+                    old_path.unlink()
+                await interaction.response.send_message(
+                    "Profile picture reset to your Discord avatar.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "You don't have a custom profile picture set.",
+                    ephemeral=True
+                )
+        
+        elif action.value == "upload":
+            if not image:
+                await interaction.response.send_message(
+                    "Please attach an image to upload.\nUsage: `/profile_pic action:Upload new picture image:<attach file>`",
+                    ephemeral=True
+                )
+                return
+            
+            # Check content type
+            if not image.content_type or not image.content_type.startswith("image/"):
+                await interaction.response.send_message(
+                    "Please attach an image file (PNG, JPG, GIF, or WebP).",
+                    ephemeral=True
+                )
+                return
+            
+            # Check file size (5MB max)
+            if image.size > 5 * 1024 * 1024:
+                await interaction.response.send_message(
+                    "Image is too large. Maximum size is 5MB.",
+                    ephemeral=True
+                )
+                return
+            
+            await interaction.response.defer(ephemeral=True)
+            
+            try:
+                import uuid
+                
+                # Get file extension
+                ext_map = {
+                    "image/jpeg": ".jpg",
+                    "image/png": ".png",
+                    "image/gif": ".gif",
+                    "image/webp": ".webp",
+                }
+                ext = ext_map.get(image.content_type, ".png")
+                
+                # Create profile pics directory if needed
+                config.PROFILE_PICS_DIR.mkdir(exist_ok=True)
+                
+                # Delete old profile picture if exists
+                old_filename = await db.delete_profile_picture(user_id)
+                if old_filename:
+                    old_path = config.PROFILE_PICS_DIR / old_filename
+                    if old_path.exists():
+                        old_path.unlink()
+                
+                # Download and save new file
+                filename = f"{user_id}_{uuid.uuid4().hex[:8]}{ext}"
+                filepath = config.PROFILE_PICS_DIR / filename
+                
+                data = await image.read()
+                filepath.write_bytes(data)
+                
+                # Update database
+                await db.set_profile_picture(user_id, filename)
+                
+                await interaction.followup.send(
+                    f"Profile picture updated! View it at: {config.WEB_PUBLIC_URL}/profile-pic/{user_id}",
+                    ephemeral=True
+                )
+                
+            except Exception as e:
+                log.error(f"Profile picture upload error: {e}")
+                await interaction.followup.send(
+                    "Failed to upload profile picture. Please try again.",
+                    ephemeral=True
+                )
+
 
 def run() -> None:
     bot = get_bot()

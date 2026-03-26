@@ -56,6 +56,20 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS profile_pictures (
+    user_id INTEGER PRIMARY KEY,
+    filename TEXT NOT NULL,
+    uploaded_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS team_logos (
+    team_name TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    discord_message_id INTEGER,
+    approved_by INTEGER,
+    approved_at INTEGER NOT NULL
+);
 """
 
 
@@ -89,6 +103,26 @@ async def init_db() -> None:
         # Migration: add stream_channel column if missing (for multi-stream support)
         if "stream_channel" not in columns:
             await db.execute("ALTER TABLE matches ADD COLUMN stream_channel INTEGER")
+        
+        # Migration: create profile_pictures table if missing
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS profile_pictures (
+                user_id INTEGER PRIMARY KEY,
+                filename TEXT NOT NULL,
+                uploaded_at INTEGER NOT NULL
+            )
+        """)
+        
+        # Migration: create team_logos table if missing
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS team_logos (
+                team_name TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                discord_message_id INTEGER,
+                approved_by INTEGER,
+                approved_at INTEGER NOT NULL
+            )
+        """)
         await db.commit()
 
 
@@ -693,3 +727,126 @@ async def get_all_matches_sorted_by_time() -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# -- Profile Picture Functions --
+
+
+async def get_profile_picture(user_id: int) -> str | None:
+    """Get the custom profile picture filename for a user, or None if not set."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT filename FROM profile_pictures WHERE user_id = ?",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_profile_picture(user_id: int, filename: str) -> None:
+    """Set a custom profile picture for a user."""
+    import time
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO profile_pictures (user_id, filename, uploaded_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET filename = ?, uploaded_at = ?
+            """,
+            (user_id, filename, int(time.time()), filename, int(time.time()))
+        )
+        await db.commit()
+
+
+async def delete_profile_picture(user_id: int) -> str | None:
+    """Delete a user's custom profile picture. Returns the old filename or None."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT filename FROM profile_pictures WHERE user_id = ?",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        if row:
+            await db.execute("DELETE FROM profile_pictures WHERE user_id = ?", (user_id,))
+            await db.commit()
+            return row[0]
+        return None
+
+
+# ============ Team Logos ============
+
+async def get_team_logo(team_name: str) -> dict | None:
+    """Get the approved logo for a team."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM team_logos WHERE team_name = ? COLLATE NOCASE",
+            (team_name,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_all_team_logos() -> list[dict]:
+    """Get all approved team logos."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM team_logos ORDER BY team_name")
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def set_team_logo(team_name: str, filename: str, discord_message_id: int, approved_by: int) -> None:
+    """Set/update a team's approved logo."""
+    import time
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO team_logos (team_name, filename, discord_message_id, approved_by, approved_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(team_name) DO UPDATE SET 
+                filename = ?, discord_message_id = ?, approved_by = ?, approved_at = ?
+            """,
+            (team_name, filename, discord_message_id, approved_by, int(time.time()),
+             filename, discord_message_id, approved_by, int(time.time()))
+        )
+        await db.commit()
+
+
+async def delete_team_logo(team_name: str) -> str | None:
+    """Delete a team's logo. Returns the old filename or None."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT filename FROM team_logos WHERE team_name = ? COLLATE NOCASE",
+            (team_name,)
+        )
+        row = await cursor.fetchone()
+        if row:
+            await db.execute("DELETE FROM team_logos WHERE team_name = ? COLLATE NOCASE", (team_name,))
+            await db.commit()
+            return row[0]
+        return None
+
+
+async def rename_team_logo(old_team_name: str, new_team_name: str) -> bool:
+    """Rename a team's logo to a new team name. Returns True on success."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # Check if old team has a logo
+        cursor = await db.execute(
+            "SELECT filename FROM team_logos WHERE team_name = ? COLLATE NOCASE",
+            (old_team_name,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        
+        # Delete any existing logo for the new team name
+        await db.execute("DELETE FROM team_logos WHERE team_name = ? COLLATE NOCASE", (new_team_name,))
+        
+        # Rename the team
+        await db.execute(
+            "UPDATE team_logos SET team_name = ? WHERE team_name = ? COLLATE NOCASE",
+            (new_team_name, old_team_name)
+        )
+        await db.commit()
+        return True

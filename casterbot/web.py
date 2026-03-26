@@ -355,6 +355,59 @@ HTML_TEMPLATE = """
             background: rgba(255,106,0,0.2);
             box-shadow: 0 0 15px rgba(255,106,0,0.3);
         }
+        .profile-menu-container {
+            position: relative;
+        }
+        .profile-menu-trigger {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .profile-menu-trigger:hover .user-avatar {
+            box-shadow: 0 0 20px var(--echo-orange-glow);
+        }
+        .profile-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: var(--echo-panel);
+            border: 1px solid var(--echo-border);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            min-width: 180px;
+            z-index: 1000;
+            display: none;
+            overflow: hidden;
+        }
+        .profile-dropdown.show {
+            display: block;
+        }
+        .profile-dropdown-item {
+            display: block;
+            padding: 12px 16px;
+            color: var(--echo-text);
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: background 0.2s;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+        }
+        .profile-dropdown-item:hover {
+            background: rgba(255,106,0,0.2);
+        }
+        .profile-dropdown-divider {
+            height: 1px;
+            background: var(--echo-border);
+            margin: 4px 0;
+        }
+        .profile-pic-input {
+            display: none;
+        }
         .match-card {
             background: var(--echo-panel);
             border-radius: 8px;
@@ -2068,6 +2121,68 @@ HTML_TEMPLATE = """
             font-size: 0.85em;
         }
         
+        /* Logo Review Styles */
+        .logo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 10px 0;
+        }
+        .logo-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--echo-border);
+            border-radius: 8px;
+            padding: 15px;
+            transition: border-color 0.2s;
+        }
+        .logo-card:hover {
+            border-color: var(--echo-cyan);
+        }
+        .logo-card.approved {
+            border-color: var(--echo-success);
+        }
+        .logo-preview {
+            width: 100%;
+            height: 150px;
+            object-fit: contain;
+            background: rgba(0,0,0,0.2);
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .logo-info {
+            margin-bottom: 10px;
+        }
+        .logo-team {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.1em;
+            color: var(--echo-text);
+            margin-bottom: 5px;
+        }
+        .logo-submitter {
+            font-size: 0.85em;
+            color: var(--echo-text-dim);
+        }
+        .logo-warning {
+            font-size: 0.8em;
+            color: var(--echo-danger);
+            background: rgba(255,51,102,0.1);
+            padding: 5px 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+        }
+        .logo-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .logo-actions .admin-btn {
+            flex: 1;
+            min-width: 70px;
+            padding: 8px 12px;
+            font-size: 0.85em;
+        }
+        
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             body {
@@ -2808,6 +2923,7 @@ HTML_TEMPLATE = """
             <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
             <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
             {admin_tab_btn}
+            {logos_tab_btn}
             {broadcast_tabs}
         </div>
     </div>
@@ -2840,6 +2956,7 @@ HTML_TEMPLATE = """
         </div>
         {broadcast_tab_contents}
         {admin_tab_content}
+        {logos_tab_content}
     </div>
     <script>
         // Refresh function that preserves scroll position and tab state
@@ -2849,6 +2966,86 @@ HTML_TEMPLATE = """
             sessionStorage.setItem('refreshScrollPos', scrollPos);
             sessionStorage.setItem('refreshTab', activeTab);
             location.reload();
+        }
+        
+        // Profile menu functions
+        function toggleProfileMenu(event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('profile-dropdown');
+            dropdown.classList.toggle('show');
+        }
+        
+        // Close profile menu when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('profile-dropdown');
+            if (dropdown && !e.target.closest('.profile-menu-container')) {
+                dropdown.classList.remove('show');
+            }
+        });
+        
+        async function uploadProfilePic(input) {
+            if (!input.files || !input.files[0]) return;
+            
+            const file = input.files[0];
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file');
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Image must be less than 5MB');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            try {
+                const resp = await fetch('/api/profile-pic/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    // Update avatar image
+                    const avatarImg = document.getElementById('user-avatar-img');
+                    if (avatarImg) {
+                        avatarImg.src = data.avatar_url + '?t=' + Date.now();
+                    }
+                    // Show reset button
+                    const resetBtn = document.getElementById('reset-pic-btn');
+                    if (resetBtn) resetBtn.style.display = 'block';
+                    // Close dropdown
+                    document.getElementById('profile-dropdown').classList.remove('show');
+                } else {
+                    alert('Upload failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Upload failed: ' + err.message);
+            }
+            
+            // Clear input so same file can be selected again
+            input.value = '';
+        }
+        
+        async function resetProfilePic() {
+            if (!confirm('Reset to your Discord avatar?')) return;
+            
+            try {
+                const resp = await fetch('/api/profile-pic/delete', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    // Reload to get Discord avatar
+                    location.reload();
+                } else {
+                    alert('Reset failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Reset failed: ' + err.message);
+            }
         }
         
         // Restore scroll position and tab after refresh
@@ -3301,6 +3498,11 @@ HTML_TEMPLATE = """
                         }
                     }
                 }
+                // If it's the logos tab, load the logo data
+                if (tab === 'logos') {
+                    loadPendingLogos();
+                    loadApprovedLogos();
+                }
             }
             
             // Close sidebar on mobile
@@ -3697,6 +3899,192 @@ HTML_TEMPLATE = """
                 }
             } catch(e) {
                 result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
+        // ========== Team Logo Review Functions ==========
+        
+        async function loadPendingLogos() {
+            const container = document.getElementById('pending-logos-container');
+            if (!container) return;
+            
+            container.innerHTML = '<div class="loading">Loading pending submissions...</div>';
+            
+            try {
+                const resp = await fetch('/api/logos/pending', {credentials: 'include'});
+                const data = await resp.json();
+                
+                if (!data.success) {
+                    container.innerHTML = '<div class="no-data">Error: ' + (data.error || 'Unknown error') + '</div>';
+                    return;
+                }
+                
+                if (data.pending.length === 0) {
+                    container.innerHTML = '<div class="no-data">No pending logo submissions</div>';
+                    return;
+                }
+                
+                let html = '<div class="logo-grid">';
+                for (const item of data.pending) {
+                    const existingWarning = item.has_existing_logo ? 
+                        '<div class="logo-warning">This team already has a logo - approving will replace it</div>' : '';
+                    html += `
+                        <div class="logo-card" id="logo-${item.message_id}">
+                            <img src="${item.image_url}" class="logo-preview" alt="Team Logo" onclick="window.open('${item.image_url}', '_blank')">
+                            <div class="logo-info">
+                                <div class="logo-team">${item.team_name}</div>
+                                <div class="logo-submitter">Submitted by ${item.display_name}</div>
+                                ${existingWarning}
+                            </div>
+                            <div class="logo-actions">
+                                <button class="admin-btn success" onclick="approveLogo('${item.message_id}', '${item.team_name.replace(/'/g, "\\'")}', '${item.image_url}')">Approve</button>
+                                <button class="admin-btn danger" onclick="rejectLogo('${item.message_id}', false)">Reject</button>
+                                <button class="admin-btn" onclick="rejectLogo('${item.message_id}', true)" title="Reject and delete message">Reject & Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div class="no-data">Failed to load pending logos</div>';
+            }
+        }
+        
+        async function approveLogo(messageId, teamName, imageUrl) {
+            if (!confirm('Approve this logo for ' + teamName + '?')) return;
+            
+            try {
+                const resp = await fetch('/api/logos/approve', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message_id: messageId, team_name: teamName, image_url: imageUrl})
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    showToast('Logo approved for ' + teamName, 'success');
+                    document.getElementById('logo-' + messageId)?.remove();
+                    loadApprovedLogos();
+                } else {
+                    showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch(e) {
+                showToast('Failed to approve logo', 'error');
+            }
+        }
+        
+        async function rejectLogo(messageId, deleteMessage) {
+            const action = deleteMessage ? 'reject and delete' : 'reject';
+            if (!confirm('Are you sure you want to ' + action + ' this submission?')) return;
+            
+            try {
+                const resp = await fetch('/api/logos/reject', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message_id: messageId, delete_message: deleteMessage})
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    showToast('Logo rejected', 'success');
+                    document.getElementById('logo-' + messageId)?.remove();
+                } else {
+                    showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch(e) {
+                showToast('Failed to reject logo', 'error');
+            }
+        }
+        
+        async function loadApprovedLogos() {
+            const container = document.getElementById('approved-logos-container');
+            if (!container) return;
+            
+            container.innerHTML = '<div class="loading">Loading approved logos...</div>';
+            
+            try {
+                const resp = await fetch('/api/logos', {credentials: 'include'});
+                const data = await resp.json();
+                
+                if (!data.success) {
+                    container.innerHTML = '<div class="no-data">Error: ' + (data.error || 'Unknown error') + '</div>';
+                    return;
+                }
+                
+                if (data.logos.length === 0) {
+                    container.innerHTML = '<div class="no-data">No approved logos yet</div>';
+                    return;
+                }
+                
+                let html = '<div class="logo-grid">';
+                for (const logo of data.logos) {
+                    html += `
+                        <div class="logo-card approved">
+                            <img src="${logo.logo_url}" class="logo-preview" alt="${logo.team_name} Logo" onclick="window.open('${logo.logo_url}', '_blank')">
+                            <div class="logo-info">
+                                <div class="logo-team">${logo.team_name}</div>
+                            </div>
+                            <div class="logo-actions">
+                                <button class="admin-btn" onclick="renameLogo('${logo.team_name.replace(/'/g, "\\'")}')" title="Change team name">Rename</button>
+                                <button class="admin-btn danger" onclick="deleteLogo('${logo.team_name.replace(/'/g, "\\'")}')">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div class="no-data">Failed to load approved logos</div>';
+            }
+        }
+        
+        async function deleteLogo(teamName) {
+            if (!confirm('Delete the logo for ' + teamName + '?')) return;
+            
+            try {
+                const resp = await fetch('/api/logos/delete', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({team_name: teamName})
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    showToast('Logo deleted for ' + teamName, 'success');
+                    loadApprovedLogos();
+                } else {
+                    showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch(e) {
+                showToast('Failed to delete logo', 'error');
+            }
+        }
+        
+        async function renameLogo(oldTeamName) {
+            const newTeamName = prompt('Enter the new team name for this logo:', oldTeamName);
+            if (!newTeamName || newTeamName.trim() === '' || newTeamName.trim() === oldTeamName) return;
+            
+            try {
+                const resp = await fetch('/api/logos/rename', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({old_team_name: oldTeamName, new_team_name: newTeamName.trim()})
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    showToast('Logo renamed from ' + oldTeamName + ' to ' + newTeamName.trim(), 'success');
+                    loadApprovedLogos();
+                } else {
+                    showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch(e) {
+                showToast('Failed to rename logo', 'error');
             }
         }
         
@@ -4501,20 +4889,40 @@ async def schedule_handler(request: web.Request) -> web.Response:
         user_id = session["user_id"]
         display_name = session.get("global_name") or session["username"]
         
-        if avatar_hash:
+        # Check for custom profile picture first
+        custom_pic = await db.get_profile_picture(user_id)
+        if custom_pic:
+            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+            avatar_url = f"{base_url}/profile-pic/{user_id}"
+            has_custom_pic = "true"
+        elif avatar_hash:
             avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.png?size=64"
+            has_custom_pic = "false"
         else:
             # Default avatar
             default_avatar = (user_id >> 22) % 6
             avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
+            has_custom_pic = "false"
         
         user_bar = f'''
             <div class="user-bar" data-user-id="{user_id}">
-                <div class="user-info">
-                    <img src="{avatar_url}" class="user-avatar" alt="">
-                    <span class="user-name">{display_name}</span>
+                <div class="profile-menu-container">
+                    <div class="profile-menu-trigger" onclick="toggleProfileMenu(event)">
+                        <img src="{avatar_url}" class="user-avatar" id="user-avatar-img" alt="">
+                        <span class="user-name">{display_name}</span>
+                    </div>
+                    <div class="profile-dropdown" id="profile-dropdown">
+                        <label class="profile-dropdown-item" for="profile-pic-input">
+                            &#128247; Change Profile Picture
+                        </label>
+                        <button class="profile-dropdown-item" onclick="resetProfilePic()" style="display: {has_custom_pic == 'true' and 'block' or 'none'};" id="reset-pic-btn">
+                            &#8634; Reset to Discord Avatar
+                        </button>
+                        <div class="profile-dropdown-divider"></div>
+                        <a href="/logout" class="profile-dropdown-item">&#128682; Logout</a>
+                    </div>
+                    <input type="file" id="profile-pic-input" class="profile-pic-input" accept="image/*" onchange="uploadProfilePic(this)">
                 </div>
-                <a href="/logout" class="logout-btn">Logout</a>
                 <button class="refresh-btn" onclick="refreshPage()">&#x21bb; Refresh</button>
             </div>
         '''
@@ -4729,7 +5137,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
             
             # Get user info
             user_name = f"User #{user_id}"
-            avatar_url = f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+            avatar_url = await get_user_avatar_url(bot, user_id)
             
             if bot:
                 try:
@@ -4737,13 +5145,9 @@ async def schedule_handler(request: web.Request) -> web.Response:
                     member = guild.get_member(user_id) if guild else None
                     if member:
                         user_name = member.display_name
-                        if member.avatar:
-                            avatar_url = member.avatar.url
                     else:
                         user = bot.get_user(user_id) or await bot.fetch_user(user_id)
                         user_name = user.display_name if hasattr(user, "display_name") else user.name
-                        if user.avatar:
-                            avatar_url = user.avatar.url
                 except Exception:
                     pass
             
@@ -5162,6 +5566,39 @@ async def schedule_handler(request: web.Request) -> web.Response:
         admin_tab_btn = ''
         admin_tab_content = ''
     
+    # Build logos review tab (only for admins)
+    if is_admin and config.TEAM_LOGO_CHANNEL_ID:
+        logos_tab_btn = '<button class="tab-btn admin" onclick="switchTab(\'logos\')">Team Logos</button>'
+        logos_tab_content = '''
+            <div id="tab-logos" class="tab-content">
+                <div class="admin-warning">
+                    <strong>Team Logo Review</strong> — Review and approve team logo submissions.
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Pending Submissions</h3>
+                        <button class="admin-btn" onclick="loadPendingLogos()">Refresh</button>
+                    </div>
+                    <div id="pending-logos-container">
+                        <div class="loading">Loading pending submissions...</div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Approved Logos</h3>
+                    </div>
+                    <div id="approved-logos-container">
+                        <div class="loading">Loading approved logos...</div>
+                    </div>
+                </div>
+            </div>
+        '''
+    else:
+        logos_tab_btn = ''
+        logos_tab_content = ''
+    
     html = (HTML_TEMPLATE
         .replace("{league_name}", config.LEAGUE_NAME)
         .replace("{site_url}", config.WEB_PUBLIC_URL or f"https://{config.WEB_HOST}:{config.WEB_PORT}")
@@ -5170,6 +5607,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
         .replace("{filter_bar}", filter_bar)
         .replace("{admin_tab_btn}", admin_tab_btn)
         .replace("{admin_tab_content}", admin_tab_content)
+        .replace("{logos_tab_btn}", logos_tab_btn)
+        .replace("{logos_tab_content}", logos_tab_content)
         .replace("{content}", content)
         .replace("{cycle_selector}", cycle_selector)
         .replace("{cycle_info}", cycle_info)
@@ -5606,64 +6045,36 @@ async def api_user_avatar_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Invalid user_id"}, status=400)
     
     bot = request.app.get("bot")
-    if not bot:
-        # Return default avatar if bot not available
-        default_avatar = (user_id >> 22) % 6
-        return web.json_response({
-            "success": True,
-            "user_id": user_id,
-            "avatar_url": f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png",
-            "username": f"User #{user_id}",
-            "display_name": f"User #{user_id}"
-        })
     
-    try:
-        # Try guild member first
-        guild = bot.get_guild(config.GUILD_ID)
-        member = guild.get_member(user_id) if guild else None
-        
-        if member:
-            if member.avatar:
-                avatar_url = member.avatar.url
-            else:
-                default_avatar = (user_id >> 22) % 6
-                avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
+    # Get avatar URL (custom pic or Discord avatar)
+    avatar_url = await get_user_avatar_url(bot, user_id)
+    
+    # Get username and display name
+    username = f"User #{user_id}"
+    display_name = f"User #{user_id}"
+    
+    if bot:
+        try:
+            guild = bot.get_guild(config.GUILD_ID)
+            member = guild.get_member(user_id) if guild else None
             
-            return web.json_response({
-                "success": True,
-                "user_id": user_id,
-                "avatar_url": avatar_url,
-                "username": member.name,
-                "display_name": member.display_name
-            })
-        
-        # Fall back to user lookup
-        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-        
-        if user.avatar:
-            avatar_url = user.avatar.url
-        else:
-            # Default avatar based on user ID
-            default_avatar = (user_id >> 22) % 6
-            avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
-        
-        return web.json_response({
-            "success": True,
-            "user_id": user_id,
-            "avatar_url": avatar_url,
-            "username": user.name,
-            "display_name": user.display_name if hasattr(user, "display_name") else user.name
-        })
-    except Exception as e:
-        # Return default avatar on error
-        default_avatar = (user_id >> 22) % 6
-        return web.json_response({
-            "success": True,
-            "user_id": user_id,
-            "avatar_url": f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png",
-            "username": f"User #{user_id}",
-            "display_name": f"User #{user_id}"
-        })
+            if member:
+                username = member.name
+                display_name = member.display_name
+            else:
+                user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+                username = user.name
+                display_name = user.display_name if hasattr(user, "display_name") else user.name
+        except Exception:
+            pass
+    
+    return web.json_response({
+        "success": True,
+        "user_id": user_id,
+        "avatar_url": avatar_url,
+        "username": username,
+        "display_name": display_name
+    })
 
 
 async def api_proxy_avatar_handler(request: web.Request) -> web.Response:
@@ -5706,6 +6117,180 @@ async def api_proxy_avatar_handler(request: web.Request) -> web.Response:
     except Exception as e:
         log.error(f"Avatar proxy error: {e}")
         return web.Response(text="Failed to fetch image", status=500)
+
+
+async def get_user_avatar_url(bot, user_id: int) -> str:
+    """Get user's avatar URL - custom profile pic if set, otherwise Discord avatar."""
+    # Check for custom profile picture first
+    custom_pic = await db.get_profile_picture(user_id)
+    if custom_pic:
+        base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+        return f"{base_url}/profile-pic/{user_id}"
+    
+    # Fall back to Discord avatar
+    if bot:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            member = guild.get_member(user_id)
+            if member and member.avatar:
+                return member.avatar.url
+    
+    # Default Discord avatar
+    return f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+
+
+async def profile_pic_handler(request: web.Request) -> web.Response:
+    """Serve a user's custom profile picture."""
+    user_id_str = request.match_info.get("user_id")
+    if not user_id_str:
+        return web.Response(text="Missing user_id", status=400)
+    
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return web.Response(text="Invalid user_id", status=400)
+    
+    filename = await db.get_profile_picture(user_id)
+    if not filename:
+        # Redirect to Discord default avatar
+        default_avatar = (user_id >> 22) % 6
+        raise web.HTTPFound(f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png")
+    
+    filepath = config.PROFILE_PICS_DIR / filename
+    if not filepath.exists():
+        # File missing, redirect to Discord default
+        default_avatar = (user_id >> 22) % 6
+        raise web.HTTPFound(f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png")
+    
+    return web.FileResponse(filepath, headers={
+        "Cache-Control": "public, max-age=3600"
+    })
+
+
+async def api_profile_pic_upload_handler(request: web.Request) -> web.Response:
+    """API endpoint to upload a custom profile picture."""
+    import uuid
+    from pathlib import Path
+    
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    user_id = session["user_id"]
+    
+    # Check if user is a crew member
+    bot = request.app.get("bot")
+    if bot:
+        is_crew = await _is_crew_member(bot, user_id)
+        if not is_crew:
+            return web.json_response({"success": False, "error": "Only crew members can upload profile pictures"}, status=403)
+    
+    # Parse multipart form
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+        
+        if not field or field.name != "image":
+            return web.json_response({"success": False, "error": "No image field in upload"}, status=400)
+        
+        # Get content type - try multiple methods
+        content_type = getattr(field, 'content_type', None) or field.headers.get("Content-Type", "") or ""
+        
+        # Also check filename extension as fallback
+        filename_ext = ""
+        if field.filename:
+            filename_ext = field.filename.lower().rsplit(".", 1)[-1] if "." in field.filename else ""
+        
+        # Validate it's an image
+        allowed_exts = {"jpg", "jpeg", "png", "gif", "webp"}
+        is_valid_image = content_type.startswith("image/") or filename_ext in allowed_exts
+        
+        if not is_valid_image:
+            return web.json_response({"success": False, "error": "File must be an image"}, status=400)
+        
+        # Get file extension
+        ext_map = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+        }
+        # Prefer content-type, fall back to filename extension
+        if content_type in ext_map:
+            ext = ext_map[content_type]
+        elif filename_ext in {"jpg", "jpeg"}:
+            ext = ".jpg"
+        elif filename_ext == "png":
+            ext = ".png"
+        elif filename_ext == "gif":
+            ext = ".gif"
+        elif filename_ext == "webp":
+            ext = ".webp"
+        else:
+            ext = ".png"  # Default
+        
+        # Read file data with size limit
+        max_size = 5 * 1024 * 1024  # 5MB
+        chunks = []
+        total_size = 0
+        while True:
+            chunk = await field.read_chunk(size=64 * 1024)  # Read 64KB chunks
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_size:
+                return web.json_response({"success": False, "error": "Image too large (max 5MB)"}, status=400)
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        
+        if not data:
+            return web.json_response({"success": False, "error": "Empty file"}, status=400)
+        
+        # Create profile pics directory if needed
+        config.PROFILE_PICS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Delete old profile picture if exists
+        old_filename = await db.delete_profile_picture(user_id)
+        if old_filename:
+            old_path = config.PROFILE_PICS_DIR / old_filename
+            if old_path.exists():
+                old_path.unlink()
+        
+        # Save new file
+        filename = f"{user_id}_{uuid.uuid4().hex[:8]}{ext}"
+        filepath = config.PROFILE_PICS_DIR / filename
+        filepath.write_bytes(data)
+        
+        # Update database
+        await db.set_profile_picture(user_id, filename)
+        
+        base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+        return web.json_response({
+            "success": True,
+            "avatar_url": f"{base_url}/profile-pic/{user_id}"
+        })
+        
+    except Exception as e:
+        log.error(f"Profile picture upload error: {e}")
+        return web.json_response({"success": False, "error": "Upload failed"}, status=500)
+
+
+async def api_profile_pic_delete_handler(request: web.Request) -> web.Response:
+    """API endpoint to delete a custom profile picture (revert to Discord avatar)."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    user_id = session["user_id"]
+    
+    # Delete old profile picture
+    old_filename = await db.delete_profile_picture(user_id)
+    if old_filename:
+        old_path = config.PROFILE_PICS_DIR / old_filename
+        if old_path.exists():
+            old_path.unlink()
+    
+    return web.json_response({"success": True})
 
 
 async def api_crew_members_handler(request: web.Request) -> web.Response:
@@ -5758,7 +6343,7 @@ async def api_crew_members_handler(request: web.Request) -> web.Response:
                 if member.bot or member.id in seen_ids:
                     continue
                 seen_ids.add(member.id)
-                avatar_url = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(member.id >> 22) % 6}.png"
+                avatar_url = await get_user_avatar_url(bot, member.id)
                 crew_members.append({
                     "user_id": str(member.id),  # String to preserve precision in JS
                     "username": member.name,
@@ -5785,6 +6370,47 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     guild = bot.get_guild(config.GUILD_ID) if bot else None
     
+    # Helper to get team members from role
+    def get_team_members(team_name: str) -> list:
+        if not guild or not team_name:
+            return []
+        
+        team_name_lower = team_name.lower()
+        team_role = None
+        
+        # Find the "Team: X" role
+        for role in guild.roles:
+            if role.name.lower().startswith("team:"):
+                role_team_name = role.name[5:].strip().lower()
+                if role_team_name == team_name_lower:
+                    team_role = role
+                    break
+        
+        if not team_role:
+            return []
+        
+        members = []
+        for member in team_role.members:
+            if member.bot:
+                continue
+            members.append({
+                "user_id": str(member.id),
+                "username": member.name,
+                "display_name": member.display_name,
+            })
+        
+        # Sort by display name
+        members.sort(key=lambda m: m["display_name"].lower())
+        return members
+    
+    # Helper to get team logo URL
+    async def get_team_logo_url(team_name: str) -> str | None:
+        logo = await db.get_team_logo(team_name)
+        if logo:
+            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+            return f"{base_url}/team-logo/{team_name}"
+        return None
+    
     # Get all active matches
     matches = await db.get_all_matches_sorted_by_time()
     
@@ -5807,7 +6433,7 @@ async def api_matches_handler(request: web.Request) -> web.Response:
                     if member:
                         user_info["display_name"] = member.display_name
                         user_info["username"] = member.name
-                        user_info["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+                        user_info["avatar_url"] = await get_user_avatar_url(bot, user_id)
                 
                 casters.append(user_info)
         
@@ -5823,7 +6449,7 @@ async def api_matches_handler(request: web.Request) -> web.Response:
                 if member:
                     cam_op["display_name"] = member.display_name
                     cam_op["username"] = member.name
-                    cam_op["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+                    cam_op["avatar_url"] = await get_user_avatar_url(bot, user_id)
         
         # Build sideline info (if claimed)
         sideline = None
@@ -5837,12 +6463,21 @@ async def api_matches_handler(request: web.Request) -> web.Response:
                 if member:
                     sideline["display_name"] = member.display_name
                     sideline["username"] = member.name
-                    sideline["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+                    sideline["avatar_url"] = await get_user_avatar_url(bot, user_id)
+        
+        # Get team logos
+        team_a_logo = await get_team_logo_url(match["team_a"])
+        team_b_logo = await get_team_logo_url(match["team_b"])
         
         result.append({
             "id": match.get("simple_id"),
+            "match_id": match_id,  # Full match_id for RPC calls
             "team_a": match["team_a"],
             "team_b": match["team_b"],
+            "team_a_logo": team_a_logo,
+            "team_b_logo": team_b_logo,
+            "team_a_roster": get_team_members(match["team_a"]),
+            "team_b_roster": get_team_members(match["team_b"]),
             "match_date": match["match_date"],
             "match_time": match["match_time"],
             "match_timestamp": match.get("match_timestamp"),
@@ -6111,6 +6746,37 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     guild = bot.get_guild(config.GUILD_ID) if bot else None
     
+    # Helper to get team members from role
+    def get_team_members(team_name: str) -> list:
+        if not guild or not team_name:
+            return []
+        
+        team_name_lower = team_name.lower()
+        team_role = None
+        
+        for role in guild.roles:
+            if role.name.lower().startswith("team:"):
+                role_team_name = role.name[5:].strip().lower()
+                if role_team_name == team_name_lower:
+                    team_role = role
+                    break
+        
+        if not team_role:
+            return []
+        
+        members = []
+        for member in team_role.members:
+            if member.bot:
+                continue
+            members.append({
+                "user_id": str(member.id),
+                "username": member.name,
+                "display_name": member.display_name,
+            })
+        
+        members.sort(key=lambda m: m["display_name"].lower())
+        return members
+    
     # Accept ID from query param or path
     match_id_param = request.query.get("id") or request.query.get("match_id")
     if not match_id_param:
@@ -6139,7 +6805,7 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
                 member = guild.get_member(user_id)
                 if member:
                     user_info["display_name"] = member.display_name
-                    user_info["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+                    user_info["avatar_url"] = await get_user_avatar_url(bot, user_id)
             casters.append(user_info)
     
     # Build cam op info
@@ -6152,13 +6818,29 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
             member = guild.get_member(user_id)
             if member:
                 cam_op["display_name"] = member.display_name
-                cam_op["avatar_url"] = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(user_id >> 22) % 6}.png"
+                cam_op["avatar_url"] = await get_user_avatar_url(bot, user_id)
+    
+    # Get team logos
+    async def get_team_logo_url(team_name: str) -> str | None:
+        if not team_name:
+            return None
+        logo = await db.get_team_logo(team_name)
+        if logo:
+            return f"{config.WEB_PUBLIC_URL}/team-logo/{team_name}"
+        return None
+    
+    team_a_logo = await get_team_logo_url(match["team_a"])
+    team_b_logo = await get_team_logo_url(match["team_b"])
     
     result = {
         "id": match.get("simple_id"),
         "match_id": match_id,  # Include full match_id for button matching
         "team_a": match["team_a"],
         "team_b": match["team_b"],
+        "team_a_logo": team_a_logo,
+        "team_b_logo": team_b_logo,
+        "team_a_roster": get_team_members(match["team_a"]),
+        "team_b_roster": get_team_members(match["team_b"]),
         "match_date": match["match_date"],
         "match_time": match["match_time"],
         "match_timestamp": match.get("match_timestamp"),
@@ -6538,6 +7220,289 @@ async def api_admin_force_create_match_handler(request: web.Request) -> web.Resp
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+# ============ Team Logo Review ============
+
+async def api_logo_pending_handler(request: web.Request) -> web.Response:
+    """Get pending logo submissions from the logo submission channel."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    if not config.TEAM_LOGO_CHANNEL_ID:
+        return web.json_response({"success": False, "error": "TEAM_LOGO_CHANNEL_ID not configured"}, status=500)
+    
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+    if not channel:
+        return web.json_response({"success": False, "error": "Logo channel not found"}, status=500)
+    
+    # Get all approved message IDs so we can filter them out
+    approved_logos = await db.get_all_team_logos()
+    approved_msg_ids = {logo["discord_message_id"] for logo in approved_logos if logo.get("discord_message_id")}
+    
+    pending = []
+    try:
+        # Read recent messages with images
+        async for msg in channel.history(limit=100):
+            # Skip if already approved
+            if msg.id in approved_msg_ids:
+                continue
+            
+            # Skip if no attachments with images
+            image_attachments = [a for a in msg.attachments if a.content_type and a.content_type.startswith("image/")]
+            if not image_attachments:
+                continue
+            
+            # Find the user's team role
+            team_name = None
+            member = guild.get_member(msg.author.id)
+            if member:
+                for role in member.roles:
+                    if role.name.lower().startswith("team:"):
+                        team_name = role.name[5:].strip()
+                        break
+            
+            if not team_name:
+                continue  # Skip if user doesn't have a team role
+            
+            # Check if this team already has an approved logo
+            existing_logo = await db.get_team_logo(team_name)
+            
+            pending.append({
+                "message_id": str(msg.id),
+                "user_id": str(msg.author.id),
+                "username": msg.author.name,
+                "display_name": msg.author.display_name,
+                "team_name": team_name,
+                "image_url": image_attachments[0].url,
+                "image_filename": image_attachments[0].filename,
+                "posted_at": msg.created_at.isoformat(),
+                "has_existing_logo": existing_logo is not None,
+            })
+    except Exception as e:
+        log.error(f"Failed to read logo channel: {e}")
+        return web.json_response({"success": False, "error": "Failed to read logo channel"}, status=500)
+    
+    return web.json_response({"success": True, "pending": pending})
+
+
+async def api_logo_approve_handler(request: web.Request) -> web.Response:
+    """Approve a team logo submission."""
+    import aiohttp as aiohttp_client
+    import uuid
+    
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    message_id = data.get("message_id")
+    team_name = data.get("team_name")
+    image_url = data.get("image_url")
+    
+    if not message_id or not team_name or not image_url:
+        return web.json_response({"success": False, "error": "Missing required fields"}, status=400)
+    
+    try:
+        message_id_int = int(message_id)
+    except ValueError:
+        return web.json_response({"success": False, "error": "Invalid message_id"}, status=400)
+    
+    # Download the image
+    try:
+        async with aiohttp_client.ClientSession() as client_session:
+            async with client_session.get(image_url) as resp:
+                if resp.status != 200:
+                    return web.json_response({"success": False, "error": "Failed to download image"}, status=500)
+                
+                content_type = resp.headers.get("Content-Type", "")
+                ext_map = {
+                    "image/jpeg": ".jpg",
+                    "image/png": ".png",
+                    "image/gif": ".gif",
+                    "image/webp": ".webp",
+                }
+                ext = ext_map.get(content_type, ".png")
+                
+                image_data = await resp.read()
+    except Exception as e:
+        log.error(f"Failed to download logo image: {e}")
+        return web.json_response({"success": False, "error": "Failed to download image"}, status=500)
+    
+    # Create logos directory if needed
+    config.TEAM_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Delete old logo if exists
+    old_filename = await db.delete_team_logo(team_name)
+    if old_filename:
+        old_path = config.TEAM_LOGOS_DIR / old_filename
+        if old_path.exists():
+            old_path.unlink()
+    
+    # Save new logo
+    safe_team_name = "".join(c if c.isalnum() else "_" for c in team_name)
+    filename = f"{safe_team_name}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = config.TEAM_LOGOS_DIR / filename
+    filepath.write_bytes(image_data)
+    
+    # Save to database
+    await db.set_team_logo(team_name, filename, message_id_int, session["user_id"])
+    
+    # Add checkmark reaction to the message
+    if config.TEAM_LOGO_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+            if channel:
+                msg = await channel.fetch_message(message_id_int)
+                await msg.add_reaction("\u2705")  # ✅
+        except Exception as e:
+            log.warning(f"Failed to add reaction to logo message: {e}")
+    
+    return web.json_response({"success": True, "message": f"Approved logo for {team_name}"})
+
+
+async def api_logo_reject_handler(request: web.Request) -> web.Response:
+    """Reject a logo submission (optionally delete the Discord message)."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    message_id = data.get("message_id")
+    delete_message = data.get("delete_message", False)
+    
+    if not message_id:
+        return web.json_response({"success": False, "error": "Missing message_id"}, status=400)
+    
+    # Add X reaction or delete the Discord message
+    if config.TEAM_LOGO_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+            if channel:
+                msg = await channel.fetch_message(int(message_id))
+                if delete_message:
+                    await msg.delete()
+                else:
+                    await msg.add_reaction("\u274C")  # ❌
+        except Exception as e:
+            log.warning(f"Failed to react/delete logo message: {e}")
+    
+    return web.json_response({"success": True, "message": "Logo rejected"})
+
+
+async def api_logo_list_handler(request: web.Request) -> web.Response:
+    """Get all approved team logos."""
+    logos = await db.get_all_team_logos()
+    
+    base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+    
+    result = []
+    for logo in logos:
+        result.append({
+            "team_name": logo["team_name"],
+            "logo_url": f"{base_url}/team-logo/{logo['team_name']}",
+            "approved_at": logo["approved_at"],
+        })
+    
+    return web.json_response({"success": True, "logos": result})
+
+
+async def api_logo_delete_handler(request: web.Request) -> web.Response:
+    """Delete an approved team logo."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    team_name = data.get("team_name")
+    if not team_name:
+        return web.json_response({"success": False, "error": "Missing team_name"}, status=400)
+    
+    old_filename = await db.delete_team_logo(team_name)
+    if old_filename:
+        old_path = config.TEAM_LOGOS_DIR / old_filename
+        if old_path.exists():
+            old_path.unlink()
+        return web.json_response({"success": True, "message": f"Deleted logo for {team_name}"})
+    else:
+        return web.json_response({"success": False, "error": "No logo found for this team"}, status=404)
+
+
+async def api_logo_rename_handler(request: web.Request) -> web.Response:
+    """Rename a team logo to a different team."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+    
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+    
+    old_team_name = data.get("old_team_name")
+    new_team_name = data.get("new_team_name")
+    
+    if not old_team_name or not new_team_name:
+        return web.json_response({"success": False, "error": "Missing team names"}, status=400)
+    
+    if old_team_name.strip() == new_team_name.strip():
+        return web.json_response({"success": False, "error": "Team names are the same"}, status=400)
+    
+    success = await db.rename_team_logo(old_team_name, new_team_name.strip())
+    if success:
+        return web.json_response({"success": True, "message": f"Renamed logo from {old_team_name} to {new_team_name}"})
+    else:
+        return web.json_response({"success": False, "error": "No logo found for this team"}, status=404)
+
+
+async def team_logo_handler(request: web.Request) -> web.Response:
+    """Serve a team's logo image."""
+    from urllib.parse import unquote
+    
+    team_name = unquote(request.match_info.get("team_name", ""))
+    if not team_name:
+        return web.Response(text="Missing team_name", status=400)
+    
+    logo = await db.get_team_logo(team_name)
+    if not logo:
+        return web.Response(text="Logo not found", status=404)
+    
+    filepath = config.TEAM_LOGOS_DIR / logo["filename"]
+    if not filepath.exists():
+        return web.Response(text="Logo file not found", status=404)
+    
+    return web.FileResponse(filepath, headers={
+        "Cache-Control": "public, max-age=3600"
+    })
+
+
 async def api_active_cycle_handler(request: web.Request) -> web.Response:
     """API endpoint to get active cycle info."""
     active = await db.get_active_cycle()
@@ -6767,7 +7732,7 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
         for member in channel.members:
             if member.bot:
                 continue
-            avatar_url = member.avatar.url if member.avatar else f"https://cdn.discordapp.com/embed/avatars/{(member.id >> 22) % 6}.png"
+            avatar_url = await get_user_avatar_url(bot, member.id)
             mentionable_users.append({
                 "id": str(member.id),
                 "name": member.display_name,
@@ -6824,7 +7789,7 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
                     "timestamp": msg.created_at.isoformat(),
                 })
             else:
-                avatar_url = msg.author.avatar.url if msg.author.avatar else f"https://cdn.discordapp.com/embed/avatars/{(msg.author.id >> 22) % 6}.png"
+                avatar_url = await get_user_avatar_url(bot, msg.author.id)
                 messages.append({
                     "id": msg_id,
                     "author_id": str(msg.author.id),
@@ -6906,12 +7871,7 @@ async def api_chat_send_handler(request: web.Request) -> web.Response:
     # Get sender info for web UI display
     sender_name = session.get("global_name") or session["username"]
     sender_id = session["user_id"]
-    avatar_hash = session.get("avatar")
-    if avatar_hash:
-        sender_avatar = f"https://cdn.discordapp.com/avatars/{sender_id}/{avatar_hash}.png?size=64"
-    else:
-        default_avatar = (sender_id >> 22) % 6
-        sender_avatar = f"https://cdn.discordapp.com/embed/avatars/{default_avatar}.png"
+    sender_avatar = await get_user_avatar_url(bot, sender_id)
     
     # Send message as the bot (no sender attribution in Discord)
     try:
@@ -6954,6 +7914,10 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/api/proxy-avatar", api_proxy_avatar_handler)
     app.router.add_get("/api/crew-members", api_crew_members_handler)
     app.router.add_get("/api/matches", api_matches_handler)
+    # Profile picture routes
+    app.router.add_get("/profile-pic/{user_id}", profile_pic_handler)
+    app.router.add_post("/api/profile-pic/upload", api_profile_pic_upload_handler)
+    app.router.add_post("/api/profile-pic/delete", api_profile_pic_delete_handler)
     # Chat API routes
     app.router.add_get("/api/chat/messages", api_chat_messages_handler)
     app.router.add_post("/api/chat/send", api_chat_send_handler)
@@ -6975,6 +7939,14 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/force-delete", api_admin_force_delete_handler)
     app.router.add_post("/api/admin/force-create-match", api_admin_force_create_match_handler)
     app.router.add_get("/api/active-cycle", api_active_cycle_handler)
+    # Team logo routes
+    app.router.add_get("/api/logos/pending", api_logo_pending_handler)
+    app.router.add_post("/api/logos/approve", api_logo_approve_handler)
+    app.router.add_post("/api/logos/reject", api_logo_reject_handler)
+    app.router.add_get("/api/logos", api_logo_list_handler)
+    app.router.add_post("/api/logos/delete", api_logo_delete_handler)
+    app.router.add_post("/api/logos/rename", api_logo_rename_handler)
+    app.router.add_get("/team-logo/{team_name}", team_logo_handler)
     app.router.add_get("/health", health_handler)
     # PWA routes
     app.router.add_get("/manifest.json", manifest_handler)

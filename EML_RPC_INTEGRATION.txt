@@ -1,0 +1,218 @@
+================================================================================
+EML Caster RPC Integration - Complete Guide
+================================================================================
+
+Base URL: https://casterbot.mooo.com:8080
+API Key:  TroddsSecretKeyforDano
+
+All POST requests need these headers:
+    X-API-Key: TroddsSecretKeyforDano
+    Content-Type: application/json
+
+================================================================================
+MATCH ID FORMAT
+================================================================================
+
+You can use EITHER format:
+  - Simple numeric ID: 1, 2, 3, etc. (from "id" field in /api/matches)
+  - Full match key: nocturne_Valiants_03272026_1030_PM (from "match_id" field)
+
+The /api/matches endpoint returns both fields for each match.
+
+================================================================================
+API ENDPOINTS
+================================================================================
+
+1. SET STREAM CHANNEL (call this first)
+   POST https://casterbot.mooo.com:8080/rpc/set_stream_channel
+   Body: {"id": 1, "channel": 1}
+   Or:   {"id": "nocturne_Valiants_03272026_1030_PM", "channel": 1}
+
+2. CREATE CHANNEL
+   POST https://casterbot.mooo.com:8080/rpc/create_channel
+   Body: {"id": 1}
+
+3. CREW READY
+   POST https://casterbot.mooo.com:8080/rpc/crew_ready
+   Body: {"id": 1}
+
+4. GO LIVE
+   POST https://casterbot.mooo.com:8080/rpc/go_live
+   Body: {"id": 1}
+
+5. GET MATCH INFO
+   GET https://casterbot.mooo.com:8080/rpc/match?id=1
+
+6. LIST ALL MATCHES (public, no API key needed)
+   GET https://casterbot.mooo.com:8080/api/matches
+   Returns: {"success": true, "matches": [{"id": 1, "match_id": "team_a_team_b_...", ...}]}
+
+================================================================================
+PYTHON CLIENT - Save as eml_client.py
+================================================================================
+
+import json
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
+_config = {
+    "url": "https://casterbot.mooo.com:8080",
+    "api_key": "TroddsSecretKeyforDano",
+}
+
+class EMLError(Exception):
+    pass
+
+def _call(endpoint, method="POST", data=None):
+    full_url = f"{_config['url']}{endpoint}"
+    headers = {"X-API-Key": _config["api_key"], "Content-Type": "application/json"}
+    body = json.dumps(data).encode("utf-8") if data else None
+    req = Request(full_url, data=body, headers=headers, method=method)
+    try:
+        with urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        try:
+            raise EMLError(json.loads(error_body).get("error", error_body))
+        except json.JSONDecodeError:
+            raise EMLError(f"HTTP {e.code}: {error_body}")
+    except URLError as e:
+        raise EMLError(f"Connection error: {e.reason}")
+
+def get_match(match_id):
+    result = _call(f"/rpc/match?id={match_id}", method="GET")
+    if not result.get("success"):
+        raise EMLError(result.get("error", "Unknown error"))
+    return result["match"]
+
+def get_matches():
+    result = _call("/api/matches", method="GET")
+    if not result.get("success"):
+        raise EMLError(result.get("error", "Unknown error"))
+    return result["matches"]
+
+def set_stream_channel(match_id, channel):
+    result = _call("/rpc/set_stream_channel", data={"id": match_id, "channel": channel})
+    if not result.get("success"):
+        raise EMLError(result.get("error", "Unknown error"))
+    return True
+
+def create_channel(match_id):
+    result = _call("/rpc/create_channel", data={"id": match_id})
+    if not result.get("success"):
+        raise EMLError(result.get("error", "Unknown error"))
+    return result.get("channel_id")
+
+def crew_ready(match_id):
+    result = _call("/rpc/crew_ready", data={"id": match_id})
+    if not result.get("success"):
+        raise EMLError(result.get("error", "Unknown error"))
+    return True
+
+def go_live(match_id):
+    result = _call("/rpc/go_live", data={"id": match_id})
+    if not result.get("success"):
+        raise EMLError(result.get("error", "Unknown error"))
+    return True
+
+================================================================================
+USAGE EXAMPLE
+================================================================================
+
+import eml_client
+
+# Get list of matches first
+matches = eml_client.get_matches()
+for m in matches:
+    print(f"ID {m['id']}: {m['team_a']} vs {m['team_b']}")
+
+# Use simple numeric ID (recommended)
+match_id = 1
+
+# Full workflow
+eml_client.set_stream_channel(match_id, channel=1)
+eml_client.create_channel(match_id)
+eml_client.crew_ready(match_id)
+eml_client.go_live(match_id)
+
+# Get match info
+match = eml_client.get_match(match_id)
+print(match["team_a"], "vs", match["team_b"])
+print("Has channel:", match["has_channel"])
+
+================================================================================
+RESPONSE FORMAT
+================================================================================
+
+All endpoints return JSON:
+
+Success:
+{"success": true}
+
+Error:
+{"success": false, "error": "Error message here"}
+
+get_match returns:
+{
+  "success": true,
+  "match": {
+    "id": 42,
+    "match_id": "nocturne_Valiants_03272026_1030_PM",
+    "team_a": "Nocturne",
+    "team_b": "Valiants",
+    "team_a_roster": [
+      {"user_id": "111", "username": "player1", "display_name": "Player One"},
+      {"user_id": "222", "username": "player2", "display_name": "Player Two"}
+    ],
+    "team_b_roster": [
+      {"user_id": "333", "username": "player3", "display_name": "Player Three"}
+    ],
+    "match_date": "03/27/2026",
+    "match_time": "10:30 PM",
+    "stream_channel": 1,
+    "has_channel": true,
+    "casters": [
+      {"user_id": "123", "slot": 1, "display_name": "CasterName", "avatar_url": "..."}
+    ],
+    "cam_op": {"user_id": "456", "display_name": "CamOpName", "avatar_url": "..."}
+  }
+}
+
+Team rosters are populated from Discord "Team: X" roles. If a team doesn't have
+a matching role, the roster will be an empty array.
+
+================================================================================
+CURL EXAMPLES (using simple numeric ID)
+================================================================================
+
+# Set stream channel
+curl -X POST https://casterbot.mooo.com:8080/rpc/set_stream_channel \
+  -H "X-API-Key: TroddsSecretKeyforDano" \
+  -H "Content-Type: application/json" \
+  -d '{"id": 1, "channel": 1}'
+
+# Create channel
+curl -X POST https://casterbot.mooo.com:8080/rpc/create_channel \
+  -H "X-API-Key: TroddsSecretKeyforDano" \
+  -H "Content-Type: application/json" \
+  -d '{"id": 1}'
+
+# Crew ready
+curl -X POST https://casterbot.mooo.com:8080/rpc/crew_ready \
+  -H "X-API-Key: TroddsSecretKeyforDano" \
+  -H "Content-Type: application/json" \
+  -d '{"id": 1}'
+
+# Go live
+curl -X POST https://casterbot.mooo.com:8080/rpc/go_live \
+  -H "X-API-Key: TroddsSecretKeyforDano" \
+  -H "Content-Type: application/json" \
+  -d '{"id": 1}'
+
+# Get match
+curl -X GET "https://casterbot.mooo.com:8080/rpc/match?id=1" \
+  -H "X-API-Key: TroddsSecretKeyforDano"
+
+# List all matches (no auth needed)
+curl -X GET https://casterbot.mooo.com:8080/api/matches

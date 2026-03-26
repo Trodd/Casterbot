@@ -98,8 +98,17 @@ DISCORD_CLIENT_SECRET: str = _get("DISCORD_CLIENT_SECRET", "")
 # Web admin role (users with this role can access the admin tab)
 WEB_LEAD_ROLE_ID: int = _int("WEB_LEAD_ROLE_ID")
 
+# Team logo submission channel (for logo review feature)
+TEAM_LOGO_CHANNEL_ID: int = _int("TEAM_LOGO_CHANNEL_ID")
+
 # RPC API key for remote app access (optional)
 RPC_API_KEY: str = _get("RPC_API_KEY", "")
 
 # Database path (SQLite)
 DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"
+
+# Profile pictures directory
+PROFILE_PICS_DIR: Path = Path(__file__).resolve().parent.parent / "profile_pics"
+
+# Team logos directory
+TEAM_LOGOS_DIR: Path = Path(__file__).resolve().parent.parent / "team_logos"
