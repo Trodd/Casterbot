@@ -837,42 +837,62 @@ def _register_commands(bot: CasterBot) -> None:
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Get the logo submission channel
-            logo_channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
-            if not logo_channel:
-                await interaction.followup.send(
-                    "Could not find the logo submission channel.",
-                    ephemeral=True
-                )
-                return
+            import uuid
             
-            # Check if team already has an approved logo
-            existing_logo = await db.get_team_logo(team_name)
-            warning = ""
-            if existing_logo:
-                warning = "\n⚠️ **Note:** This team already has an approved logo. Approving this will replace it."
+            # Download the image
+            image_data = await image.read()
             
-            # Post the logo to the channel for review
-            embed = discord.Embed(
-                title="🎨 Team Logo Submission",
-                color=0x00D4FF,
-                description=f"**Team:** {team_name}\n**Submitted by:** {member.mention}{warning}"
-            )
-            embed.set_image(url=image.url)
-            embed.set_footer(text=f"User ID: {member.id} | Review this in the web UI")
+            # Get file extension from content type
+            ext_map = {
+                "image/jpeg": ".jpg",
+                "image/png": ".png",
+                "image/gif": ".gif",
+                "image/webp": ".webp",
+            }
+            ext = ext_map.get(image.content_type, ".png")
             
-            await logo_channel.send(embed=embed, file=await image.to_file())
+            # Create logos directory if needed
+            config.TEAM_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Delete old logo if exists
+            old_filename = await db.delete_team_logo(team_name)
+            if old_filename:
+                old_path = config.TEAM_LOGOS_DIR / old_filename
+                if old_path.exists():
+                    old_path.unlink()
+            
+            # Save new logo
+            safe_team_name = "".join(c if c.isalnum() else "_" for c in team_name)
+            filename = f"{safe_team_name}_{uuid.uuid4().hex[:8]}{ext}"
+            filepath = config.TEAM_LOGOS_DIR / filename
+            filepath.write_bytes(image_data)
+            
+            # Save to database (approved by the lead who ran the command)
+            await db.set_team_logo(team_name, filename, 0, member.id)
+            
+            # Optionally post to the logo channel for record
+            if config.TEAM_LOGO_CHANNEL_ID:
+                logo_channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+                if logo_channel:
+                    try:
+                        msg = await logo_channel.send(
+                            content=f"**Team:** {team_name}",
+                            file=await image.to_file()
+                        )
+                        await msg.add_reaction("\u2705")  # ✅
+                    except Exception as e:
+                        log.warning(f"Failed to post logo to channel: {e}")
             
             await interaction.followup.send(
-                f"✅ Your logo for **{team_name}** has been submitted for review!\n"
-                f"A league lead will review it shortly.",
+                f"✅ Logo for **{team_name}** has been added!\n"
+                f"View it at: {config.WEB_PUBLIC_URL}/team-logo/{team_name}",
                 ephemeral=True
             )
             
         except Exception as e:
             log.error(f"Logo submission error: {e}")
             await interaction.followup.send(
-                "Failed to submit logo. Please try again.",
+                "Failed to add logo. Please try again.",
                 ephemeral=True
             )
 
