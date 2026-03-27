@@ -200,7 +200,7 @@ class ClaimView(LayoutView):
             Separator(),
             TextDisplay("**Broadcast Controls**"),
             ActionRow(stream_select),
-            ActionRow(create_channel_btn, ready_btn, go_live_btn),
+            ActionRow(create_channel_btn, go_live_btn, ready_btn),
             accent_color=discord.Color.blurple(),
         )
         self.add_item(container)
@@ -607,12 +607,19 @@ def _build_roster_message(match: dict, claims: list[dict], team_roles: list[disc
     lines.append("Let us know if you need a server.")
     lines.append("")
     
-    lines.append("**Staff:**")
-    for c in claims:
-        role_label = c["role"].title()
-        if c["role"] == "caster":
-            role_label = f"Caster {c['slot']}"
-        lines.append(f"- {role_label}: <@{c['user_id']}>")
+    # Match the claims message format
+    for slot in range(1, MAX_CASTERS + 1):
+        claim = next((c for c in claims if c["role"] == "caster" and c["slot"] == slot), None)
+        if claim:
+            lines.append(f"Caster {slot}: <@{claim['user_id']}>")
+    
+    cam_claim = next((c for c in claims if c["role"] == "camop" and c["slot"] == 1), None)
+    if cam_claim:
+        lines.append(f"Cam Op: <@{cam_claim['user_id']}>")
+    
+    sideline_claim = next((c for c in claims if c["role"] == "sideline" and c["slot"] == 1), None)
+    if sideline_claim:
+        lines.append(f"Sideline: <@{sideline_claim['user_id']}>")
 
     return "\n".join(lines)
 

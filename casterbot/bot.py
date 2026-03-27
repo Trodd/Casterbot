@@ -343,6 +343,33 @@ def _register_commands(bot: CasterBot) -> None:
         
         await interaction.followup.send(f"Refreshed {updated} claim messages.", ephemeral=True)
 
+    @bot.tree.command(name="refresh_roster", description="Refresh the roster message in this match channel")
+    async def cmd_refresh_roster(interaction: discord.Interaction):
+        # Find match by current channel
+        match = await db.get_match_by_channel_id(interaction.channel_id)
+        if not match:
+            await interaction.response.send_message(
+                "This command must be used in a match channel.", ephemeral=True
+            )
+            return
+        
+        claims = await db.get_claims(match["match_id"])
+        
+        # Find team roles for pings
+        team_roles = []
+        if interaction.guild:
+            team_a_lower = match['team_a'].lower()
+            team_b_lower = match['team_b'].lower()
+            for role in interaction.guild.roles:
+                if role.name.lower().startswith("team:"):
+                    team_name = role.name[5:].strip().lower()
+                    if team_name == team_a_lower or team_name == team_b_lower:
+                        team_roles.append(role)
+        
+        from .views import _build_roster_message
+        roster_msg = _build_roster_message(match, claims, team_roles)
+        await interaction.response.send_message(roster_msg)
+
     @bot.tree.command(name="manage_claim", description="Add or remove a user from a match slot (admin)")
     @app_commands.describe(
         match_id="The match ID number (shown on claim message)",

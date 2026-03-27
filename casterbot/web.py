@@ -5329,8 +5329,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
                             </div>
                             <div class="broadcast-btns">
                                 <button class="broadcast-btn create" onclick="createChannel('{match_id}')" {create_disabled}>Create Channel</button>
-                                <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
                                 <button class="broadcast-btn golive" onclick="goLive('{match_id}')" {live_disabled}>Go Live</button>
+                                <button class="broadcast-btn ready" onclick="crewReady('{match_id}')" {ready_disabled}>Crew Ready</button>
                             </div>
                         </div>
                         {chat_section}

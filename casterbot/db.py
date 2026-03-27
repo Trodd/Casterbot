@@ -204,6 +204,17 @@ async def clear_private_channel(match_id: str) -> None:
         await db.commit()
 
 
+async def get_match_by_channel_id(channel_id: int) -> dict | None:
+    """Get a match by its private_channel_id."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM matches WHERE private_channel_id = ?", (channel_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
 async def set_stream_channel(match_id: str, stream_channel: int) -> None:
     """Set the stream channel (1 or 2) for a match."""
     async with aiosqlite.connect(config.DB_PATH) as db:
