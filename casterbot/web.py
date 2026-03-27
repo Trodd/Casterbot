@@ -7,6 +7,7 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 import aiohttp
+import discord
 from aiohttp import web
 from dateutil import tz as dateutil_tz
 
@@ -998,6 +999,157 @@ HTML_TEMPLATE = """
             background: rgba(255,106,0,0.1);
             border-radius: 12px;
             border: 1px solid rgba(255,106,0,0.2);
+        }
+        /* Chat Reply Styles */
+        .chat-msg-actions {
+            display: none;
+            position: absolute;
+            top: -8px;
+            right: 10px;
+            background: var(--echo-panel);
+            border: 1px solid var(--echo-border);
+            border-radius: 4px;
+            padding: 2px;
+            z-index: 5;
+        }
+        .chat-msg:hover .chat-msg-actions {
+            display: flex;
+        }
+        .chat-action-btn {
+            background: transparent;
+            border: none;
+            color: var(--echo-text-dim);
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+            border-radius: 3px;
+        }
+        .chat-action-btn:hover {
+            background: rgba(0,212,255,0.2);
+            color: var(--echo-cyan);
+        }
+        .chat-reply-preview {
+            display: none;
+            background: rgba(0,212,255,0.1);
+            border-left: 3px solid var(--echo-cyan);
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-radius: 0 6px 6px 0;
+            position: relative;
+        }
+        .chat-reply-preview.active {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .chat-reply-preview-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .chat-reply-preview-author {
+            font-weight: 600;
+            color: var(--echo-cyan);
+            font-size: 0.85em;
+            margin-bottom: 2px;
+        }
+        .chat-reply-preview-text {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .chat-reply-cancel {
+            background: transparent;
+            border: none;
+            color: var(--echo-text-dim);
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 1.1em;
+            transition: color 0.2s;
+        }
+        .chat-reply-cancel:hover {
+            color: var(--echo-danger);
+        }
+        .chat-msg-reply-ref {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            margin-bottom: 6px;
+            background: rgba(0,212,255,0.05);
+            border-left: 2px solid var(--echo-cyan);
+            border-radius: 0 4px 4px 0;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .chat-msg-reply-ref:hover {
+            background: rgba(0,212,255,0.1);
+        }
+        .chat-msg-reply-ref-icon {
+            color: var(--echo-cyan);
+        }
+        .chat-msg-reply-ref-author {
+            font-weight: 600;
+            color: var(--echo-cyan);
+        }
+        .chat-msg-reply-ref-text {
+            color: var(--echo-text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            min-width: 0;
+        }
+        .chat-msg-wrapper {
+            position: relative;
+        }
+        .chat-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            margin-top: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            display: block;
+        }
+        .chat-image:hover {
+            transform: scale(1.02);
+        }
+        .chat-image-link {
+            display: block;
+            margin-top: 8px;
+        }
+        .chat-images-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .chat-images-container .chat-image {
+            margin-top: 0;
+        }
+        /* Image lightbox */
+        .image-lightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            cursor: zoom-out;
+        }
+        .image-lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+            border-radius: 8px;
         }
         /* Chats Tab Styles */
         .chats-header {
@@ -4190,6 +4342,12 @@ HTML_TEMPLATE = """
                 let lastAuthor = null;
                 let lastMsgDate = null;
                 
+                // Store messages for reply preview lookup
+                const messagesMap = {};
+                for (const msg of data.messages) {
+                    messagesMap[msg.id] = msg;
+                }
+                
                 for (const msg of data.messages) {
                     const msgDate = new Date(msg.timestamp);
                     const today = new Date();
@@ -4214,32 +4372,59 @@ HTML_TEMPLATE = """
                         lastAuthor = null; // Reset author grouping on new day
                     }
                     
+                    // If this message is a reply, reset author grouping
+                    const isReply = msg.reply_to_id && messagesMap[msg.reply_to_id];
+                    if (isReply) {
+                        lastAuthor = null;
+                    }
+                    
                     const isNewAuthor = msg.author_id !== lastAuthor;
                     lastAuthor = msg.author_id;
                     
                     const time = msgDate.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
                     const botClass = msg.is_bot ? ' chat-msg-bot' : '';
                     
-                    // Format content with highlighted mentions
-                    const formattedContent = formatMentions(escapeHtml(msg.content));
+                    // Format content with images, links, and mentions
+                    const formattedContent = formatMessageContent(msg.content);
+                    
+                    // Build reply reference HTML if this is a reply
+                    let replyRefHtml = '';
+                    if (isReply) {
+                        const refMsg = messagesMap[msg.reply_to_id];
+                        const refText = refMsg.content.length > 60 ? refMsg.content.substring(0, 60) + '...' : refMsg.content;
+                        replyRefHtml = `<div class="chat-msg-reply-ref" onclick="scrollToMessage('${matchId}', '${msg.reply_to_id}')">
+                            <span class="chat-msg-reply-ref-icon">↩</span>
+                            <span class="chat-msg-reply-ref-author">${escapeHtml(refMsg.author_name)}</span>
+                            <span class="chat-msg-reply-ref-text">${escapeHtml(refText)}</span>
+                        </div>`;
+                    }
+                    
+                    // Reply button (shown on hover via CSS)
+                    const replyBtn = `<div class="chat-msg-actions">
+                        <button class="chat-action-btn" onclick="startReply('${matchId}', '${msg.id}', '${escapeHtml(msg.author_name).replace(/'/g, "\\\\'")}', '${escapeHtml(msg.content.substring(0, 80)).replace(/'/g, "\\\\'")}')">↩ Reply</button>
+                    </div>`;
                     
                     if (isNewAuthor) {
-                        html += `<div class="chat-msg${botClass}">
+                        html += `<div class="chat-msg-wrapper" data-msg-id="${msg.id}"><div class="chat-msg${botClass}">
+                            ${replyBtn}
                             <img src="${msg.author_avatar}" class="chat-avatar" alt="">
                             <div class="chat-content">
+                                ${replyRefHtml}
                                 <div class="chat-header">
                                     <span class="chat-author">${escapeHtml(msg.author_name)}</span>
                                     <span class="chat-time">${time}</span>
                                 </div>
                                 <div class="chat-text">${formattedContent}</div>
                             </div>
-                        </div>`;
+                        </div></div>`;
                     } else {
-                        html += `<div class="chat-msg chat-msg-continued${botClass}">
+                        html += `<div class="chat-msg-wrapper" data-msg-id="${msg.id}"><div class="chat-msg chat-msg-continued${botClass}">
+                            ${replyBtn}
                             <div class="chat-content">
+                                ${replyRefHtml}
                                 <div class="chat-text">${formattedContent}</div>
                             </div>
-                        </div>`;
+                        </div></div>`;
                     }
                 }
                 
@@ -4264,6 +4449,91 @@ HTML_TEMPLATE = """
         function formatMentions(text) {
             // Highlight @mentions in the text
             return text.replace(/@([^ @]+)/g, '<span class="chat-mention">@$1</span>');
+        }
+        
+        function formatMessageContent(rawText) {
+            // Image URL patterns
+            const imageExtensions = /\\.(jpg|jpeg|png|gif|webp|bmp)(\\?[^\\s]*)?$/i;
+            
+            // Find all URLs in the text
+            const urlPattern = /(https?:\\/\\/[^\\s<]+)/gi;
+            let images = [];
+            let textParts = [];
+            let lastIndex = 0;
+            let match;
+            
+            // Reset regex
+            urlPattern.lastIndex = 0;
+            
+            // Process text to extract URLs
+            while ((match = urlPattern.exec(rawText)) !== null) {
+                const url = match[0];
+                const isImage = imageExtensions.test(url) || 
+                               url.includes('cdn.discordapp.com/attachments') ||
+                               url.includes('media.discordapp.net/attachments') ||
+                               url.includes('media.discordapp.net/ephemeral');
+                
+                // Add text before this URL
+                if (match.index > lastIndex) {
+                    textParts.push({type: 'text', content: rawText.substring(lastIndex, match.index)});
+                }
+                
+                if (isImage) {
+                    images.push(url);
+                } else {
+                    textParts.push({type: 'link', content: url});
+                }
+                
+                lastIndex = match.index + url.length;
+            }
+            
+            // Add remaining text
+            if (lastIndex < rawText.length) {
+                textParts.push({type: 'text', content: rawText.substring(lastIndex)});
+            }
+            
+            // Build formatted HTML
+            let formattedText = '';
+            for (const part of textParts) {
+                if (part.type === 'text') {
+                    // Escape HTML and format mentions
+                    formattedText += formatMentions(escapeHtml(part.content));
+                } else if (part.type === 'link') {
+                    // Render as clickable link
+                    formattedText += `<a href="${escapeHtml(part.content)}" target="_blank" rel="noopener" style="color: var(--echo-cyan); word-break: break-all;">${escapeHtml(part.content)}</a>`;
+                }
+            }
+            
+            // Add images at the end
+            if (images.length > 0) {
+                if (images.length === 1) {
+                    formattedText += `<img src="${escapeHtml(images[0])}" class="chat-image" onclick="openLightbox(this.src)" alt="Image" loading="lazy" onerror="this.style.display='none'">`;
+                } else {
+                    formattedText += '<div class="chat-images-container">';
+                    for (const img of images) {
+                        formattedText += `<img src="${escapeHtml(img)}" class="chat-image" onclick="openLightbox(this.src)" alt="Image" loading="lazy" onerror="this.style.display='none'">`;
+                    }
+                    formattedText += '</div>';
+                }
+            }
+            
+            return formattedText || '&nbsp;';  // Return non-breaking space if empty
+        }
+        
+        function openLightbox(imageUrl) {
+            const lightbox = document.createElement('div');
+            lightbox.className = 'image-lightbox';
+            lightbox.innerHTML = `<img src="${imageUrl}" alt="Full size image">`;
+            lightbox.onclick = () => lightbox.remove();
+            document.body.appendChild(lightbox);
+            // Close on Escape key
+            const closeOnEsc = (e) => {
+                if (e.key === 'Escape') {
+                    lightbox.remove();
+                    document.removeEventListener('keydown', closeOnEsc);
+                }
+            };
+            document.addEventListener('keydown', closeOnEsc);
         }
         
         function convertMentionsToDiscord(text, matchId) {
@@ -4298,6 +4568,9 @@ HTML_TEMPLATE = """
             return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
         }
         
+        // Track current reply state per match
+        const chatReplyState = {};  // matchId -> {messageId, authorName, content}
+        
         async function sendChatMessage(matchId, event) {
             if (event) event.preventDefault();
             
@@ -4311,19 +4584,23 @@ HTML_TEMPLATE = """
             // Convert @mentions to Discord format
             message = convertMentionsToDiscord(message, matchId);
             
+            // Get reply_to_id if replying
+            const replyToId = chatReplyState[matchId]?.messageId || null;
+            
             btn.disabled = true;
             
             try {
                 const resp = await fetch('/api/chat/send', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({match_id: matchId, message: message})
+                    body: JSON.stringify({match_id: matchId, message: message, reply_to_id: replyToId})
                 });
                 const data = await resp.json();
                 
                 if (data.success) {
                     input.value = '';
                     hideMentionSuggestions(matchId);
+                    cancelReply(matchId);  // Clear reply state
                     // Immediately reload messages
                     await loadChatMessages(matchId);
                 } else {
@@ -4335,6 +4612,52 @@ HTML_TEMPLATE = """
             
             btn.disabled = false;
             input.focus();
+        }
+        
+        function startReply(matchId, messageId, authorName, content) {
+            // Store reply state
+            chatReplyState[matchId] = {messageId, authorName, content};
+            
+            // Show reply preview
+            const preview = document.getElementById('chat-reply-preview-' + matchId);
+            if (preview) {
+                const authorEl = preview.querySelector('.chat-reply-preview-author');
+                const textEl = preview.querySelector('.chat-reply-preview-text');
+                if (authorEl) authorEl.textContent = 'Replying to ' + authorName;
+                if (textEl) textEl.textContent = content.length > 80 ? content.substring(0, 80) + '...' : content;
+                preview.classList.add('active');
+            }
+            
+            // Focus input
+            const input = document.getElementById('chat-input-' + matchId);
+            if (input) input.focus();
+        }
+        
+        function cancelReply(matchId) {
+            // Clear reply state
+            delete chatReplyState[matchId];
+            
+            // Hide reply preview
+            const preview = document.getElementById('chat-reply-preview-' + matchId);
+            if (preview) {
+                preview.classList.remove('active');
+            }
+        }
+        
+        function scrollToMessage(matchId, messageId) {
+            const messagesDiv = document.getElementById('chat-messages-' + matchId);
+            if (!messagesDiv) return;
+            
+            const msgEl = messagesDiv.querySelector(`[data-msg-id="${messageId}"]`);
+            if (msgEl) {
+                msgEl.scrollIntoView({behavior: 'smooth', block: 'center'});
+                // Flash highlight effect
+                msgEl.style.transition = 'background 0.3s';
+                msgEl.style.background = 'rgba(0,212,255,0.2)';
+                setTimeout(() => {
+                    msgEl.style.background = '';
+                }, 1500);
+            }
         }
         
         function handleChatKeypress(matchId, event) {
@@ -5286,6 +5609,13 @@ async def schedule_handler(request: web.Request) -> web.Response:
                                 <div class="chat-info">Loading messages...</div>
                             </div>
                             <div class="chat-input-container">
+                                <div class="chat-reply-preview" id="chat-reply-preview-{match_id}">
+                                    <div class="chat-reply-preview-content">
+                                        <div class="chat-reply-preview-author">Replying to...</div>
+                                        <div class="chat-reply-preview-text"></div>
+                                    </div>
+                                    <button type="button" class="chat-reply-cancel" onclick="cancelReply('{match_id}')">✕</button>
+                                </div>
                                 <div class="mention-suggestions" id="chat-suggestions-{match_id}"></div>
                                 <form class="chat-input-row" onsubmit="sendChatMessage('{match_id}', event); return false;">
                                     <input type="text" class="chat-input" id="chat-input-{match_id}" 
@@ -7774,10 +8104,18 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
             # Convert Discord mentions to readable names
             content = _convert_mentions_to_names(msg.content, guild)
             
+            # Get reply_to_id if this message is a reply
+            reply_to_id = None
+            if msg.reference and msg.reference.message_id:
+                reply_to_id = str(msg.reference.message_id)
+            
             # Check if this is a bot message sent via web UI
             web_sender = _web_sent_messages.get(msg_id)
             if msg.author.bot and web_sender:
                 # Use the web sender's info for display
+                # Web-sent messages may also store reply info
+                if not reply_to_id and web_sender.get("reply_to_id"):
+                    reply_to_id = web_sender["reply_to_id"]
                 messages.append({
                     "id": msg_id,
                     "author_id": web_sender["sender_id"],
@@ -7787,6 +8125,7 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
                     "is_web_sent": True,  # Flag to indicate it was sent via web
                     "content": content,
                     "timestamp": msg.created_at.isoformat(),
+                    "reply_to_id": reply_to_id,
                 })
             else:
                 avatar_url = await get_user_avatar_url(bot, msg.author.id)
@@ -7798,6 +8137,7 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
                     "is_bot": msg.author.bot,
                     "content": content,
                     "timestamp": msg.created_at.isoformat(),
+                    "reply_to_id": reply_to_id,
                 })
         messages.reverse()  # Show oldest first
     except Exception as e:
@@ -7830,6 +8170,7 @@ async def api_chat_send_handler(request: web.Request) -> web.Response:
     
     match_id = data.get("match_id")
     message = data.get("message", "").strip()
+    reply_to_id = data.get("reply_to_id")  # Optional: message ID to reply to
     
     if not match_id:
         return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
@@ -7873,15 +8214,24 @@ async def api_chat_send_handler(request: web.Request) -> web.Response:
     sender_id = session["user_id"]
     sender_avatar = await get_user_avatar_url(bot, sender_id)
     
+    # Build message reference if this is a reply
+    reference = None
+    if reply_to_id:
+        try:
+            reference = discord.MessageReference(message_id=int(reply_to_id), channel_id=channel.id)
+        except (ValueError, TypeError):
+            pass  # Invalid message ID, send without reference
+    
     # Send message as the bot (no sender attribution in Discord)
     try:
-        sent_msg = await channel.send(message)
+        sent_msg = await channel.send(message, reference=reference, mention_author=False)
         
-        # Store sender info for web UI display
+        # Store sender info for web UI display (including reply info)
         _web_sent_messages[str(sent_msg.id)] = {
             "sender_id": str(sender_id),
             "sender_name": sender_name,
             "sender_avatar": sender_avatar,
+            "reply_to_id": reply_to_id,
         }
         
         return web.json_response({
