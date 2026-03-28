@@ -29,3 +29,6 @@ Thumbs.db
 
 # SSL Certificates
 certs/
+
+# User uploads
+team_logos/
