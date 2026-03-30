@@ -74,22 +74,20 @@ def _get_session(request: web.Request) -> dict | None:
 
 async def _is_admin(bot, user_id: int) -> bool:
     """Check if a user has the lead role (admin access)."""
-    if not bot or not config.WEB_LEAD_ROLE_ID or not config.GUILD_ID:
+    if not bot or not (config.WEB_LEAD_ROLE_ID or config.STAFF_ROLE_ID) or not config.GUILD_ID:
         return False
-    
     try:
         guild = bot.get_guild(config.GUILD_ID)
         if not guild:
             return False
-        
         member = guild.get_member(user_id)
         if not member:
             try:
                 member = await guild.fetch_member(user_id)
             except Exception:
                 return False
-        
-        return any(role.id == config.WEB_LEAD_ROLE_ID for role in member.roles)
+        allowed_admin_roles = [r for r in [config.WEB_LEAD_ROLE_ID, config.STAFF_ROLE_ID] if r]
+        return any(role.id in allowed_admin_roles for role in member.roles)
     except Exception:
         return False
 
@@ -111,6 +109,8 @@ async def _is_crew_member(bot, user_id: int) -> bool:
         allowed_roles.add(config.CAMOP_TRAINING_ROLE_ID)
     if config.WEB_LEAD_ROLE_ID:
         allowed_roles.add(config.WEB_LEAD_ROLE_ID)
+    if config.STAFF_ROLE_ID:
+        allowed_roles.add(config.STAFF_ROLE_ID)
     
     # If no roles configured, deny access
     if not allowed_roles:
@@ -5986,11 +5986,12 @@ async def api_claim_handler(request: web.Request) -> web.Response:
     if assign_user_id and assign_user_id != user_id:
         bot = request.app.get("bot")
         is_lead = False
-        if bot and config.WEB_LEAD_ROLE_ID:
+        if bot and (config.WEB_LEAD_ROLE_ID or config.STAFF_ROLE_ID):
             guild = bot.get_guild(config.GUILD_ID)
             if guild:
                 member = guild.get_member(user_id)
-                if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+                allowed_admin_roles = [r for r in [config.WEB_LEAD_ROLE_ID, config.STAFF_ROLE_ID] if r]
+                if member and any(rid in [r.id for r in member.roles] for rid in allowed_admin_roles):
                     is_lead = True
         
         if not is_lead:
@@ -6037,11 +6038,12 @@ async def api_unclaim_handler(request: web.Request) -> web.Response:
     # Check if user is a lead
     is_lead = False
     bot = request.app.get("bot")
-    if bot and config.WEB_LEAD_ROLE_ID:
+    if bot and (config.WEB_LEAD_ROLE_ID or config.STAFF_ROLE_ID):
         guild = bot.get_guild(config.GUILD_ID)
         if guild:
             member = guild.get_member(user_id)
-            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+            allowed_admin_roles = [r for r in [config.WEB_LEAD_ROLE_ID, config.STAFF_ROLE_ID] if r]
+            if member and any(rid in [r.id for r in member.roles] for rid in allowed_admin_roles):
                 is_lead = True
     
     # Allow if it's their own slot OR they're a lead
@@ -6110,11 +6112,12 @@ async def api_create_channel_handler(request: web.Request) -> web.Response:
     has_claim = any(c["user_id"] == user_id for c in claims)
     
     is_lead = False
-    if config.WEB_LEAD_ROLE_ID:
+    if config.WEB_LEAD_ROLE_ID or config.STAFF_ROLE_ID:
         guild = bot.get_guild(config.GUILD_ID)
         if guild:
             member = guild.get_member(user_id)
-            if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+            allowed_admin_roles = [r for r in [config.WEB_LEAD_ROLE_ID, config.STAFF_ROLE_ID] if r]
+            if member and any(rid in [r.id for r in member.roles] for rid in allowed_admin_roles):
                 is_lead = True
     
     if not is_lead and not has_claim:
