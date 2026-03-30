@@ -7335,8 +7335,8 @@ async def api_admin_set_week_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Missing season or week"}, status=400)
     
     try:
-        await db.set_setting("current_season", str(season))
-        await db.set_setting("current_week", str(week))
+        await db.set_setting("season", str(season))
+        await db.set_setting("week", str(week))
         return web.json_response({"success": True, "message": f"Updated to Season {season} Week {week}"})
     except Exception as e:
         log.error(f"Admin set week failed: {e}")
