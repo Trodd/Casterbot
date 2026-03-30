@@ -46,6 +46,8 @@ API ENDPOINTS
 6. LIST ALL MATCHES (public, no API key needed)
    GET https://casterbot.mooo.com:8080/api/matches
    Returns: {"success": true, "matches": [{"id": 1, "match_id": "team_a_team_b_...", ...}]}
+   Note: Returns week_number, match_type, sideline but NOT has_channel.
+         Use /rpc/match for has_channel.
 
 ================================================================================
 PYTHON CLIENT - Save as eml_client.py
@@ -147,13 +149,18 @@ RESPONSE FORMAT
 
 All endpoints return JSON:
 
-Success:
+Success (most endpoints):
 {"success": true}
+
+create_channel returns the Discord channel ID on success:
+{"success": true, "channel_id": 1234567890}
 
 Error:
 {"success": false, "error": "Error message here"}
 
-get_match returns:
+--------------------------------------------------------------------------------
+/rpc/match returns:
+--------------------------------------------------------------------------------
 {
   "success": true,
   "match": {
@@ -161,6 +168,8 @@ get_match returns:
     "match_id": "nocturne_Valiants_03272026_1030_PM",
     "team_a": "Nocturne",
     "team_b": "Valiants",
+    "team_a_logo": "https://casterbot.mooo.com:8080/team-logo/Nocturne",
+    "team_b_logo": "https://casterbot.mooo.com:8080/team-logo/Valiants",
     "team_a_roster": [
       {"user_id": "111", "username": "player1", "display_name": "Player One"},
       {"user_id": "222", "username": "player2", "display_name": "Player Two"}
@@ -170,6 +179,7 @@ get_match returns:
     ],
     "match_date": "03/27/2026",
     "match_time": "10:30 PM",
+    "match_timestamp": "2026-03-27T22:30:00-04:00",
     "stream_channel": 1,
     "has_channel": true,
     "casters": [
@@ -179,8 +189,40 @@ get_match returns:
   }
 }
 
-Team rosters are populated from Discord "Team: X" roles. If a team doesn't have
-a matching role, the roster will be an empty array.
+--------------------------------------------------------------------------------
+/api/matches returns (note: different fields than /rpc/match):
+--------------------------------------------------------------------------------
+{
+  "success": true,
+  "matches": [
+    {
+      "id": 42,
+      "match_id": "nocturne_Valiants_03272026_1030_PM",
+      "team_a": "Nocturne",
+      "team_b": "Valiants",
+      "team_a_logo": "https://casterbot.mooo.com:8080/team-logo/Nocturne",
+      "team_b_logo": "https://casterbot.mooo.com:8080/team-logo/Valiants",
+      "team_a_roster": [{"user_id": "111", "username": "player1", "display_name": "Player One"}],
+      "team_b_roster": [{"user_id": "333", "username": "player3", "display_name": "Player Three"}],
+      "match_date": "03/27/2026",
+      "match_time": "10:30 PM",
+      "match_timestamp": "2026-03-27T22:30:00-04:00",
+      "week_number": 3,
+      "match_type": "Regular Season",
+      "stream_channel": 1,
+      "casters": [{"user_id": "123", "slot": 1, "display_name": "CasterName", "avatar_url": "..."}],
+      "cam_op": {"user_id": "456", "display_name": "CamOpName", "avatar_url": "..."},
+      "sideline": {"user_id": "789", "display_name": "SidelineName", "avatar_url": "..."}
+    }
+  ]
+}
+
+NOTE: /api/matches has "week_number", "match_type", and "sideline" but does NOT
+have "has_channel". Use /rpc/match if you need "has_channel".
+
+Team logos are null if no logo has been uploaded. Rosters are populated from
+Discord "Team: X" roles. If a team doesn't have a matching role, the roster
+will be an empty array. "sideline" is null if no sideline reporter is claimed.
 
 ================================================================================
 CURL EXAMPLES (using simple numeric ID)

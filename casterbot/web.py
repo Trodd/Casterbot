@@ -6829,7 +6829,9 @@ async def api_matches_handler(request: web.Request) -> web.Response:
 
 async def rpc_create_channel_handler(request: web.Request) -> web.Response:
     """RPC endpoint to create private match channel (requires API key)."""
+    log.info("[RPC] create_channel request received from %s", request.remote)
     if not _check_rpc_key(request):
+        log.warning("[RPC] create_channel rejected - invalid API key from %s", request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
@@ -6877,15 +6879,19 @@ async def rpc_create_channel_handler(request: web.Request) -> web.Response:
     from .views import create_private_match_channel_web
     channel = await create_private_match_channel_web(bot, match, claims)
     if channel:
+        log.info("[RPC] create_channel success - match=%s channel_id=%s", match_id_param, channel.id)
         await _refresh_discord_message(bot, match_id)
         return web.json_response({"success": True, "channel_id": channel.id})
     else:
+        log.error("[RPC] create_channel failed - match=%s could not create channel", match_id_param)
         return web.json_response({"success": False, "error": "Failed to create channel"}, status=500)
 
 
 async def rpc_crew_ready_handler(request: web.Request) -> web.Response:
     """RPC endpoint to send crew ready message (requires API key)."""
+    log.info("[RPC] crew_ready request received from %s", request.remote)
     if not _check_rpc_key(request):
+        log.warning("[RPC] crew_ready rejected - invalid API key from %s", request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
@@ -6941,12 +6947,15 @@ async def rpc_crew_ready_handler(request: web.Request) -> web.Response:
         ready_msg = f"**{match['team_a']}** and **{match['team_b']}**\n\n**The casting crew is ready!** You may start whenever you're ready."
     
     await channel.send(ready_msg)
+    log.info("[RPC] crew_ready success - match=%s", match_id_param)
     return web.json_response({"success": True})
 
 
 async def rpc_go_live_handler(request: web.Request) -> web.Response:
     """RPC endpoint to post live announcement (requires API key)."""
+    log.info("[RPC] go_live request received from %s", request.remote)
     if not _check_rpc_key(request):
+        log.warning("[RPC] go_live rejected - invalid API key from %s", request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
@@ -7035,12 +7044,15 @@ async def rpc_go_live_handler(request: web.Request) -> web.Response:
         announcement += f"\n{live_ping}"
     
     await live_channel.send(announcement)
+    log.info("[RPC] go_live success - match=%s stream_channel=%s", match_id_param, stream_channel)
     return web.json_response({"success": True})
 
 
 async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
     """RPC endpoint to set the stream channel for a match (requires API key)."""
+    log.info("[RPC] set_stream_channel request received from %s", request.remote)
     if not _check_rpc_key(request):
+        log.warning("[RPC] set_stream_channel rejected - invalid API key from %s", request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     try:
@@ -7068,12 +7080,15 @@ async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     await db.set_stream_channel(match["match_id"], stream_channel)
+    log.info("[RPC] set_stream_channel success - match=%s channel=%s", match_id_param, stream_channel)
     return web.json_response({"success": True})
 
 
 async def rpc_get_match_handler(request: web.Request) -> web.Response:
     """RPC endpoint to get a single match by ID (requires API key)."""
+    log.info("[RPC] get_match request received from %s (id=%s)", request.remote, request.query.get("id") or request.query.get("match_id"))
     if not _check_rpc_key(request):
+        log.warning("[RPC] get_match rejected - invalid API key from %s", request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
