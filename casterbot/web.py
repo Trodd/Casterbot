@@ -1,6 +1,7 @@
 """Optional web server to display claim status with Discord OAuth2."""
 from __future__ import annotations
 
+import collections
 import logging
 import secrets
 from datetime import datetime
@@ -14,6 +15,30 @@ from dateutil import tz as dateutil_tz
 from . import config, db
 
 log = logging.getLogger("casterbot.web")
+
+# ---- In-memory log ring buffer (last 500 lines) ----
+_log_buffer: collections.deque[dict] = collections.deque(maxlen=500)
+
+
+class _WebLogHandler(logging.Handler):
+    """Captures log records into an in-memory ring buffer for the /logs page."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            _log_buffer.append({
+                "ts": self.format(record).split(" [")[0] if " [" in self.format(record) else record.asctime if hasattr(record, "asctime") else datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S,%f")[:-3],
+                "level": record.levelname,
+                "name": record.name,
+                "message": record.getMessage(),
+            })
+        except Exception:
+            pass
+
+
+# Install on root logger so we capture everything
+_web_log_handler = _WebLogHandler()
+_web_log_handler.setLevel(logging.INFO)
+logging.getLogger().addHandler(_web_log_handler)
 
 # Simple in-memory session store
 _sessions: dict[str, dict] = {}
@@ -7860,6 +7885,187 @@ async def api_active_cycle_handler(request: web.Request) -> web.Response:
         return web.json_response({"active": False})
 
 
+async def _check_lead_role(request: web.Request) -> tuple[dict | None, web.Response | None]:
+    """Check if user has the WEB_LEAD_ROLE_ID. Returns (session, error_response)."""
+    session = _get_session(request)
+    if not session:
+        return None, web.Response(text="Not logged in. <a href='/login'>Login</a>", content_type="text/html", status=401)
+
+    bot = request.app.get("bot")
+    if not bot:
+        return None, web.Response(text="Bot not available", status=500)
+
+    if not config.WEB_LEAD_ROLE_ID:
+        return None, web.Response(text="WEB_LEAD_ROLE_ID not configured", status=500)
+
+    guild = bot.get_guild(config.GUILD_ID) if config.GUILD_ID else None
+    if not guild:
+        return None, web.Response(text="Guild not found", status=500)
+
+    member = guild.get_member(session["user_id"])
+    if not member:
+        try:
+            member = await guild.fetch_member(session["user_id"])
+        except Exception:
+            return None, web.Response(text="Not a guild member", status=403)
+
+    if config.WEB_LEAD_ROLE_ID not in [r.id for r in member.roles]:
+        return None, web.Response(text="Access denied", status=403)
+
+    return session, None
+
+
+async def api_logs_handler(request: web.Request) -> web.Response:
+    """Plain-text endpoint returning recent log entries (lead role only)."""
+    session, error = await _check_lead_role(request)
+    if error:
+        return web.Response(text="Unauthorized", status=error.status)
+
+    level = request.query.get("level", "").upper()
+    search = request.query.get("search", "").lower()
+
+    lines = []
+    for entry in _log_buffer:
+        if level and entry.get("level") != level:
+            continue
+        line = f'{entry["ts"]}  [{entry["level"]}] {entry["name"]}: {entry["message"]}'
+        if search and search not in line.lower():
+            continue
+        lines.append(line)
+
+    return web.Response(text="\n".join(lines), content_type="text/plain")
+
+
+async def logs_page_handler(request: web.Request) -> web.Response:
+    """Standalone HTML page that live-streams the log buffer (lead role only)."""
+    session, error = await _check_lead_role(request)
+    if error:
+        return error
+
+    html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CasterBot Logs</title>
+<style>
+  :root {
+    --bg: #0a0a12;
+    --panel: #12121e;
+    --border: rgba(255,106,0,0.4);
+    --orange: #ff6a00;
+    --cyan: #00d4ff;
+    --text: #ccc;
+    --dim: #666;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Consolas','Courier New',monospace; background: var(--bg); color: var(--text); padding: 16px; }
+  h1 { font-family: 'Segoe UI',sans-serif; color: var(--orange); margin-bottom: 12px; font-size: 1.4em; }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar label { color: var(--dim); font-size: 0.85em; }
+  .toolbar select, .toolbar input {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    padding: 4px 8px; border-radius: 4px; font-size: 0.85em;
+  }
+  .toolbar button {
+    background: var(--orange); color: #fff; border: none; padding: 6px 14px;
+    border-radius: 4px; cursor: pointer; font-size: 0.85em;
+  }
+  .toolbar button:hover { opacity: 0.85; }
+  #status { color: var(--cyan); font-size: 0.8em; margin-left: auto; }
+  #log-container {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; height: calc(100vh - 120px); overflow-y: auto; font-size: 0.82em;
+    line-height: 1.6;
+  }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-line .ts  { color: var(--dim); }
+  .log-line .lvl { font-weight: bold; }
+  .log-line .name { color: var(--cyan); }
+  .lvl-INFO    { color: #4ec9b0; }
+  .lvl-WARNING { color: #dcdcaa; }
+  .lvl-ERROR   { color: #f44747; }
+  .lvl-DEBUG   { color: #888; }
+  .lvl-CRITICAL{ color: #ff0000; font-weight: 900; }
+  .highlight   { background: rgba(255,106,0,0.25); }
+</style>
+</head>
+<body>
+<h1>CasterBot Logs</h1>
+<div class="toolbar">
+  <label>Level:</label>
+  <select id="levelFilter">
+    <option value="">All</option>
+    <option value="INFO">INFO</option>
+    <option value="WARNING">WARNING</option>
+    <option value="ERROR">ERROR</option>
+    <option value="DEBUG">DEBUG</option>
+  </select>
+  <label>Search:</label>
+  <input id="searchFilter" type="text" placeholder="filter text..." />
+  <button onclick="clearLogs()">Clear display</button>
+  <label><input type="checkbox" id="autoScroll" checked /> Auto-scroll</label>
+  <span id="status">connecting...</span>
+</div>
+<div id="log-container"></div>
+<script>
+const container = document.getElementById('log-container');
+const statusEl  = document.getElementById('status');
+const levelSel  = document.getElementById('levelFilter');
+const searchInp = document.getElementById('searchFilter');
+const autoScr   = document.getElementById('autoScroll');
+
+let allEntries = [];
+let polling = null;
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+levelSel.addEventListener('change', fetchLogs);
+searchInp.addEventListener('input', () => { clearTimeout(searchInp._t); searchInp._t = setTimeout(fetchLogs, 300); });
+
+function clearLogs() { container.innerHTML = ''; }
+
+async function fetchLogs() {
+  try {
+    const level = levelSel.value;
+    const search = searchInp.value;
+    let url = '/api/logs';
+    const params = [];
+    if (level) params.push('level=' + encodeURIComponent(level));
+    if (search) params.push('search=' + encodeURIComponent(search));
+    if (params.length) url += '?' + params.join('&');
+    const resp = await fetch(url);
+    if (!resp.ok) { statusEl.textContent = 'error ' + resp.status; return; }
+    const text = await resp.text();
+    const lines = text ? text.split('\\n') : [];
+    container.innerHTML = lines.map(line => {
+      let cls = '';
+      if (line.includes('[WARNING]')) cls = 'lvl-WARNING';
+      else if (line.includes('[ERROR]')) cls = 'lvl-ERROR';
+      else if (line.includes('[DEBUG]')) cls = 'lvl-DEBUG';
+      else if (line.includes('[CRITICAL]')) cls = 'lvl-CRITICAL';
+      else if (line.includes('[INFO]')) cls = 'lvl-INFO';
+      return '<div class="log-line ' + cls + '">' + escapeHtml(line) + '</div>';
+    }).join('');
+    statusEl.textContent = lines.length + ' lines \\u2022 ' + new Date().toLocaleTimeString();
+    if (autoScr.checked) container.scrollTop = container.scrollHeight;
+  } catch(err) {
+    statusEl.textContent = 'fetch error';
+  }
+}
+
+fetchLogs();
+polling = setInterval(fetchLogs, 3000);
+</script>
+</body>
+</html>'''
+    return web.Response(text=html, content_type="text/html")
+
+
 async def health_handler(request: web.Request) -> web.Response:
     """Health check endpoint."""
     return web.Response(text="OK")
@@ -8316,6 +8522,9 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/logos/rename", api_logo_rename_handler)
     app.router.add_get("/team-logo/{team_name}", team_logo_handler)
     app.router.add_get("/health", health_handler)
+    # Logs page (lead role only)
+    app.router.add_get("/logs", logs_page_handler)
+    app.router.add_get("/api/logs", api_logs_handler)
     # PWA routes
     app.router.add_get("/manifest.json", manifest_handler)
     app.router.add_get("/sw.js", service_worker_handler)
