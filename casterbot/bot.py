@@ -46,6 +46,7 @@ log = logging.getLogger("casterbot")
 logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 logging.getLogger("discord.http").setLevel(logging.WARNING)
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+logging.getLogger("aiohttp.server").setLevel(logging.CRITICAL)
 
 # Suppress Windows asyncio connection reset errors
 class ConnectionResetFilter(logging.Filter):
