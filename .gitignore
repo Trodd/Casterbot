@@ -32,3 +32,6 @@ certs/
 
 # User uploads
 team_logos/
+
+# Integration docs (contains secrets)
+EML_RPC_INTEGRATION.txt
