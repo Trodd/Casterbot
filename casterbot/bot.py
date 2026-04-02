@@ -160,6 +160,9 @@ async def sync_matches(bot: CasterBot) -> int:
     matches = await sheets.fetch_upcoming_matches()
     log.debug(f"Fetched {len(matches)} upcoming matches")
 
+    # Refresh team rankings cache
+    await sheets.fetch_rankings()
+
     existing_matches = await db.get_matches_with_message()
 
     # Get current match IDs from sheet

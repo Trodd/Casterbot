@@ -73,6 +73,7 @@ UPCOMING_MATCHES_CSV_URL: str = _get(
     "UPCOMING_MATCHES_CSV_URL",
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIvdXGBkVZB5ZFdMVUCZqe8e8DbOj6UbSAeqBP0uzYAY5Z1q37c-ZVG7iV96_cOlX-0jsgNLYXfe6B/pub?gid=881384435&single=true&output=csv",
 )
+RANKINGS_CSV_URL: str = _get("RANKINGS_CSV_URL", "")
 ROSTERS_CSV_URL: str = _get("ROSTERS_CSV_URL", "")
 
 # Behavior

@@ -10,7 +10,7 @@ from dateutil import tz as dateutil_tz
 from discord import ButtonStyle, Interaction, SelectOption
 from discord.ui import ActionRow, Button, Container, LayoutView, Section, Select, Separator, TextDisplay, View
 
-from . import config, db
+from . import config, db, sheets
 
 
 MAX_CASTERS = 2
@@ -81,8 +81,14 @@ def _build_claim_text(match: dict | None, claims: list[dict]) -> str:
     else:
         stream_text = "⚠️ *Not selected - please choose below*"
 
+    # Build team name display with rank emoji
+    re_a = sheets.rank_emoji(match['team_a'])
+    re_b = sheets.rank_emoji(match['team_b'])
+    team_a_display = f"{re_a} {match['team_a']}" if re_a else match['team_a']
+    team_b_display = f"{match['team_b']} {re_b}" if re_b else match['team_b']
+
     lines = [
-        f"# `{match['team_a']}` ⚔️ `{match['team_b']}`",
+        f"# `{team_a_display}` ⚔️ `{team_b_display}`",
         f"**When:** {_format_match_time(match)}",
         f"**Match ID:** `{match.get('simple_id', '?')}`",
         f"**Stream:** {stream_text}",

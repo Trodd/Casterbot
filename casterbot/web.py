@@ -12,7 +12,7 @@ import discord
 from aiohttp import web
 from dateutil import tz as dateutil_tz
 
-from . import config, db
+from . import config, db, sheets
 
 log = logging.getLogger("casterbot.web")
 
@@ -483,6 +483,13 @@ HTML_TEMPLATE = """
             color: var(--echo-orange); 
             margin: 0 12px;
             font-size: 0.8em;
+        }
+        .team-rank {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.65em;
+            font-weight: 600;
+            letter-spacing: 0;
+            vertical-align: middle;
         }
         .match-id { 
             background: linear-gradient(135deg, var(--echo-orange) 0%, #cc5500 100%);
@@ -4923,10 +4930,16 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
         normalized_date = match.get("match_date", "")
     date_attr = f' data-date="{normalized_date}" data-timestamp="{match_timestamp}"'
     
+    # Build team names with rank symbols
+    rank_a_html = sheets.rank_html(match['team_a'])
+    rank_b_html = sheets.rank_html(match['team_b'])
+    team_a_html = f'{rank_a_html} {match["team_a"]}' if rank_a_html else match['team_a']
+    team_b_html = f'{match["team_b"]} {rank_b_html}' if rank_b_html else match['team_b']
+
     return f'''
         <div class="{card_class}"{my_claim_attr}{open_attr}{status_attr}{match_type_attr}{date_attr}>
             <div class="match-header">
-                <span class="teams">{match["team_a"]}<span class="team-vs">vs</span>{match["team_b"]}</span>
+                <span class="teams">{team_a_html}<span class="team-vs">vs</span>{team_b_html}</span>
                 <span class="match-id">#{match.get("simple_id", "?")}</span>
             </div>
             <p class="match-time">{formatted_time} <span class="time-relative">{status_badge} {relative}</span></p>
@@ -6832,6 +6845,8 @@ async def api_matches_handler(request: web.Request) -> web.Response:
             "match_id": match_id,  # Full match_id for RPC calls
             "team_a": match["team_a"],
             "team_b": match["team_b"],
+            "team_a_rank": sheets.get_team_rank(match["team_a"]) or None,
+            "team_b_rank": sheets.get_team_rank(match["team_b"]) or None,
             "team_a_logo": team_a_logo,
             "team_b_logo": team_b_logo,
             "team_a_roster": get_team_members(match["team_a"]),
@@ -7210,6 +7225,8 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
         "match_id": match_id,  # Include full match_id for button matching
         "team_a": match["team_a"],
         "team_b": match["team_b"],
+        "team_a_rank": sheets.get_team_rank(match["team_a"]) or None,
+        "team_b_rank": sheets.get_team_rank(match["team_b"]) or None,
         "team_a_logo": team_a_logo,
         "team_b_logo": team_b_logo,
         "team_a_roster": get_team_members(match["team_a"]),

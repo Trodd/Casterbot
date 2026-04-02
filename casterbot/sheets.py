@@ -147,3 +147,106 @@ async def fetch_upcoming_matches() -> list[Match]:
     # Sort by datetime
     matches.sort(key=lambda m: m.match_datetime)
     return matches
+
+
+# ---- Rankings cache ----
+_rankings: dict[str, str] = {}  # team name (lower) -> rank string
+
+
+def get_team_rank(team_name: str) -> str:
+    """Return the rank string for a team, or empty string if unknown."""
+    return _rankings.get(team_name.strip().lower(), "")
+
+
+# Tier -> (emoji for Discord, CSS color hex for web)
+_RANK_TIERS: dict[str, tuple[str, str]] = {
+    "master":   ("👑", "#a855f7"),  # purple
+    "diamond":  ("💎", "#38bdf8"),  # blue
+    "platinum": ("💠", "#94a3b8"),  # silver
+    "gold":     ("🟡", "#facc15"),  # gold
+    "silver":   ("⚪", "#cbd5e1"),  # light gray
+    "bronze":   ("🟤", "#d97706"),  # amber
+}
+
+
+def _parse_rank(rank: str) -> tuple[str, str]:
+    """Split 'Diamond 4' into ('diamond', '4'). Returns (tier_lower, number_or_empty)."""
+    parts = rank.rsplit(" ", 1)
+    tier = parts[0].lower()
+    num = parts[1] if len(parts) == 2 and parts[1].isdigit() else ""
+    return tier, num
+
+
+def rank_emoji(team_name: str) -> str:
+    """Return a Discord-friendly emoji string for the team's rank, e.g. '💎4'."""
+    rank = get_team_rank(team_name)
+    if not rank:
+        return ""
+    tier, num = _parse_rank(rank)
+    emoji = _RANK_TIERS.get(tier, ("🔘", "#888"))[0]
+    return f"{emoji}{num}"
+
+
+def rank_html(team_name: str) -> str:
+    """Return an HTML snippet with a colored rank symbol for the web UI."""
+    rank = get_team_rank(team_name)
+    if not rank:
+        return ""
+    tier, num = _parse_rank(rank)
+    emoji, color = _RANK_TIERS.get(tier, ("●", "#888"))
+    return f'<span class="team-rank" style="color:{color}" title="{rank}">{emoji}{num}</span>'
+
+
+async def fetch_rankings() -> dict[str, str]:
+    """Fetch team rankings from the published CSV and update the cache."""
+    global _rankings
+    if not config.RANKINGS_CSV_URL:
+        return _rankings
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                config.RANKINGS_CSV_URL,
+                headers={"User-Agent": "CasterBot/1.0"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"Rankings fetch failed with status {resp.status}")
+                    return _rankings
+                text = await resp.text()
+        except Exception as e:
+            log.warning(f"Rankings fetch failed: {e}")
+            return _rankings
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if len(rows) < 2:
+        return _rankings
+
+    header = [c.strip().lower() for c in rows[0]]
+
+    # Find columns
+    name_col = -1
+    rank_col = -1
+    for i, h in enumerate(header):
+        if "team" in h and "name" in h:
+            name_col = i
+        elif h == "rank":
+            rank_col = i
+
+    if name_col == -1 or rank_col == -1:
+        log.warning(f"Rankings CSV missing expected columns (found: {header})")
+        return _rankings
+
+    new_rankings: dict[str, str] = {}
+    for row in rows[1:]:
+        if len(row) <= max(name_col, rank_col):
+            continue
+        team = row[name_col].strip()
+        rank = row[rank_col].strip()
+        if team and rank:
+            new_rankings[team.lower()] = rank
+
+    _rankings = new_rankings
+    log.info(f"Loaded {len(_rankings)} team rankings")
+    return _rankings
