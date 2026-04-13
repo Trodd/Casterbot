@@ -151,11 +151,19 @@ async def fetch_upcoming_matches() -> list[Match]:
 
 # ---- Rankings cache ----
 _rankings: dict[str, str] = {}  # team name (lower) -> rank string
+_ranked_teams_ordered: list[tuple[str, str]] = []  # ordered list of (display_name, rank)
 
 
 def get_team_rank(team_name: str) -> str:
     """Return the rank string for a team, or empty string if unknown."""
     return _rankings.get(team_name.strip().lower(), "")
+
+
+def get_top_teams() -> list[tuple[str, str]]:
+    """Return finals-eligible teams: all Master teams + top 3 Diamond teams, in ranking order."""
+    masters = [(name, rank) for name, rank in _ranked_teams_ordered if _parse_rank(rank)[0] == "master"]
+    diamonds = [(name, rank) for name, rank in _ranked_teams_ordered if _parse_rank(rank)[0] == "diamond"]
+    return masters + diamonds[:3]
 
 
 # Tier -> (emoji for Discord, CSS color hex for web)
@@ -199,7 +207,7 @@ def rank_html(team_name: str) -> str:
 
 async def fetch_rankings() -> dict[str, str]:
     """Fetch team rankings from the published CSV and update the cache."""
-    global _rankings
+    global _rankings, _ranked_teams_ordered
     if not config.RANKINGS_CSV_URL:
         return _rankings
 
@@ -239,6 +247,7 @@ async def fetch_rankings() -> dict[str, str]:
         return _rankings
 
     new_rankings: dict[str, str] = {}
+    new_ordered: list[tuple[str, str]] = []
     for row in rows[1:]:
         if len(row) <= max(name_col, rank_col):
             continue
@@ -246,7 +255,9 @@ async def fetch_rankings() -> dict[str, str]:
         rank = row[rank_col].strip()
         if team and rank:
             new_rankings[team.lower()] = rank
+            new_ordered.append((team, rank))
 
     _rankings = new_rankings
+    _ranked_teams_ordered = new_ordered
     log.info(f"Loaded {len(_rankings)} team rankings")
     return _rankings

@@ -2347,6 +2347,11 @@ HTML_TEMPLATE = """
             font-size: 0.85em;
             color: var(--echo-text-dim);
         }
+        .logo-audit {
+            font-size: 0.8em;
+            color: var(--echo-text-dim);
+            margin-top: 2px;
+        }
         .logo-warning {
             font-size: 0.8em;
             color: var(--echo-danger);
@@ -3687,6 +3692,10 @@ HTML_TEMPLATE = """
                     loadPendingLogos();
                     loadApprovedLogos();
                 }
+                // If it's the admin tab, load finals team dropdowns
+                if (tab === 'admin') {
+                    loadFinalsTeams();
+                }
             }
             
             // Close sidebar on mobile
@@ -4086,6 +4095,72 @@ HTML_TEMPLATE = """
             }
         }
         
+        async function loadFinalsTeams() {
+            const selA = document.getElementById('finals-team-a');
+            const selB = document.getElementById('finals-team-b');
+            if (!selA || !selB) return;
+            try {
+                const resp = await fetch('/api/admin/top-teams', {credentials: 'include'});
+                const data = await resp.json();
+                if (data.success && data.teams.length > 0) {
+                    const opts = '<option value="">-- Select team --</option>' +
+                        data.teams.map(t => '<option value="' + t.name + '">' + t.name + ' (' + t.rank + ')</option>').join('');
+                    selA.innerHTML = opts;
+                    selB.innerHTML = opts;
+                } else {
+                    const msg = '<option value="">No ranked teams found</option>';
+                    selA.innerHTML = msg;
+                    selB.innerHTML = msg;
+                }
+            } catch(e) {
+                selA.innerHTML = '<option value="">Failed to load teams</option>';
+                selB.innerHTML = '<option value="">Failed to load teams</option>';
+            }
+        }
+        // Pre-load finals teams if admin tab exists
+        loadFinalsTeams();
+        
+        async function adminForceCreateFinals() {
+            const teamA = document.getElementById('finals-team-a').value;
+            const teamB = document.getElementById('finals-team-b').value;
+            const result = document.getElementById('result-finals-create');
+            
+            if (!teamA || !teamB) {
+                result.innerHTML = '<span class="error">Select both teams</span>';
+                return;
+            }
+            if (teamA === teamB) {
+                result.innerHTML = '<span class="error">Teams must be different</span>';
+                return;
+            }
+            if (!confirm('Create finals match: ' + teamA + ' vs ' + teamB + '?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/force-create-finals', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        team_a: teamA,
+                        team_b: teamB
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Finals match created', 'success');
+                    document.getElementById('finals-team-a').value = '';
+                    document.getElementById('finals-team-b').value = '';
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
         // ========== Team Logo Review Functions ==========
         
         async function loadPendingLogos() {
@@ -4205,11 +4280,15 @@ HTML_TEMPLATE = """
                 
                 let html = '<div class="logo-grid">';
                 for (const logo of data.logos) {
+                    const approvedInfo = logo.approved_by ? `Approved by ${logo.approved_by}` : '';
+                    const approvedDate = logo.approved_at ? new Date(logo.approved_at * 1000).toLocaleDateString() : '';
+                    const auditText = [approvedInfo, approvedDate].filter(Boolean).join(' · ');
                     html += `
                         <div class="logo-card approved">
                             <img src="${logo.logo_url}" class="logo-preview" alt="${logo.team_name} Logo" onclick="window.open('${logo.logo_url}', '_blank')">
                             <div class="logo-info">
                                 <div class="logo-team">${logo.team_name}</div>
+                                ${auditText ? `<div class="logo-audit">${auditText}</div>` : ''}
                             </div>
                             <div class="logo-actions">
                                 <button class="admin-btn" onclick="renameLogo('${logo.team_name.replace(/'/g, "\\'")}')" title="Change team name">Rename</button>
@@ -5848,6 +5927,31 @@ async def schedule_handler(request: web.Request) -> web.Response:
                             <button class="admin-btn success" onclick="adminForceCreateMatch()">Create Match</button>
                         </div>
                         <div class="admin-result" id="result-force-create"></div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Force Create Finals Match</h3>
+                    </div>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Create a finals match. Teams are all Master ranked + top 3 Diamond from the rankings sheet.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Team A</label>
+                                <select class="admin-select" id="finals-team-a">
+                                    <option value="">Loading teams...</option>
+                                </select>
+                            </div>
+                            <div class="admin-input-group">
+                                <label>Team B</label>
+                                <select class="admin-select" id="finals-team-b">
+                                    <option value="">Loading teams...</option>
+                                </select>
+                            </div>
+                            <button class="admin-btn success" onclick="adminForceCreateFinals()">Create Finals Match</button>
+                        </div>
+                        <div class="admin-result" id="result-finals-create"></div>
                     </div>
                 </div>
                 
@@ -7610,6 +7714,94 @@ async def api_admin_force_create_match_handler(request: web.Request) -> web.Resp
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+async def api_admin_top_teams_handler(request: web.Request) -> web.Response:
+    """Admin API: Get top 8 teams from rankings sheet."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    top_teams = sheets.get_top_teams()
+    return web.json_response({
+        "success": True,
+        "teams": [{"name": name, "rank": rank} for name, rank in top_teams],
+    })
+
+
+async def api_admin_force_create_finals_handler(request: web.Request) -> web.Response:
+    """Admin API: Force create a finals match from top 8 teams."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    bot = request.app.get("bot")
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    team_a = data.get("team_a", "").strip()
+    team_b = data.get("team_b", "").strip()
+
+    if not team_a or not team_b:
+        return web.json_response({"success": False, "error": "Select both teams"}, status=400)
+    if team_a == team_b:
+        return web.json_response({"success": False, "error": "Teams must be different"}, status=400)
+
+    # Validate teams are finals-eligible
+    top_names = [name for name, _ in sheets.get_top_teams()]
+    if team_a not in top_names or team_b not in top_names:
+        return web.json_response({"success": False, "error": "Both teams must be finals-eligible (Master or top 3 Diamond)"}, status=400)
+
+    try:
+        from datetime import datetime as dt
+        import hashlib
+        import time
+
+        match_dt = dt.now()
+        hash_input = f"finals:{team_a}:{team_b}:{int(time.time())}"
+        match_id = f"finals_{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+
+        match_date = match_dt.strftime("%Y-%m-%d")
+        match_time = match_dt.strftime("%H:%M")
+        match_timestamp = int(match_dt.timestamp())
+
+        await db.upsert_match(
+            match_id=match_id,
+            team_a=team_a,
+            team_b=team_b,
+            match_date=match_date,
+            match_time=match_time,
+            match_timestamp=match_timestamp,
+            match_type="Finals",
+        )
+
+        if bot:
+            from .views import ClaimView
+            claim_channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+            if claim_channel:
+                match = await db.get_match(match_id)
+                claims = await db.get_claims(match_id)
+                view = ClaimView(match_id, match, claims)
+                bot.add_view(view)
+                try:
+                    msg = await claim_channel.send(view=view)
+                    await db.set_message_id(match_id, msg.id, claim_channel.id)
+                    log.info(f"Posted claim message for finals match: {team_a} vs {team_b}")
+                except Exception as e:
+                    log.error(f"Failed to post claim message: {e}")
+
+        match = await db.get_match(match_id)
+        simple_id = match.get("simple_id", "?") if match else "?"
+
+        return web.json_response({
+            "success": True,
+            "message": f"Created finals match #{simple_id}: {team_a} vs {team_b}"
+        })
+    except Exception as e:
+        log.error(f"Admin force create finals match failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 # ============ Team Logo Review ============
 
 async def api_logo_pending_handler(request: web.Request) -> web.Response:
@@ -7808,13 +8000,22 @@ async def api_logo_list_handler(request: web.Request) -> web.Response:
     logos = await db.get_all_team_logos()
     
     base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot and config.GUILD_ID else None
     
     result = []
     for logo in logos:
+        approved_by_name = None
+        approved_by_id = logo.get("approved_by")
+        if approved_by_id and guild:
+            member = guild.get_member(approved_by_id)
+            if member:
+                approved_by_name = member.display_name
         result.append({
             "team_name": logo["team_name"],
             "logo_url": f"{base_url}/team-logo/{logo['team_name']}",
             "approved_at": logo["approved_at"],
+            "approved_by": approved_by_name,
         })
     
     return web.json_response({"success": True, "logos": result})
@@ -8529,6 +8730,8 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/end-cycle", api_admin_end_cycle_handler)
     app.router.add_post("/api/admin/force-delete", api_admin_force_delete_handler)
     app.router.add_post("/api/admin/force-create-match", api_admin_force_create_match_handler)
+    app.router.add_get("/api/admin/top-teams", api_admin_top_teams_handler)
+    app.router.add_post("/api/admin/force-create-finals", api_admin_force_create_finals_handler)
     app.router.add_get("/api/active-cycle", api_active_cycle_handler)
     # Team logo routes
     app.router.add_get("/api/logos/pending", api_logo_pending_handler)
