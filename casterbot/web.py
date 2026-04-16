@@ -99,7 +99,7 @@ def _get_session(request: web.Request) -> dict | None:
 
 async def _is_admin(bot, user_id: int) -> bool:
     """Check if a user has the lead role (admin access)."""
-    if not bot or not (config.WEB_LEAD_ROLE_ID or config.STAFF_ROLE_ID) or not config.GUILD_ID:
+    if not bot or not config.WEB_LEAD_ROLE_ID or not config.GUILD_ID:
         return False
     try:
         guild = bot.get_guild(config.GUILD_ID)
@@ -111,8 +111,7 @@ async def _is_admin(bot, user_id: int) -> bool:
                 member = await guild.fetch_member(user_id)
             except Exception:
                 return False
-        allowed_admin_roles = [r for r in [config.WEB_LEAD_ROLE_ID, config.STAFF_ROLE_ID] if r]
-        return any(role.id in allowed_admin_roles for role in member.roles)
+        return any(role.id == config.WEB_LEAD_ROLE_ID for role in member.roles)
     except Exception:
         return False
 
@@ -4302,7 +4301,9 @@ HTML_TEMPLATE = """
         };
         
         let _bracketData = {};
+        let _bracketClaims = {};
         let _isAdmin = false;
+        let _crewMembers = null;
         
         async function loadBracket() {
             const container = document.getElementById('bracket-container');
@@ -4313,6 +4314,7 @@ HTML_TEMPLATE = """
                 const data = await resp.json();
                 if (data.success) {
                     _bracketData = data.slots || {};
+                    _bracketClaims = data.claims || {};
                     renderBracketSVG(container);
                 } else {
                     container.innerHTML = '<div class="no-data">Failed to load bracket</div>';
@@ -4324,6 +4326,7 @@ HTML_TEMPLATE = """
         
         function renderBracketSVG(container) {
             const mw = 180, mh = 58, px = 40, py = 20;
+            const topPad = 18; // room for indicators above boxes
             // Layout positions for each slot
             const positions = {};
             // Winners bracket - 3 rounds on top
@@ -4336,13 +4339,13 @@ HTML_TEMPLATE = """
                 for (let i = 0; i < count; i++) {
                     positions[slots[i]] = {
                         x: r * (mw + px),
-                        y: startY + i * spacing
+                        y: topPad + startY + i * spacing
                     };
                 }
             }
             
             // Losers bracket - below winners
-            const losersTop = 4 * (mh + py) + 20;
+            const losersTop = topPad + 4 * (mh + py) + 20;
             const lRounds = [['LR1_1','LR1_2'],['LR2_1','LR2_2'],['LSF'],['LF']];
             for (let r = 0; r < lRounds.length; r++) {
                 const slots = lRounds[r];
@@ -4412,7 +4415,7 @@ HTML_TEMPLATE = """
                 const glowAttr = isGF && hasData ? ' filter="url(#glow)"' : '';
                 
                 // Match box
-                svg += `<g class="bracket-match" data-slot="${slotName}" style="cursor:${_isAdmin ? 'pointer' : 'default'}"${_isAdmin ? ` onclick="openSlotEditor('${slotName}')"` : ''}>`;
+                svg += `<g class="bracket-match" data-slot="${slotName}" style="cursor:pointer" onclick="openSlotEditor('${slotName}')">`;
                 svg += `<rect x="${pos.x}" y="${pos.y}" width="${mw}" height="${mh}" rx="6" fill="rgba(15,15,25,${bgOpacity})" stroke="${border}" stroke-width="${isGF ? 2 : 1.5}"${glowAttr}/>`;
                 
                 // Label
@@ -4433,9 +4436,16 @@ HTML_TEMPLATE = """
                 const bIcon = winner === teamB && winner ? '✓ ' : winner && winner !== teamB && d.team_b ? '✗ ' : '';
                 svg += `<text x="${pos.x + 8}" y="${pos.y + 47}" fill="${bColor}" font-size="11" font-weight="${bWeight}" font-family="sans-serif">${bIcon}${escSvg(truncName(teamB, 14))}</text>`;
                 
-                // Match created indicator
-                if (d.match_id) {
-                    svg += `<text x="${pos.x + mw - 6}" y="${pos.y + 12}" text-anchor="end" fill="#00ff88" font-size="8" font-family="sans-serif" opacity="0.8">&#9679; MATCH</text>`;
+                // Match/crew indicators (above the box)
+                const slotClaims = (_bracketClaims[slotName] || []);
+                const crewCount = slotClaims.length;
+                const streamCh = d.stream_channel;
+                let infoParts = [];
+                if (streamCh) infoParts.push(`<tspan fill="#ff6a00" font-weight="bold">CH${streamCh}</tspan>`);
+                if (d.match_id) infoParts.push(`<tspan fill="#00ff88">●</tspan>`);
+                if (crewCount > 0) infoParts.push(`<tspan fill="#00d4ff">${crewCount}/4</tspan>`);
+                if (infoParts.length) {
+                    svg += `<text x="${pos.x + mw - 6}" y="${pos.y + 10}" text-anchor="end" font-size="8" font-family="sans-serif" opacity="0.9">${infoParts.join(' ')}</text>`;
                 }
                 
                 svg += `</g>`;
@@ -4485,56 +4495,225 @@ HTML_TEMPLATE = """
             closeBracketEditor();
             const meta = BRACKET_SLOTS[slot];
             const d = _bracketData[slot] || {};
+            const claims = _bracketClaims[slot] || [];
             
-            // Get top teams for dropdowns
-            let teamOptions = '<option value="">TBD</option>';
-            try {
-                const resp = await fetch('/api/admin/top-teams', {credentials: 'include'});
-                const data = await resp.json();
-                if (data.success) {
-                    for (const t of data.teams) {
-                        teamOptions += `<option value="${t.name}">${t.name} (${t.rank})</option>`;
-                    }
-                }
-            } catch(e) {}
-            
-            // Also add any team already in the bracket that might not be in top teams
-            const allBracketTeams = new Set();
-            for (const sd of Object.values(_bracketData)) {
-                if (sd.team_a) allBracketTeams.add(sd.team_a);
-                if (sd.team_b) allBracketTeams.add(sd.team_b);
-            }
-            for (const t of allBracketTeams) {
-                if (!teamOptions.includes(`value="${t}"`)) {
-                    teamOptions += `<option value="${t}">${t}</option>`;
-                }
-            }
-            
-            const selA = teamOptions.replace(`value="${d.team_a||''}"`, `value="${d.team_a||''}" selected`);
-            const selB = teamOptions.replace(`value="${d.team_b||''}"`, `value="${d.team_b||''}" selected`);
-            
-            // Winner options
-            let winOpts = '<option value="">No winner yet</option>';
-            if (d.team_a) winOpts += `<option value="${d.team_a}" ${d.winner===d.team_a?'selected':''}>${d.team_a}</option>`;
-            if (d.team_b) winOpts += `<option value="${d.team_b}" ${d.winner===d.team_b?'selected':''}>${d.team_b}</option>`;
+            // Helper to find claim holder
+            const getHolder = (role, num) => claims.find(c => c.role === role && c.slot_num === num);
+            const caster1 = getHolder('caster', 1);
+            const caster2 = getHolder('caster', 2);
+            const camop1 = getHolder('camop', 1);
+            const sideline1 = getHolder('sideline', 1);
             
             let html = '<div class="bracket-modal-overlay" id="bracket-slot-overlay" onclick="if(event.target===this)closeBracketEditor()">';
-            html += '<div class="bracket-modal">';
+            html += '<div class="bracket-modal" style="max-width:420px">';
             html += `<h3>${meta.label}</h3>`;
-            html += '<div class="admin-input-group"><label>Team A</label><select class="admin-select" id="be-team-a">' + selA + '</select></div>';
-            html += '<div class="admin-input-group"><label>Team B</label><select class="admin-select" id="be-team-b">' + selB + '</select></div>';
-            html += '<div class="admin-input-group"><label>Winner</label><select class="admin-select" id="be-winner">' + winOpts + '</select></div>';
-            html += '<div style="font-size:0.85em;color:var(--echo-text-dim);margin-top:5px">Setting a winner auto-populates the next round.</div>';
-            html += '<div class="modal-actions">';
-            html += `<button class="admin-btn success" onclick="saveBracketSlot('${slot}')">Save</button>`;
-            html += `<button class="admin-btn danger" onclick="clearBracketSlot('${slot}')">Clear</button>`;
-            html += '<button class="admin-btn" onclick="closeBracketEditor()">Cancel</button>';
-            html += '</div></div></div>';
+            
+            // Teams display
+            html += `<div style="margin-bottom:12px;padding:10px;background:rgba(0,0,0,0.3);border-radius:6px;text-align:center">`;
+            html += `<span style="color:var(--echo-text)">${d.team_a || 'TBD'}</span>`;
+            html += ` <span style="color:var(--echo-text-dim);font-size:0.8em">vs</span> `;
+            html += `<span style="color:var(--echo-text)">${d.team_b || 'TBD'}</span>`;
+            if (d.winner) html += `<div style="color:#00ff88;font-size:0.8em;margin-top:4px">Winner: ${d.winner}</div>`;
+            html += `</div>`;
+            
+            // Claim slots section
+            html += '<div style="margin-bottom:12px"><label style="font-size:0.8em;color:var(--echo-orange);text-transform:uppercase;letter-spacing:1px;font-weight:600">Crew Claims</label></div>';
+            
+            function claimRow(label, role, num, holder, crewList) {
+                const borderColor = role==='caster' ? 'var(--echo-orange)' : role==='camop' ? 'var(--echo-cyan)' : '#aa66ff';
+                let row = `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:4px;margin-bottom:6px;border-left:3px solid ${borderColor}">`;
+                row += `<div style="flex:1"><span style="font-size:0.7em;color:var(--echo-text-dim);text-transform:uppercase">${label}</span>`;
+                if (holder) {
+                    row += `<div style="color:var(--echo-text);font-size:0.9em">${holder.display_name}</div>`;
+                } else {
+                    row += `<div style="color:var(--echo-text-dim);font-size:0.85em;font-style:italic">Open</div>`;
+                }
+                row += `</div><div style="display:flex;gap:4px;align-items:center">`;
+                if (holder) {
+                    row += `<button class="admin-btn danger" style="padding:4px 10px;font-size:0.7em" onclick="unclaimBracket('${slot}','${role}',${num})">Drop</button>`;
+                } else {
+                    row += `<button class="admin-btn success" style="padding:4px 10px;font-size:0.7em" onclick="claimBracket('${slot}','${role}',${num})">Claim</button>`;
+                    if (_isAdmin && crewList && crewList.length) {
+                        const selId = `assign-${role}-${num}`;
+                        row += `<select id="${selId}" class="admin-select" style="padding:2px 4px;font-size:0.7em;max-width:120px">`;
+                        row += `<option value="">Assign...</option>`;
+                        for (const c of crewList) {
+                            row += `<option value="${c.user_id}" data-name="${c.display_name.replace(/"/g,'&quot;')}">${c.display_name}</option>`;
+                        }
+                        row += `</select>`;
+                        row += `<button class="admin-btn" style="padding:4px 8px;font-size:0.7em;background:var(--echo-cyan);color:#000" onclick="assignBracket('${slot}','${role}',${num},'${selId}')">Set</button>`;
+                    }
+                }
+                row += `</div></div>`;
+                return row;
+            }
+            
+            // Fetch crew list for admin assignment
+            let crewList = [];
+            if (_isAdmin) {
+                if (!_crewMembers) {
+                    try {
+                        const cr = await fetch('/api/bracket/crew', {credentials: 'include'});
+                        const cd = await cr.json();
+                        if (cd.success) _crewMembers = cd.crew;
+                    } catch(e) {}
+                }
+                crewList = _crewMembers || [];
+            }
+            
+            html += claimRow('Caster 1', 'caster', 1, caster1, crewList);
+            html += claimRow('Caster 2', 'caster', 2, caster2, crewList);
+            html += claimRow('Cam Op', 'camop', 1, camop1, crewList);
+            html += claimRow('Sideline', 'sideline', 1, sideline1, crewList);
+            
+            // Channel status
+            if (d.match_id) {
+                html += `<div style="font-size:0.8em;color:#00ff88;margin-top:8px">● Match created</div>`;
+            }
+            
+            // Admin section
+            if (_isAdmin) {
+                // Get top teams for dropdowns
+                let teamOptions = '<option value="">TBD</option>';
+                try {
+                    const resp = await fetch('/api/admin/top-teams', {credentials: 'include'});
+                    const tdata = await resp.json();
+                    if (tdata.success) {
+                        for (const t of tdata.teams) {
+                            teamOptions += `<option value="${t.name}">${t.name} (${t.rank})</option>`;
+                        }
+                    }
+                } catch(e) {}
+                const allBracketTeams = new Set();
+                for (const sd of Object.values(_bracketData)) {
+                    if (sd.team_a) allBracketTeams.add(sd.team_a);
+                    if (sd.team_b) allBracketTeams.add(sd.team_b);
+                }
+                for (const t of allBracketTeams) {
+                    if (!teamOptions.includes(`value="${t}"`)) {
+                        teamOptions += `<option value="${t}">${t}</option>`;
+                    }
+                }
+                const selA = teamOptions.replace(`value="${d.team_a||''}"`, `value="${d.team_a||''}" selected`);
+                const selB = teamOptions.replace(`value="${d.team_b||''}"`, `value="${d.team_b||''}" selected`);
+                let winOpts = '<option value="">No winner yet</option>';
+                if (d.team_a) winOpts += `<option value="${d.team_a}" ${d.winner===d.team_a?'selected':''}>${d.team_a}</option>`;
+                if (d.team_b) winOpts += `<option value="${d.team_b}" ${d.winner===d.team_b?'selected':''}>${d.team_b}</option>`;
+                
+                html += '<hr style="border-color:var(--echo-border);margin:12px 0">';
+                html += '<div style="font-size:0.8em;color:var(--echo-danger);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px">Admin</div>';
+                const curStream = d.stream_channel || '';
+                html += '<div class="admin-input-group"><label>Stream Channel</label>';
+                html += `<select class="admin-select" id="be-stream-ch" onchange="setBracketStream('${slot}',this.value)">`;
+                html += `<option value="">Not set</option>`;
+                html += `<option value="1" ${curStream==1?'selected':''}>Channel 1</option>`;
+                html += `<option value="2" ${curStream==2?'selected':''}>Channel 2</option>`;
+                html += `</select></div>`;
+                html += '<div class="admin-input-group"><label>Team A</label><select class="admin-select" id="be-team-a">' + selA + '</select></div>';
+                html += '<div class="admin-input-group"><label>Team B</label><select class="admin-select" id="be-team-b">' + selB + '</select></div>';
+                html += '<div class="admin-input-group"><label>Winner</label><select class="admin-select" id="be-winner">' + winOpts + '</select></div>';
+                html += '<div style="font-size:0.8em;color:var(--echo-text-dim);margin-top:4px">Setting a winner auto-populates the next round.</div>';
+                html += '<div class="modal-actions">';
+                html += `<button class="admin-btn success" onclick="saveBracketSlot('${slot}')">Save</button>`;
+                html += `<button class="admin-btn danger" onclick="clearBracketSlot('${slot}')">Clear</button>`;
+                html += '<button class="admin-btn" onclick="closeBracketEditor()">Cancel</button>';
+                html += '</div>';
+            } else {
+                html += '<div class="modal-actions" style="margin-top:12px">';
+                html += '<button class="admin-btn" onclick="closeBracketEditor()">Close</button>';
+                html += '</div>';
+            }
+            
+            html += '</div></div>';
             document.body.insertAdjacentHTML('beforeend', html);
             
-            // Update winner dropdown when teams change
-            document.getElementById('be-team-a').onchange = updateWinnerDropdown;
-            document.getElementById('be-team-b').onchange = updateWinnerDropdown;
+            if (_isAdmin) {
+                document.getElementById('be-team-a').onchange = updateWinnerDropdown;
+                document.getElementById('be-team-b').onchange = updateWinnerDropdown;
+            }
+        }
+        
+        async function claimBracket(slot, role, slotNum) {
+            try {
+                const resp = await fetch('/api/bracket/claim', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({slot, role, slot_num: slotNum})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast('Claimed!', 'success');
+                    closeBracketEditor();
+                    loadBracket();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to claim', 'error');
+            }
+        }
+        
+        async function unclaimBracket(slot, role, slotNum) {
+            try {
+                const resp = await fetch('/api/bracket/unclaim', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({slot, role, slot_num: slotNum})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast('Dropped claim', 'success');
+                    closeBracketEditor();
+                    loadBracket();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to unclaim', 'error');
+            }
+        }
+        
+        async function assignBracket(slot, role, slotNum, selId) {
+            const sel = document.getElementById(selId);
+            if (!sel || !sel.value) { showToast('Select a crew member', 'error'); return; }
+            const targetUserId = sel.value;
+            const targetName = sel.options[sel.selectedIndex].dataset.name;
+            try {
+                const resp = await fetch('/api/bracket/claim', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({slot, role, slot_num: slotNum, target_user_id: targetUserId, target_display_name: targetName})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast(`Assigned ${targetName}`, 'success');
+                    closeBracketEditor();
+                    loadBracket();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to assign', 'error');
+            }
+        }
+        
+        async function setBracketStream(slot, value) {
+            try {
+                const resp = await fetch('/api/bracket/stream', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({slot, stream_channel: value ? parseInt(value) : null})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast(value ? `Set to Channel ${value}` : 'Channel cleared', 'success');
+                    loadBracket();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to set channel', 'error');
+            }
         }
         
         function updateWinnerDropdown() {
@@ -8310,9 +8489,10 @@ async def api_admin_force_create_finals_handler(request: web.Request) -> web.Res
 # ============ Finals Bracket ============
 
 async def api_bracket_get_handler(request: web.Request) -> web.Response:
-    """Get the full bracket state."""
+    """Get the full bracket state including claims."""
     slots = await db.get_all_bracket_slots()
-    return web.json_response({"success": True, "slots": slots})
+    claims = await db.get_all_bracket_claims()
+    return web.json_response({"success": True, "slots": slots, "claims": claims})
 
 
 _BRACKET_SLOT_LABELS: dict[str, str] = {
@@ -8366,22 +8546,20 @@ async def _ensure_bracket_match(bot, slot: str) -> str | None:
     # Store match_id back in the bracket slot
     await db.set_bracket_slot(slot, team_a, team_b, slot_data.get("winner"), match_id)
 
-    # Post claim message so crew can claim caster/camop roles
-    if bot:
-        from .views import ClaimView
-        claim_channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
-        if claim_channel:
-            match = await db.get_match(match_id)
-            claims = await db.get_claims(match_id)
-            view = ClaimView(match_id, match, claims)
-            bot.add_view(view)
-            try:
-                msg = await claim_channel.send(view=view)
-                await db.set_message_id(match_id, msg.id, claim_channel.id)
-                log.info(f"Bracket auto-created match for {label}: {team_a} vs {team_b}")
-            except Exception as e:
-                log.error(f"Failed to post claim message for bracket slot {slot}: {e}")
+    # Apply stream channel if set on bracket slot
+    stream_ch = slot_data.get("stream_channel")
+    if stream_ch:
+        await db.set_stream_channel(match_id, stream_ch)
 
+    # Auto-create private channel if crew has claimed (at least 1 caster + 1 camop)
+    if bot and team_a and team_b:
+        slot_claims = await db.get_bracket_claims(slot)
+        has_caster = any(c["role"] == "caster" for c in slot_claims)
+        has_camop = any(c["role"] == "camop" for c in slot_claims)
+        if has_caster and has_camop:
+            await _create_bracket_channel(bot, match_id, slot, slot_claims)
+
+    log.info(f"Bracket auto-created match for {label}: {team_a or 'TBD'} vs {team_b or 'TBD'}")
     return match_id
 
 
@@ -8544,6 +8722,258 @@ async def api_bracket_create_initial_matches_handler(request: web.Request) -> we
     if skipped:
         msg += f". Skipped: {', '.join(skipped)}"
     return web.json_response({"success": True, "message": msg})
+
+
+async def _create_bracket_channel(bot, match_id: str, slot: str,
+                                  slot_claims: list[dict]) -> None:
+    """Create a private channel for a bracket match using bracket claims."""
+    match = await db.get_match(match_id)
+    if not match or match.get("private_channel_id"):
+        return  # already has a channel
+
+    team_a = match.get("team_a", "TBD")
+    team_b = match.get("team_b", "TBD")
+    if not team_a or team_a == "TBD" or not team_b or team_b == "TBD":
+        return  # need real team names
+
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return
+
+    import discord
+
+    category = None
+    if config.PRIVATE_CATEGORY_ID:
+        category = guild.get_channel(config.PRIVATE_CATEGORY_ID)
+
+    overwrites: dict = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+    }
+
+    # Add claimed crew members
+    for c in slot_claims:
+        member = guild.get_member(c["user_id"])
+        if member:
+            overwrites[member] = discord.PermissionOverwrite(
+                read_messages=True, send_messages=True
+            )
+
+    # Add standard roles
+    for role_id in (config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID, config.STAFF_ROLE_ID):
+        if role_id:
+            role = guild.get_role(role_id)
+            if role:
+                overwrites[role] = discord.PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
+
+    # Add team roles
+    team_roles: list = []
+    for role in guild.roles:
+        if role.name.lower().startswith("team:"):
+            tname = role.name[5:].strip().lower()
+            if tname == team_a.lower() or tname == team_b.lower():
+                overwrites[role] = discord.PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
+                team_roles.append(role)
+
+    label = _BRACKET_SLOT_LABELS.get(slot, slot)
+    channel_name = f"finals-{team_a}-vs-{team_b}".lower().replace(" ", "-")
+
+    try:
+        channel = await guild.create_text_channel(
+            name=channel_name,
+            category=category,
+            overwrites=overwrites,
+            reason=f"CasterBot bracket channel ({label})",
+        )
+    except Exception as e:
+        log.error(f"Failed to create bracket channel for {slot}: {e}")
+        return
+
+    await db.set_private_channel(match_id, channel.id)
+
+    # Build roster message
+    casters = [c["display_name"] for c in slot_claims if c["role"] == "caster"]
+    camops = [c["display_name"] for c in slot_claims if c["role"] == "camop"]
+    team_pings = " ".join(r.mention for r in team_roles)
+
+    msg_lines = [
+        f"**{label}: {team_a} vs {team_b}**",
+        f"Casters: {', '.join(casters) if casters else 'None'}",
+        f"Cam Ops: {', '.join(camops) if camops else 'None'}",
+    ]
+    if team_pings:
+        msg_lines.append(f"\n{team_pings} — your finals match channel is ready!")
+
+    await channel.send("\n".join(msg_lines))
+
+    from .views import CloseChannelView
+    close_view = CloseChannelView(match_id)
+    bot.add_view(close_view)
+    await channel.send(view=close_view)
+
+    log.info(f"Created bracket channel for {label}: {channel_name}")
+
+
+async def api_bracket_crew_handler(request: web.Request) -> web.Response:
+    """Return list of crew members for admin assignment."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+
+    bot = request.app.get("bot")
+    user_id = session["user_id"]
+    if not await _is_admin(bot, user_id):
+        return web.json_response({"success": False, "error": "Admin only"}, status=403)
+
+    crew = []
+    if bot and config.GUILD_ID:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            crew_role_ids = set()
+            for rid in [config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID,
+                        config.CASTER_TRAINING_ROLE_ID, config.CAMOP_TRAINING_ROLE_ID,
+                        config.STAFF_ROLE_ID, config.WEB_LEAD_ROLE_ID]:
+                if rid:
+                    crew_role_ids.add(rid)
+            seen = set()
+            for member in guild.members:
+                if member.bot:
+                    continue
+                if any(r.id in crew_role_ids for r in member.roles):
+                    if member.id not in seen:
+                        seen.add(member.id)
+                        crew.append({
+                            "user_id": member.id,
+                            "display_name": member.global_name or member.display_name or member.name,
+                        })
+            crew.sort(key=lambda c: c["display_name"].lower())
+
+    return web.json_response({"success": True, "crew": crew})
+
+
+async def api_bracket_claim_handler(request: web.Request) -> web.Response:
+    """Claim a caster/camop slot on a bracket match."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+
+    bot = request.app.get("bot")
+    user_id = session["user_id"]
+
+    # Must be crew (or admin for assignment)
+    is_admin = await _is_admin(bot, user_id)
+    if not is_admin and not await _is_crew_member(bot, user_id):
+        return web.json_response({"success": False, "error": "Crew only"}, status=403)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    slot = data.get("slot", "").strip()
+    role = data.get("role", "").strip()
+    slot_num = int(data.get("slot_num", 1))
+
+    if not slot or role not in ("caster", "camop", "sideline") or slot_num not in (1, 2):
+        return web.json_response({"success": False, "error": "Invalid parameters"}, status=400)
+
+    # Admin can assign someone else
+    target_user_id = data.get("target_user_id")
+    target_display_name = data.get("target_display_name")
+    if target_user_id and is_admin:
+        claim_user_id = int(target_user_id)
+        claim_display_name = target_display_name or "Unknown"
+    else:
+        claim_user_id = user_id
+        claim_display_name = session.get("global_name") or session.get("username") or "Unknown"
+
+    await db.claim_bracket_slot(slot, claim_user_id, claim_display_name, role, slot_num)
+
+    # Check if channel should be auto-created
+    if bot:
+        slot_data = await db.get_bracket_slot(slot)
+        if slot_data and slot_data.get("team_a") and slot_data.get("team_b") and slot_data.get("match_id"):
+            slot_claims = await db.get_bracket_claims(slot)
+            has_caster = any(c["role"] == "caster" for c in slot_claims)
+            has_camop = any(c["role"] == "camop" for c in slot_claims)
+            if has_caster and has_camop:
+                await _create_bracket_channel(bot, slot_data["match_id"], slot, slot_claims)
+
+    return web.json_response({"success": True})
+
+
+async def api_bracket_unclaim_handler(request: web.Request) -> web.Response:
+    """Unclaim a caster/camop slot on a bracket match."""
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    slot = data.get("slot", "").strip()
+    role = data.get("role", "").strip()
+    slot_num = int(data.get("slot_num", 1))
+    user_id = session["user_id"]
+
+    if not slot or role not in ("caster", "camop", "sideline"):
+        return web.json_response({"success": False, "error": "Invalid parameters"}, status=400)
+
+    # Allow own unclaim or admin unclaim
+    removed = await db.unclaim_bracket_slot(slot, user_id, role, slot_num)
+    if not removed:
+        # Check if admin
+        bot = request.app.get("bot")
+        is_admin = False
+        if bot and config.WEB_LEAD_ROLE_ID:
+            guild = bot.get_guild(config.GUILD_ID)
+            if guild:
+                member = guild.get_member(user_id)
+                if member and any(r.id == config.WEB_LEAD_ROLE_ID for r in member.roles):
+                    is_admin = True
+        if is_admin:
+            await db.unclaim_bracket_slot_admin(slot, role, slot_num)
+        else:
+            return web.json_response({"success": False, "error": "Not your claim"}, status=403)
+
+    return web.json_response({"success": True})
+
+
+async def api_bracket_set_stream_handler(request: web.Request) -> web.Response:
+    """Set the stream channel for a bracket slot (admin only)."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    slot = data.get("slot", "").strip()
+    stream_channel = data.get("stream_channel")
+
+    if not slot:
+        return web.json_response({"success": False, "error": "Missing slot"}, status=400)
+
+    if stream_channel is not None:
+        stream_channel = int(stream_channel)
+        if stream_channel not in (1, 2):
+            return web.json_response({"success": False, "error": "Invalid channel"}, status=400)
+
+    await db.set_bracket_stream_channel(slot, stream_channel)
+
+    # Also update the match if it exists
+    slot_data = await db.get_bracket_slot(slot)
+    if slot_data and slot_data.get("match_id") and stream_channel:
+        await db.set_stream_channel(slot_data["match_id"], stream_channel)
+
+    return web.json_response({"success": True})
 
 
 async def api_bracket_clear_handler(request: web.Request) -> web.Response:
@@ -9509,6 +9939,10 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/api/bracket", api_bracket_get_handler)
     app.router.add_post("/api/bracket/update", api_bracket_update_handler)
     app.router.add_post("/api/bracket/create-initial-matches", api_bracket_create_initial_matches_handler)
+    app.router.add_post("/api/bracket/claim", api_bracket_claim_handler)
+    app.router.add_post("/api/bracket/unclaim", api_bracket_unclaim_handler)
+    app.router.add_get("/api/bracket/crew", api_bracket_crew_handler)
+    app.router.add_post("/api/bracket/stream", api_bracket_set_stream_handler)
     app.router.add_post("/api/bracket/clear", api_bracket_clear_handler)
     app.router.add_post("/api/bracket/reset", api_bracket_reset_handler)
     app.router.add_get("/api/active-cycle", api_active_cycle_handler)

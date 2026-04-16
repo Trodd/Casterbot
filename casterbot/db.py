@@ -133,7 +133,25 @@ async def init_db() -> None:
                 score_a INTEGER NOT NULL DEFAULT 0,
                 score_b INTEGER NOT NULL DEFAULT 0,
                 winner TEXT,
-                match_id TEXT
+                match_id TEXT,
+                stream_channel INTEGER
+            )
+        """)
+        # Migration: add stream_channel column if missing
+        try:
+            await db.execute("ALTER TABLE bracket_slots ADD COLUMN stream_channel INTEGER")
+        except Exception:
+            pass
+        # Migration: create bracket_claims table if missing
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bracket_claims (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slot TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                display_name TEXT NOT NULL DEFAULT '',
+                role TEXT NOT NULL,
+                slot_num INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(slot, role, slot_num)
             )
         """)
         await db.commit()
@@ -922,8 +940,98 @@ async def clear_bracket_slot(slot: str) -> None:
         await db.commit()
 
 
+async def set_bracket_stream_channel(slot: str, stream_channel: int | None) -> None:
+    """Set the stream channel for a bracket slot."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "UPDATE bracket_slots SET stream_channel = ? WHERE slot = ?",
+            (stream_channel, slot),
+        )
+        await db.commit()
+
+
 async def clear_all_bracket_slots() -> None:
     """Clear all bracket slots (reset bracket)."""
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute("DELETE FROM bracket_slots")
+        await db.execute("DELETE FROM bracket_claims")
         await db.commit()
+
+
+# ---- Bracket Claims ----
+
+async def get_bracket_claims(slot: str) -> list[dict]:
+    """Get all claims for a bracket slot."""
+    async with aiosqlite.connect(config.DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM bracket_claims WHERE slot = ? ORDER BY role, slot_num",
+            (slot,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+
+async def get_all_bracket_claims() -> dict[str, list[dict]]:
+    """Get all bracket claims grouped by slot."""
+    async with aiosqlite.connect(config.DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM bracket_claims ORDER BY slot, role, slot_num"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+        result: dict[str, list[dict]] = {}
+        for r in rows:
+            result.setdefault(r["slot"], []).append(r)
+        return result
+
+
+async def claim_bracket_slot(slot: str, user_id: int, display_name: str,
+                             role: str, slot_num: int) -> int | None:
+    """Claim a bracket slot. Returns previous holder user_id or None."""
+    async with aiosqlite.connect(config.DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT user_id FROM bracket_claims WHERE slot = ? AND role = ? AND slot_num = ?",
+            (slot, role, slot_num),
+        )
+        row = await cursor.fetchone()
+        previous = row[0] if row else None
+        await conn.execute(
+            "DELETE FROM bracket_claims WHERE slot = ? AND role = ? AND slot_num = ?",
+            (slot, role, slot_num),
+        )
+        await conn.execute(
+            "INSERT INTO bracket_claims (slot, user_id, display_name, role, slot_num) VALUES (?, ?, ?, ?, ?)",
+            (slot, user_id, display_name, role, slot_num),
+        )
+        await conn.commit()
+        return previous
+
+
+async def unclaim_bracket_slot(slot: str, user_id: int, role: str, slot_num: int) -> bool:
+    """Remove a bracket claim. Returns True if removed."""
+    async with aiosqlite.connect(config.DB_PATH) as conn:
+        cursor = await conn.execute(
+            "DELETE FROM bracket_claims WHERE slot = ? AND user_id = ? AND role = ? AND slot_num = ?",
+            (slot, user_id, role, slot_num),
+        )
+        await conn.commit()
+        return cursor.rowcount > 0
+
+
+async def unclaim_bracket_slot_admin(slot: str, role: str, slot_num: int) -> int | None:
+    """Admin: remove a bracket claim regardless of user. Returns removed user_id."""
+    async with aiosqlite.connect(config.DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT user_id FROM bracket_claims WHERE slot = ? AND role = ? AND slot_num = ?",
+            (slot, role, slot_num),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        uid = row[0]
+        await conn.execute(
+            "DELETE FROM bracket_claims WHERE slot = ? AND role = ? AND slot_num = ?",
+            (slot, role, slot_num),
+        )
+        await conn.commit()
+        return uid
