@@ -123,6 +123,19 @@ async def init_db() -> None:
                 approved_at INTEGER NOT NULL
             )
         """)
+        
+        # Migration: create bracket_slots table if missing
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bracket_slots (
+                slot TEXT PRIMARY KEY,
+                team_a TEXT,
+                team_b TEXT,
+                score_a INTEGER NOT NULL DEFAULT 0,
+                score_b INTEGER NOT NULL DEFAULT 0,
+                winner TEXT,
+                match_id TEXT
+            )
+        """)
         await db.commit()
 
 
@@ -861,3 +874,56 @@ async def rename_team_logo(old_team_name: str, new_team_name: str) -> bool:
         )
         await db.commit()
         return True
+
+
+# ============ Finals Bracket ============
+
+async def get_bracket_slot(slot: str) -> dict | None:
+    """Get a single bracket slot."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM bracket_slots WHERE slot = ?", (slot,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_all_bracket_slots() -> dict[str, dict]:
+    """Get all bracket slots as {slot_name: data}."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM bracket_slots")
+        rows = await cursor.fetchall()
+        return {row["slot"]: dict(row) for row in rows}
+
+
+async def set_bracket_slot(slot: str, team_a: str | None, team_b: str | None,
+                           winner: str | None = None, match_id: str | None = None) -> None:
+    """Set or update a bracket slot."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO bracket_slots (slot, team_a, team_b, winner, match_id)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(slot) DO UPDATE SET
+                team_a = ?, team_b = ?, winner = ?, match_id = ?
+            """,
+            (slot, team_a, team_b, winner, match_id,
+             team_a, team_b, winner, match_id)
+        )
+        await db.commit()
+
+
+async def clear_bracket_slot(slot: str) -> None:
+    """Clear a bracket slot."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("DELETE FROM bracket_slots WHERE slot = ?", (slot,))
+        await db.commit()
+
+
+async def clear_all_bracket_slots() -> None:
+    """Clear all bracket slots (reset bracket)."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("DELETE FROM bracket_slots")
+        await db.commit()

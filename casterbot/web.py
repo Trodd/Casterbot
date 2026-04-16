@@ -2372,6 +2372,84 @@ HTML_TEMPLATE = """
             font-size: 0.85em;
         }
         
+        /* ===== Finals Bracket Styles ===== */
+        #tab-bracket {
+            max-width: none;
+            width: calc(100vw - 320px);
+            margin-left: calc(-1 * (100vw - 320px - 950px) / 2 - 40px);
+            padding: 0;
+            overflow: hidden;
+        }
+        .bracket-container {
+            overflow-x: hidden;
+            padding: 10px 0;
+            width: 100%;
+        }
+        .bracket-svg {
+            display: block;
+        }
+        .bracket-legend {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            font-size: 0.85em;
+            color: var(--echo-text-dim);
+        }
+        .bracket-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .bracket-legend-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        .bracket-admin-bar {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .bracket-admin-bar .admin-btn {
+            font-size: 0.85em;
+            padding: 6px 14px;
+        }
+        /* Bracket edit modal */
+        .bracket-modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bracket-modal {
+            background: var(--echo-panel);
+            border: 1px solid var(--echo-border);
+            border-radius: 12px;
+            padding: 25px;
+            min-width: 320px;
+            max-width: 90vw;
+        }
+        .bracket-modal h3 {
+            margin: 0 0 15px 0;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-orange);
+        }
+        .bracket-modal .admin-input-group {
+            margin-bottom: 10px;
+        }
+        .bracket-modal .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             body {
@@ -2899,6 +2977,39 @@ HTML_TEMPLATE = """
             .hex-bg {
                 display: none;
             }
+            /* Bracket mobile */
+            #tab-bracket {
+                width: 100%;
+                margin-left: 0;
+                max-width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .bracket-container {
+                overflow-x: auto;
+                padding: 10px 0;
+            }
+            .bracket-svg {
+                min-width: 700px;
+            }
+            .bracket-admin-bar {
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 10px;
+            }
+            .bracket-admin-bar .admin-btn {
+                font-size: 0.75em;
+                padding: 10px 14px;
+            }
+            .bracket-legend {
+                font-size: 0.75em;
+                gap: 10px;
+                padding: 0 10px;
+            }
+            .bracket-modal {
+                width: 90%;
+                max-width: 340px;
+            }
         }
         
         @media (max-width: 480px) {
@@ -3111,6 +3222,7 @@ HTML_TEMPLATE = """
         <div class="tabs">
             <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
             <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
+            {bracket_tab_btn}
             {admin_tab_btn}
             {logos_tab_btn}
             {broadcast_tabs}
@@ -3144,6 +3256,7 @@ HTML_TEMPLATE = """
             {cycle_history}
         </div>
         {broadcast_tab_contents}
+        {bracket_tab_content}
         {admin_tab_content}
         {logos_tab_content}
     </div>
@@ -3696,6 +3809,10 @@ HTML_TEMPLATE = """
                 if (tab === 'admin') {
                     loadFinalsTeams();
                 }
+                // If it's the bracket tab, load bracket data
+                if (tab === 'bracket') {
+                    loadBracket();
+                }
             }
             
             // Close sidebar on mobile
@@ -4159,6 +4276,370 @@ HTML_TEMPLATE = """
             } catch(e) {
                 result.innerHTML = '<span class="error">✗ Request failed</span>';
             }
+        }
+        
+        // ========== Finals Bracket Functions ==========
+        
+        const BRACKET_SLOTS = {
+            // Winners bracket (orange)
+            WQF1: {label:'WQF 1', round:0, idx:0, side:'W'},
+            WQF2: {label:'WQF 2', round:0, idx:1, side:'W'},
+            WQF3: {label:'WQF 3', round:0, idx:2, side:'W'},
+            WQF4: {label:'WQF 4', round:0, idx:3, side:'W'},
+            WSF1: {label:'WSF 1', round:1, idx:0, side:'W', feedsFrom:['WQF1','WQF2']},
+            WSF2: {label:'WSF 2', round:1, idx:1, side:'W', feedsFrom:['WQF3','WQF4']},
+            WF:   {label:'Winners Final', round:2, idx:0, side:'W', feedsFrom:['WSF1','WSF2']},
+            // Losers bracket (cyan)
+            LR1_1:{label:'LR1-1', round:0, idx:0, side:'L', feedsFrom:['WQF1','WQF2']},
+            LR1_2:{label:'LR1-2', round:0, idx:1, side:'L', feedsFrom:['WQF3','WQF4']},
+            LR2_1:{label:'LR2-1', round:1, idx:0, side:'L', feedsFrom:['LR1_1','WSF2']},
+            LR2_2:{label:'LR2-2', round:1, idx:1, side:'L', feedsFrom:['LR1_2','WSF1']},
+            LSF:  {label:'Losers Semi', round:2, idx:0, side:'L', feedsFrom:['LR2_1','LR2_2']},
+            LF:   {label:'Losers Final', round:3, idx:0, side:'L', feedsFrom:['LSF','WF']},
+            // Grand final
+            GF:   {label:'Grand Final', round:4, idx:0, side:'G', feedsFrom:['WF','LF']},
+            GFR:  {label:'Grand Final Reset', round:5, idx:0, side:'G', feedsFrom:['GF']},
+        };
+        
+        let _bracketData = {};
+        let _isAdmin = false;
+        
+        async function loadBracket() {
+            const container = document.getElementById('bracket-container');
+            if (!container) return;
+            _isAdmin = !!document.querySelector('.bracket-admin-bar');
+            try {
+                const resp = await fetch('/api/bracket', {credentials: 'include'});
+                const data = await resp.json();
+                if (data.success) {
+                    _bracketData = data.slots || {};
+                    renderBracketSVG(container);
+                } else {
+                    container.innerHTML = '<div class="no-data">Failed to load bracket</div>';
+                }
+            } catch(e) {
+                container.innerHTML = '<div class="no-data">Failed to load bracket</div>';
+            }
+        }
+        
+        function renderBracketSVG(container) {
+            const mw = 180, mh = 58, px = 40, py = 20;
+            // Layout positions for each slot
+            const positions = {};
+            // Winners bracket - 3 rounds on top
+            for (let r = 0; r < 3; r++) {
+                const slots = r === 0 ? ['WQF1','WQF2','WQF3','WQF4'] : r === 1 ? ['WSF1','WSF2'] : ['WF'];
+                const count = slots.length;
+                const spacing = mh + py;
+                const totalH = count * spacing - py;
+                const startY = (4 * spacing - py - totalH) / 2;
+                for (let i = 0; i < count; i++) {
+                    positions[slots[i]] = {
+                        x: r * (mw + px),
+                        y: startY + i * spacing
+                    };
+                }
+            }
+            
+            // Losers bracket - below winners
+            const losersTop = 4 * (mh + py) + 20;
+            const lRounds = [['LR1_1','LR1_2'],['LR2_1','LR2_2'],['LSF'],['LF']];
+            for (let r = 0; r < lRounds.length; r++) {
+                const slots = lRounds[r];
+                const count = slots.length;
+                const spacing = mh + py;
+                const totalH = count * spacing - py;
+                const startY = losersTop + (2 * spacing - py - totalH) / 2;
+                for (let i = 0; i < count; i++) {
+                    positions[slots[i]] = {
+                        x: r * (mw + px),
+                        y: startY + i * spacing
+                    };
+                }
+            }
+            
+            // Grand Finals - to the right
+            const gfX = 4 * (mw + px);
+            const gfY = (losersTop + 2 * (mh + py)) / 2 - mh;
+            positions['GF'] = {x: gfX, y: gfY};
+            positions['GFR'] = {x: gfX, y: gfY + mh + py};
+            
+            // Compute SVG size
+            let maxX = 0, maxY = 0;
+            for (const p of Object.values(positions)) {
+                if (p.x + mw > maxX) maxX = p.x + mw;
+                if (p.y + mh > maxY) maxY = p.y + mh;
+            }
+            const svgW = maxX + 30, svgH = maxY + 30;
+            
+            let svg = `<svg class="bracket-svg" viewBox="0 0 ${svgW} ${svgH}" width="90%" preserveAspectRatio="xMidYMin meet" xmlns="http://www.w3.org/2000/svg">`;
+            svg += `<defs>
+                <filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>`;
+            
+            // Draw connector lines
+            for (const [slotName, meta] of Object.entries(BRACKET_SLOTS)) {
+                if (!meta.feedsFrom || !positions[slotName]) continue;
+                const to = positions[slotName];
+                for (const src of meta.feedsFrom) {
+                    const from = positions[src];
+                    if (!from) continue;
+                    const x1 = from.x + mw;
+                    const y1 = from.y + mh / 2;
+                    const x2 = to.x;
+                    const y2 = to.y + mh / 2;
+                    const mx = (x1 + x2) / 2;
+                    const lineColor = meta.side === 'L' ? 'rgba(0,212,255,0.3)' : meta.side === 'G' ? 'rgba(255,255,255,0.3)' : 'rgba(255,106,0,0.3)';
+                    svg += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="${lineColor}" stroke-width="2"/>`;
+                }
+            }
+            
+            // Draw match boxes
+            for (const [slotName, meta] of Object.entries(BRACKET_SLOTS)) {
+                const pos = positions[slotName];
+                if (!pos) continue;
+                const d = _bracketData[slotName] || {};
+                const teamA = d.team_a || 'TBD';
+                const teamB = d.team_b || 'TBD';
+                const winner = d.winner || '';
+                
+                const borderColor = meta.side === 'L' ? '#00d4ff' : meta.side === 'G' ? '#ff6a00' : '#ff6a00';
+                const dimBorder = meta.side === 'L' ? 'rgba(0,212,255,0.4)' : meta.side === 'G' ? 'rgba(255,106,0,0.6)' : 'rgba(255,106,0,0.4)';
+                const hasData = d.team_a || d.team_b;
+                const border = hasData ? borderColor : dimBorder;
+                const bgOpacity = hasData ? '0.95' : '0.6';
+                const isGF = meta.side === 'G';
+                const glowAttr = isGF && hasData ? ' filter="url(#glow)"' : '';
+                
+                // Match box
+                svg += `<g class="bracket-match" data-slot="${slotName}" style="cursor:${_isAdmin ? 'pointer' : 'default'}"${_isAdmin ? ` onclick="openSlotEditor('${slotName}')"` : ''}>`;
+                svg += `<rect x="${pos.x}" y="${pos.y}" width="${mw}" height="${mh}" rx="6" fill="rgba(15,15,25,${bgOpacity})" stroke="${border}" stroke-width="${isGF ? 2 : 1.5}"${glowAttr}/>`;
+                
+                // Label
+                svg += `<text x="${pos.x + mw/2}" y="${pos.y - 4}" text-anchor="middle" fill="${meta.side === 'L' ? '#00d4ff' : '#ff6a00'}" font-size="9" font-family="Orbitron,sans-serif" opacity="0.7">${meta.label}</text>`;
+                
+                // Team A row
+                const aColor = winner === teamA && winner ? '#00ff88' : winner && winner !== teamA && d.team_a ? '#ff3366' : '#e8e8f0';
+                const aWeight = winner === teamA && winner ? 'bold' : 'normal';
+                const aIcon = winner === teamA && winner ? '✓ ' : winner && winner !== teamA && d.team_a ? '✗ ' : '';
+                svg += `<text x="${pos.x + 8}" y="${pos.y + 22}" fill="${aColor}" font-size="11" font-weight="${aWeight}" font-family="sans-serif">${aIcon}${escSvg(truncName(teamA, 14))}</text>`;
+                
+                // Divider line
+                svg += `<line x1="${pos.x + 6}" y1="${pos.y + 29}" x2="${pos.x + mw - 6}" y2="${pos.y + 29}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+                
+                // Team B row
+                const bColor = winner === teamB && winner ? '#00ff88' : winner && winner !== teamB && d.team_b ? '#ff3366' : '#e8e8f0';
+                const bWeight = winner === teamB && winner ? 'bold' : 'normal';
+                const bIcon = winner === teamB && winner ? '✓ ' : winner && winner !== teamB && d.team_b ? '✗ ' : '';
+                svg += `<text x="${pos.x + 8}" y="${pos.y + 47}" fill="${bColor}" font-size="11" font-weight="${bWeight}" font-family="sans-serif">${bIcon}${escSvg(truncName(teamB, 14))}</text>`;
+                
+                // Match created indicator
+                if (d.match_id) {
+                    svg += `<text x="${pos.x + mw - 6}" y="${pos.y + 12}" text-anchor="end" fill="#00ff88" font-size="8" font-family="sans-serif" opacity="0.8">&#9679; MATCH</text>`;
+                }
+                
+                svg += `</g>`;
+            }
+            
+            // Section labels
+            svg += `<text x="${positions.WQF1.x}" y="${positions.WQF1.y - 20}" fill="#ff6a00" font-size="13" font-family="Orbitron,sans-serif" font-weight="bold" opacity="0.8">WINNERS BRACKET</text>`;
+            svg += `<text x="${positions.LR1_1.x}" y="${positions.LR1_1.y - 20}" fill="#00d4ff" font-size="13" font-family="Orbitron,sans-serif" font-weight="bold" opacity="0.8">LOSERS BRACKET</text>`;
+            svg += `<text x="${positions.GF.x}" y="${positions.GF.y - 20}" fill="#ff6a00" font-size="13" font-family="Orbitron,sans-serif" font-weight="bold" opacity="0.8">GRAND FINAL</text>`;
+            
+            svg += '</svg>';
+            container.innerHTML = svg;
+        }
+        
+        function escSvg(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+        function truncName(s, max) { return s.length > max ? s.substring(0, max-1) + '…' : s; }
+        
+        // ---- Bracket admin editor ----
+        function openBracketEditor() {
+            // Show a list of all slots to edit
+            const slotNames = Object.keys(BRACKET_SLOTS);
+            let html = '<div class="bracket-modal-overlay" id="bracket-editor-overlay" onclick="if(event.target===this)closeBracketEditor()">';
+            html += '<div class="bracket-modal" style="max-height:80vh;overflow-y:auto">';
+            html += '<h3>Edit Bracket</h3>';
+            html += '<div style="display:grid;gap:8px">';
+            for (const slot of slotNames) {
+                const d = _bracketData[slot] || {};
+                const meta = BRACKET_SLOTS[slot];
+                const ta = d.team_a || '';
+                const tb = d.team_b || '';
+                html += `<button class="admin-btn" style="text-align:left;padding:10px" onclick="openSlotEditor('${slot}')">`;
+                html += `<strong>${meta.label}</strong> — ${ta || 'TBD'} vs ${tb || 'TBD'}`;
+                html += `</button>`;
+            }
+            html += '</div>';
+            html += '<div class="modal-actions"><button class="admin-btn" onclick="closeBracketEditor()">Close</button></div>';
+            html += '</div></div>';
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+        
+        function closeBracketEditor() {
+            document.getElementById('bracket-editor-overlay')?.remove();
+            document.getElementById('bracket-slot-overlay')?.remove();
+        }
+        
+        async function openSlotEditor(slot) {
+            closeBracketEditor();
+            const meta = BRACKET_SLOTS[slot];
+            const d = _bracketData[slot] || {};
+            
+            // Get top teams for dropdowns
+            let teamOptions = '<option value="">TBD</option>';
+            try {
+                const resp = await fetch('/api/admin/top-teams', {credentials: 'include'});
+                const data = await resp.json();
+                if (data.success) {
+                    for (const t of data.teams) {
+                        teamOptions += `<option value="${t.name}">${t.name} (${t.rank})</option>`;
+                    }
+                }
+            } catch(e) {}
+            
+            // Also add any team already in the bracket that might not be in top teams
+            const allBracketTeams = new Set();
+            for (const sd of Object.values(_bracketData)) {
+                if (sd.team_a) allBracketTeams.add(sd.team_a);
+                if (sd.team_b) allBracketTeams.add(sd.team_b);
+            }
+            for (const t of allBracketTeams) {
+                if (!teamOptions.includes(`value="${t}"`)) {
+                    teamOptions += `<option value="${t}">${t}</option>`;
+                }
+            }
+            
+            const selA = teamOptions.replace(`value="${d.team_a||''}"`, `value="${d.team_a||''}" selected`);
+            const selB = teamOptions.replace(`value="${d.team_b||''}"`, `value="${d.team_b||''}" selected`);
+            
+            // Winner options
+            let winOpts = '<option value="">No winner yet</option>';
+            if (d.team_a) winOpts += `<option value="${d.team_a}" ${d.winner===d.team_a?'selected':''}>${d.team_a}</option>`;
+            if (d.team_b) winOpts += `<option value="${d.team_b}" ${d.winner===d.team_b?'selected':''}>${d.team_b}</option>`;
+            
+            let html = '<div class="bracket-modal-overlay" id="bracket-slot-overlay" onclick="if(event.target===this)closeBracketEditor()">';
+            html += '<div class="bracket-modal">';
+            html += `<h3>${meta.label}</h3>`;
+            html += '<div class="admin-input-group"><label>Team A</label><select class="admin-select" id="be-team-a">' + selA + '</select></div>';
+            html += '<div class="admin-input-group"><label>Team B</label><select class="admin-select" id="be-team-b">' + selB + '</select></div>';
+            html += '<div class="admin-input-group"><label>Winner</label><select class="admin-select" id="be-winner">' + winOpts + '</select></div>';
+            html += '<div style="font-size:0.85em;color:var(--echo-text-dim);margin-top:5px">Setting a winner auto-populates the next round.</div>';
+            html += '<div class="modal-actions">';
+            html += `<button class="admin-btn success" onclick="saveBracketSlot('${slot}')">Save</button>`;
+            html += `<button class="admin-btn danger" onclick="clearBracketSlot('${slot}')">Clear</button>`;
+            html += '<button class="admin-btn" onclick="closeBracketEditor()">Cancel</button>';
+            html += '</div></div></div>';
+            document.body.insertAdjacentHTML('beforeend', html);
+            
+            // Update winner dropdown when teams change
+            document.getElementById('be-team-a').onchange = updateWinnerDropdown;
+            document.getElementById('be-team-b').onchange = updateWinnerDropdown;
+        }
+        
+        function updateWinnerDropdown() {
+            const ta = document.getElementById('be-team-a').value;
+            const tb = document.getElementById('be-team-b').value;
+            const sel = document.getElementById('be-winner');
+            const curWin = sel.value;
+            let html = '<option value="">No winner yet</option>';
+            if (ta) html += `<option value="${ta}">${ta}</option>`;
+            if (tb) html += `<option value="${tb}">${tb}</option>`;
+            sel.innerHTML = html;
+            if (curWin === ta || curWin === tb) sel.value = curWin;
+        }
+        
+        async function saveBracketSlot(slot) {
+            const data = {
+                slot: slot,
+                team_a: document.getElementById('be-team-a').value || null,
+                team_b: document.getElementById('be-team-b').value || null,
+                winner: document.getElementById('be-winner').value || null,
+            };
+            try {
+                const resp = await fetch('/api/bracket/update', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast(result.message || 'Bracket updated', 'success');
+                    closeBracketEditor();
+                    loadBracket();
+                } else {
+                    showToast('Error: ' + result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to update bracket', 'error');
+            }
+        }
+        
+        async function createWQFMatches() {
+            if (!confirm('Create matches & claim messages for all seeded WQF matchups?')) return;
+            try {
+                const resp = await fetch('/api/bracket/create-initial-matches', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{}'
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    loadBracket();
+                } else {
+                    showToast('Error: ' + result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to create WQF matches', 'error');
+            }
+        }
+
+        async function clearBracketSlot(slot) {
+            if (!confirm('Clear this bracket slot?')) return;
+            try {
+                const resp = await fetch('/api/bracket/clear', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({slot: slot})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast('Slot cleared', 'success');
+                    closeBracketEditor();
+                    loadBracket();
+                } else {
+                    showToast('Error: ' + result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to clear slot', 'error');
+            }
+        }
+        
+        async function resetBracket() {
+            if (!confirm('Reset the ENTIRE bracket? This cannot be undone.')) return;
+            if (!confirm('Are you really sure? All bracket data will be lost.')) return;
+            try {
+                const resp = await fetch('/api/bracket/reset', {
+                    method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showToast('Bracket reset', 'success');
+                    loadBracket();
+                } else {
+                    showToast('Error: ' + result.error, 'error');
+                }
+            } catch(e) {
+                showToast('Failed to reset bracket', 'error');
+            }
+        }
+        
+        // Pre-load bracket if tab is active
+        if (document.getElementById('tab-bracket')?.classList.contains('active')) {
+            loadBracket();
         }
         
         // ========== Team Logo Review Functions ==========
@@ -5822,6 +6303,28 @@ async def schedule_handler(request: web.Request) -> web.Response:
             </div>
         '''
     
+    # Build bracket tab (visible to all logged-in crew members)
+    bracket_active = "active" if active_tab == "bracket" else ""
+    bracket_content_active = "active" if active_tab == "bracket" else ""
+    bracket_admin_bar = ''
+    if is_admin:
+        bracket_admin_bar = '<div class="bracket-admin-bar"><button class="admin-btn primary" onclick="openBracketEditor()">Edit Bracket</button><button class="admin-btn" style="background:#00ff88;color:#000" onclick="createWQFMatches()">Create WQF Matches</button><button class="admin-btn danger" onclick="resetBracket()">Reset Bracket</button></div>'
+    bracket_tab_btn = f'<button class="tab-btn {bracket_active}" onclick="switchTab(\'bracket\')">Finals Bracket</button>'
+    bracket_tab_content = f'''
+        <div id="tab-bracket" class="tab-content {bracket_content_active}">
+            <div class="bracket-legend">
+                <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:#00ff88"></div> Winner</div>
+                <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:#ff3366"></div> Eliminated</div>
+                <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:var(--echo-orange)"></div> Winners Bracket</div>
+                <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:var(--echo-cyan)"></div> Losers Bracket</div>
+            </div>
+            {bracket_admin_bar}
+            <div class="bracket-container" id="bracket-container">
+                <div class="loading">Loading bracket...</div>
+            </div>
+        </div>
+    '''
+    
     # Build admin tab (only for admins)
     if is_admin:
         admin_tab_btn = f'<button class="tab-btn admin {admin_active}" onclick="switchTab(\'admin\')">Admin</button>'
@@ -6079,6 +6582,8 @@ async def schedule_handler(request: web.Request) -> web.Response:
         .replace("{filter_bar}", filter_bar)
         .replace("{admin_tab_btn}", admin_tab_btn)
         .replace("{admin_tab_content}", admin_tab_content)
+        .replace("{bracket_tab_btn}", bracket_tab_btn)
+        .replace("{bracket_tab_content}", bracket_tab_content)
         .replace("{logos_tab_btn}", logos_tab_btn)
         .replace("{logos_tab_content}", logos_tab_content)
         .replace("{content}", content)
@@ -7802,6 +8307,275 @@ async def api_admin_force_create_finals_handler(request: web.Request) -> web.Res
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+# ============ Finals Bracket ============
+
+async def api_bracket_get_handler(request: web.Request) -> web.Response:
+    """Get the full bracket state."""
+    slots = await db.get_all_bracket_slots()
+    return web.json_response({"success": True, "slots": slots})
+
+
+_BRACKET_SLOT_LABELS: dict[str, str] = {
+    "WQF1": "WQF 1", "WQF2": "WQF 2", "WQF3": "WQF 3", "WQF4": "WQF 4",
+    "WSF1": "WSF 1", "WSF2": "WSF 2", "WF": "Winners Final",
+    "LR1_1": "LR1-1", "LR1_2": "LR1-2",
+    "LR2_1": "LR2-1", "LR2_2": "LR2-2",
+    "LSF": "Losers Semi", "LF": "Losers Final",
+    "GF": "Grand Final", "GFR": "Grand Final Reset",
+}
+
+
+async def _ensure_bracket_match(bot, slot: str) -> str | None:
+    """If a bracket slot has both teams and no match yet, create the match + claim message.
+
+    Returns the match_id if created, None otherwise.
+    """
+    slot_data = await db.get_bracket_slot(slot)
+    if not slot_data:
+        return None
+    team_a = slot_data.get("team_a")
+    team_b = slot_data.get("team_b")
+    existing_mid = slot_data.get("match_id")
+    if not team_a or not team_b or existing_mid:
+        return None
+
+    from datetime import datetime as dt
+    import hashlib
+    import time
+
+    match_dt = dt.now()
+    hash_input = f"finals:{slot}:{team_a}:{team_b}:{int(time.time())}"
+    match_id = f"finals_{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+
+    match_date = match_dt.strftime("%Y-%m-%d")
+    match_time = match_dt.strftime("%H:%M")
+    match_timestamp = int(match_dt.timestamp())
+
+    label = _BRACKET_SLOT_LABELS.get(slot, slot)
+
+    await db.upsert_match(
+        match_id=match_id,
+        team_a=team_a,
+        team_b=team_b,
+        match_date=match_date,
+        match_time=match_time,
+        match_timestamp=match_timestamp,
+        match_type=f"Finals - {label}",
+    )
+
+    # Store match_id back in the bracket slot
+    await db.set_bracket_slot(slot, team_a, team_b, slot_data.get("winner"), match_id)
+
+    # Post claim message so crew can claim caster/camop roles
+    if bot:
+        from .views import ClaimView
+        claim_channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        if claim_channel:
+            match = await db.get_match(match_id)
+            claims = await db.get_claims(match_id)
+            view = ClaimView(match_id, match, claims)
+            bot.add_view(view)
+            try:
+                msg = await claim_channel.send(view=view)
+                await db.set_message_id(match_id, msg.id, claim_channel.id)
+                log.info(f"Bracket auto-created match for {label}: {team_a} vs {team_b}")
+            except Exception as e:
+                log.error(f"Failed to post claim message for bracket slot {slot}: {e}")
+
+    return match_id
+
+
+async def api_bracket_update_handler(request: web.Request) -> web.Response:
+    """Admin API: Update a bracket slot and auto-propagate winners/losers."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    bot = request.app.get("bot")
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    slot = data.get("slot", "").strip()
+    if not slot:
+        return web.json_response({"success": False, "error": "Missing slot"}, status=400)
+
+    team_a = data.get("team_a") or None
+    team_b = data.get("team_b") or None
+    winner = data.get("winner") or None
+    match_id = data.get("match_id") or None
+
+    await db.set_bracket_slot(slot, team_a, team_b, winner, match_id)
+
+    # WQF (initial seeding) slots don't auto-create matches;
+    # admin must use the "Create WQF Matches" button after seeding.
+    _WQF_SLOTS = {"WQF1", "WQF2", "WQF3", "WQF4"}
+
+    created_matches: list[str] = []
+    if slot not in _WQF_SLOTS:
+        mid = await _ensure_bracket_match(bot, slot)
+        if mid:
+            created_matches.append(f"{_BRACKET_SLOT_LABELS.get(slot, slot)}")
+
+    # Auto-propagate winner/loser to next rounds
+    propagated_slots: list[str] = []
+    if winner and team_a and team_b:
+        loser = team_b if winner == team_a else team_a
+        propagated_slots = await _propagate_bracket(slot, winner, loser)
+
+    # Auto-create matches for any propagated slots that now have both teams
+    for pslot in propagated_slots:
+        mid = await _ensure_bracket_match(bot, pslot)
+        if mid:
+            created_matches.append(f"{_BRACKET_SLOT_LABELS.get(pslot, pslot)}")
+
+    msg = "Bracket updated."
+    if created_matches:
+        msg += f" Matches created: {', '.join(created_matches)}"
+    return web.json_response({"success": True, "message": msg})
+
+
+# Double elimination propagation map:
+# slot -> (winner_dest_slot, winner_dest_pos, loser_dest_slot, loser_dest_pos)
+# pos is 'a' or 'b' (which team slot to fill)
+_BRACKET_PROPAGATION = {
+    "WQF1": ("WSF1", "a", "LR1_1", "a"),
+    "WQF2": ("WSF1", "b", "LR1_1", "b"),
+    "WQF3": ("WSF2", "a", "LR1_2", "a"),
+    "WQF4": ("WSF2", "b", "LR1_2", "b"),
+    "WSF1": ("WF", "a", "LR2_2", "b"),
+    "WSF2": ("WF", "b", "LR2_1", "b"),
+    "LR1_1": ("LR2_1", "a", None, None),
+    "LR1_2": ("LR2_2", "a", None, None),
+    "LR2_1": ("LSF", "a", None, None),
+    "LR2_2": ("LSF", "b", None, None),
+    "LSF":   ("LF", "a", None, None),
+    "WF":    ("GF", "a", "LF", "b"),
+    "LF":    ("GF", "b", None, None),
+    "GF":    ("GFR", "a", None, None),  # only if losers-side wins; handled specially
+}
+
+
+async def _propagate_bracket(slot: str, winner: str, loser: str) -> list[str]:
+    """Push winner/loser into their next bracket slots.
+
+    Returns the list of slot names that were updated.
+    """
+    prop = _BRACKET_PROPAGATION.get(slot)
+    if not prop:
+        return []
+
+    win_slot, win_pos, lose_slot, lose_pos = prop
+    touched: list[str] = []
+
+    # Special case for GF: only propagate to GFR if the losers-bracket team wins
+    if slot == "GF":
+        gf_data = await db.get_bracket_slot("GF")
+        if gf_data:
+            # team_a in GF is always the winners bracket team (from WF)
+            # If winners bracket team wins GF, they're the champion - no reset needed
+            if winner == gf_data.get("team_a"):
+                return []
+            # Losers bracket team won - need a reset match
+            existing = await db.get_bracket_slot("GFR")
+            await db.set_bracket_slot("GFR", winner, loser,
+                                      existing.get("winner") if existing else None,
+                                      existing.get("match_id") if existing else None)
+            touched.append("GFR")
+            return touched
+
+    # Propagate winner
+    if win_slot:
+        existing = await db.get_bracket_slot(win_slot)
+        ea = existing.get("team_a") if existing else None
+        eb = existing.get("team_b") if existing else None
+        ew = existing.get("winner") if existing else None
+        em = existing.get("match_id") if existing else None
+        if win_pos == "a":
+            await db.set_bracket_slot(win_slot, winner, eb, ew, em)
+        else:
+            await db.set_bracket_slot(win_slot, ea, winner, ew, em)
+        touched.append(win_slot)
+
+    # Propagate loser (to losers bracket)
+    if lose_slot:
+        existing = await db.get_bracket_slot(lose_slot)
+        ea = existing.get("team_a") if existing else None
+        eb = existing.get("team_b") if existing else None
+        ew = existing.get("winner") if existing else None
+        em = existing.get("match_id") if existing else None
+        if lose_pos == "a":
+            await db.set_bracket_slot(lose_slot, loser, eb, ew, em)
+        else:
+            await db.set_bracket_slot(lose_slot, ea, loser, ew, em)
+        touched.append(lose_slot)
+
+    return touched
+
+
+async def api_bracket_create_initial_matches_handler(request: web.Request) -> web.Response:
+    """Admin API: Create matches + claim messages for all seeded WQF slots."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    bot = request.app.get("bot")
+    created: list[str] = []
+    skipped: list[str] = []
+
+    for slot in ("WQF1", "WQF2", "WQF3", "WQF4"):
+        mid = await _ensure_bracket_match(bot, slot)
+        label = _BRACKET_SLOT_LABELS.get(slot, slot)
+        if mid:
+            created.append(label)
+        else:
+            slot_data = await db.get_bracket_slot(slot)
+            if slot_data and slot_data.get("match_id"):
+                skipped.append(f"{label} (already exists)")
+            else:
+                skipped.append(f"{label} (needs both teams)")
+
+    if not created:
+        return web.json_response({"success": False, "error": "No new matches created. " + "; ".join(skipped)}, status=400)
+
+    msg = f"Created matches: {', '.join(created)}"
+    if skipped:
+        msg += f". Skipped: {', '.join(skipped)}"
+    return web.json_response({"success": True, "message": msg})
+
+
+async def api_bracket_clear_handler(request: web.Request) -> web.Response:
+    """Admin API: Clear a bracket slot."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    slot = data.get("slot", "").strip()
+    if slot:
+        await db.clear_bracket_slot(slot)
+    else:
+        return web.json_response({"success": False, "error": "Missing slot"}, status=400)
+
+    return web.json_response({"success": True})
+
+
+async def api_bracket_reset_handler(request: web.Request) -> web.Response:
+    """Admin API: Reset entire bracket."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    await db.clear_all_bracket_slots()
+    return web.json_response({"success": True, "message": "Bracket reset"})
+
+
 # ============ Team Logo Review ============
 
 async def api_logo_pending_handler(request: web.Request) -> web.Response:
@@ -8732,6 +9506,11 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/force-create-match", api_admin_force_create_match_handler)
     app.router.add_get("/api/admin/top-teams", api_admin_top_teams_handler)
     app.router.add_post("/api/admin/force-create-finals", api_admin_force_create_finals_handler)
+    app.router.add_get("/api/bracket", api_bracket_get_handler)
+    app.router.add_post("/api/bracket/update", api_bracket_update_handler)
+    app.router.add_post("/api/bracket/create-initial-matches", api_bracket_create_initial_matches_handler)
+    app.router.add_post("/api/bracket/clear", api_bracket_clear_handler)
+    app.router.add_post("/api/bracket/reset", api_bracket_reset_handler)
     app.router.add_get("/api/active-cycle", api_active_cycle_handler)
     # Team logo routes
     app.router.add_get("/api/logos/pending", api_logo_pending_handler)
