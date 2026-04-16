@@ -8488,6 +8488,250 @@ async def api_admin_force_create_finals_handler(request: web.Request) -> web.Res
 
 # ============ Finals Bracket ============
 
+
+async def public_bracket_handler(request: web.Request) -> web.Response:
+    """Public bracket page - no login required."""
+    league_name = config.LEAGUE_NAME
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{league_name} - Finals Bracket</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --echo-orange: #ff6a00;
+            --echo-cyan: #00d4ff;
+            --echo-dark: #0a0e17;
+            --echo-panel: #131926;
+            --echo-border: #1e293b;
+            --echo-text: #e8e8f0;
+            --echo-text-dim: #8892a4;
+        }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            background: var(--echo-dark);
+            color: var(--echo-text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+        }}
+        .header {{
+            text-align: center;
+            padding: 24px 20px 12px;
+        }}
+        .header h1 {{
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.6em;
+            background: linear-gradient(135deg, var(--echo-orange), var(--echo-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        .header p {{
+            color: var(--echo-text-dim);
+            font-size: 0.9em;
+            margin-top: 4px;
+        }}
+        .bracket-legend {{
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            padding: 8px 20px 16px;
+            flex-wrap: wrap;
+        }}
+        .bracket-legend-item {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8em;
+            color: var(--echo-text-dim);
+        }}
+        .bracket-legend-swatch {{
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }}
+        .bracket-wrap {{
+            width: 100%;
+            overflow-x: auto;
+            padding: 0 20px 40px;
+        }}
+        .bracket-wrap svg {{
+            display: block;
+            margin: 0 auto;
+        }}
+        .refresh-note {{
+            text-align: center;
+            padding: 12px;
+            color: var(--echo-text-dim);
+            font-size: 0.75em;
+        }}
+        @media (max-width: 768px) {{
+            .bracket-wrap svg {{
+                min-width: 700px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{league_name} Finals Bracket</h1>
+        <p>Double Elimination</p>
+    </div>
+    <div class="bracket-legend">
+        <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:#00ff88"></div> Winner</div>
+        <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:#ff3366"></div> Eliminated</div>
+        <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:var(--echo-orange)"></div> Winners Bracket</div>
+        <div class="bracket-legend-item"><div class="bracket-legend-swatch" style="background:var(--echo-cyan)"></div> Losers Bracket</div>
+    </div>
+    <div class="bracket-wrap" id="bracket-container"></div>
+    <div class="refresh-note">Auto-refreshes every 10 seconds</div>
+<script>
+    const BRACKET_SLOTS = {{
+        WQF1: {{label:'WQF 1', round:0, idx:0, side:'W'}},
+        WQF2: {{label:'WQF 2', round:0, idx:1, side:'W'}},
+        WQF3: {{label:'WQF 3', round:0, idx:2, side:'W'}},
+        WQF4: {{label:'WQF 4', round:0, idx:3, side:'W'}},
+        WSF1: {{label:'WSF 1', round:1, idx:0, side:'W', feedsFrom:['WQF1','WQF2']}},
+        WSF2: {{label:'WSF 2', round:1, idx:1, side:'W', feedsFrom:['WQF3','WQF4']}},
+        WF:   {{label:'Winners Final', round:2, idx:0, side:'W', feedsFrom:['WSF1','WSF2']}},
+        LR1_1:{{label:'LR1-1', round:0, idx:0, side:'L', feedsFrom:['WQF1','WQF2']}},
+        LR1_2:{{label:'LR1-2', round:0, idx:1, side:'L', feedsFrom:['WQF3','WQF4']}},
+        LR2_1:{{label:'LR2-1', round:1, idx:0, side:'L', feedsFrom:['LR1_1','WSF2']}},
+        LR2_2:{{label:'LR2-2', round:1, idx:1, side:'L', feedsFrom:['LR1_2','WSF1']}},
+        LSF:  {{label:'Losers Semi', round:2, idx:0, side:'L', feedsFrom:['LR2_1','LR2_2']}},
+        LF:   {{label:'Losers Final', round:3, idx:0, side:'L', feedsFrom:['LSF','WF']}},
+        GF:   {{label:'Grand Final', round:4, idx:0, side:'G', feedsFrom:['WF','LF']}},
+        GFR:  {{label:'Grand Final Reset', round:5, idx:0, side:'G', feedsFrom:['GF']}},
+    }};
+
+    let _bracketData = {{}};
+
+    async function loadBracket() {{
+        const container = document.getElementById('bracket-container');
+        if (!container) return;
+        try {{
+            const resp = await fetch('/api/bracket');
+            const data = await resp.json();
+            if (data.success) {{
+                _bracketData = data.slots || {{}};
+                renderBracketSVG(container);
+            }}
+        }} catch(e) {{
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#8892a4">Failed to load bracket</div>';
+        }}
+    }}
+
+    function renderBracketSVG(container) {{
+        const mw = 180, mh = 58, px = 40, py = 20;
+        const topPad = 18;
+        const positions = {{}};
+        for (let r = 0; r < 3; r++) {{
+            const slots = r === 0 ? ['WQF1','WQF2','WQF3','WQF4'] : r === 1 ? ['WSF1','WSF2'] : ['WF'];
+            const count = slots.length;
+            const spacing = mh + py;
+            const totalH = count * spacing - py;
+            const startY = (4 * spacing - py - totalH) / 2;
+            for (let i = 0; i < count; i++) {{
+                positions[slots[i]] = {{ x: r * (mw + px), y: topPad + startY + i * spacing }};
+            }}
+        }}
+        const losersTop = topPad + 4 * (mh + py) + 20;
+        const lRounds = [['LR1_1','LR1_2'],['LR2_1','LR2_2'],['LSF'],['LF']];
+        for (let r = 0; r < lRounds.length; r++) {{
+            const slots = lRounds[r];
+            const count = slots.length;
+            const spacing = mh + py;
+            const totalH = count * spacing - py;
+            const startY = losersTop + (2 * spacing - py - totalH) / 2;
+            for (let i = 0; i < count; i++) {{
+                positions[slots[i]] = {{ x: r * (mw + px), y: startY + i * spacing }};
+            }}
+        }}
+        const gfX = 4 * (mw + px);
+        const gfY = (losersTop + 2 * (mh + py)) / 2 - mh;
+        positions['GF'] = {{x: gfX, y: gfY}};
+        positions['GFR'] = {{x: gfX, y: gfY + mh + py}};
+
+        let maxX = 0, maxY = 0;
+        for (const p of Object.values(positions)) {{
+            if (p.x + mw > maxX) maxX = p.x + mw;
+            if (p.y + mh > maxY) maxY = p.y + mh;
+        }}
+        const svgW = maxX + 30, svgH = maxY + 30;
+
+        let svg = `<svg viewBox="0 0 ${{svgW}} ${{svgH}}" width="90%" preserveAspectRatio="xMidYMin meet" xmlns="http://www.w3.org/2000/svg">`;
+        svg += `<defs><filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
+
+        // Connector lines
+        for (const [slotName, meta] of Object.entries(BRACKET_SLOTS)) {{
+            if (!meta.feedsFrom || !positions[slotName]) continue;
+            const to = positions[slotName];
+            for (const src of meta.feedsFrom) {{
+                if (!positions[src]) continue;
+                const from = positions[src];
+                const fx = from.x + mw, fy = from.y + mh / 2;
+                const tx = to.x, ty = to.y + mh / 2;
+                const mx = (fx + tx) / 2;
+                const color = meta.side === 'L' ? '#00d4ff' : meta.side === 'G' ? '#ff6a00' : '#ff6a00';
+                svg += `<path d="M${{fx}},${{fy}} C${{mx}},${{fy}} ${{mx}},${{ty}} ${{tx}},${{ty}}" fill="none" stroke="${{color}}" stroke-width="1.5" opacity="0.3"/>`;
+            }}
+        }}
+
+        function escSvg(s) {{ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+        function truncName(n, max) {{ return n && n.length > max ? n.slice(0, max-1) + '…' : (n || 'TBD'); }}
+
+        // Match boxes
+        for (const [slotName, meta] of Object.entries(BRACKET_SLOTS)) {{
+            if (!positions[slotName]) continue;
+            const pos = positions[slotName];
+            const d = _bracketData[slotName] || {{}};
+            const teamA = d.team_a || '';
+            const teamB = d.team_b || '';
+            const winner = d.winner || '';
+            const borderColor = meta.side === 'L' ? '#00d4ff' : '#ff6a00';
+
+            svg += `<g>`;
+            svg += `<rect x="${{pos.x}}" y="${{pos.y}}" width="${{mw}}" height="${{mh}}" rx="6" fill="#131926" stroke="${{borderColor}}" stroke-width="1.5" opacity="0.9"/>`;
+            // Slot label
+            svg += `<text x="${{pos.x + mw/2}}" y="${{pos.y - 4}}" text-anchor="middle" fill="${{meta.side === 'L' ? '#00d4ff' : '#ff6a00'}}" font-size="9" font-family="Orbitron,sans-serif" opacity="0.7">${{meta.label}}</text>`;
+            // Team A
+            const aColor = winner === teamA && winner ? '#00ff88' : winner && winner !== teamA && d.team_a ? '#ff3366' : '#e8e8f0';
+            const aWeight = winner === teamA && winner ? 'bold' : 'normal';
+            const aIcon = winner === teamA && winner ? '✓ ' : winner && winner !== teamA && d.team_a ? '✗ ' : '';
+            svg += `<text x="${{pos.x + 8}}" y="${{pos.y + 22}}" fill="${{aColor}}" font-size="11" font-weight="${{aWeight}}" font-family="sans-serif">${{aIcon}}${{escSvg(truncName(teamA, 14))}}</text>`;
+            svg += `<line x1="${{pos.x + 6}}" y1="${{pos.y + 29}}" x2="${{pos.x + mw - 6}}" y2="${{pos.y + 29}}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+            // Team B
+            const bColor = winner === teamB && winner ? '#00ff88' : winner && winner !== teamB && d.team_b ? '#ff3366' : '#e8e8f0';
+            const bWeight = winner === teamB && winner ? 'bold' : 'normal';
+            const bIcon = winner === teamB && winner ? '✓ ' : winner && winner !== teamB && d.team_b ? '✗ ' : '';
+            svg += `<text x="${{pos.x + 8}}" y="${{pos.y + 47}}" fill="${{bColor}}" font-size="11" font-weight="${{bWeight}}" font-family="sans-serif">${{bIcon}}${{escSvg(truncName(teamB, 14))}}</text>`;
+            // Stream channel indicator
+            const streamCh = d.stream_channel;
+            if (streamCh) {{
+                svg += `<text x="${{pos.x + mw - 6}}" y="${{pos.y + 10}}" text-anchor="end" fill="#ff6a00" font-size="8" font-family="sans-serif" font-weight="bold" opacity="0.9">CH${{streamCh}}</text>`;
+            }}
+            svg += `</g>`;
+        }}
+
+        // Section labels
+        svg += `<text x="${{positions.WQF1.x}}" y="${{positions.WQF1.y - 20}}" fill="#ff6a00" font-size="13" font-family="Orbitron,sans-serif" font-weight="bold" opacity="0.8">WINNERS BRACKET</text>`;
+        svg += `<text x="${{positions.LR1_1.x}}" y="${{positions.LR1_1.y - 20}}" fill="#00d4ff" font-size="13" font-family="Orbitron,sans-serif" font-weight="bold" opacity="0.8">LOSERS BRACKET</text>`;
+        svg += `<text x="${{positions.GF.x}}" y="${{positions.GF.y - 20}}" fill="#ff6a00" font-size="13" font-family="Orbitron,sans-serif" font-weight="bold" opacity="0.8">GRAND FINAL</text>`;
+
+        svg += '</svg>';
+        container.innerHTML = svg;
+    }}
+
+    loadBracket();
+    setInterval(loadBracket, 10000);
+</script>
+</body>
+</html>'''
+    return web.Response(text=html, content_type="text/html")
+
+
 async def api_bracket_get_handler(request: web.Request) -> web.Response:
     """Get the full bracket state including claims."""
     slots = await db.get_all_bracket_slots()
@@ -9937,6 +10181,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/api/admin/top-teams", api_admin_top_teams_handler)
     app.router.add_post("/api/admin/force-create-finals", api_admin_force_create_finals_handler)
     app.router.add_get("/api/bracket", api_bracket_get_handler)
+    app.router.add_get("/bracket", public_bracket_handler)
     app.router.add_post("/api/bracket/update", api_bracket_update_handler)
     app.router.add_post("/api/bracket/create-initial-matches", api_bracket_create_initial_matches_handler)
     app.router.add_post("/api/bracket/claim", api_bracket_claim_handler)
