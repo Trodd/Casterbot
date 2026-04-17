@@ -6487,7 +6487,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
     bracket_content_active = "active" if active_tab == "bracket" else ""
     bracket_admin_bar = ''
     if is_admin:
-        bracket_admin_bar = '<div class="bracket-admin-bar"><button class="admin-btn primary" onclick="openBracketEditor()">Edit Bracket</button><button class="admin-btn" style="background:#00ff88;color:#000" onclick="createWQFMatches()">Create WQF Matches</button><button class="admin-btn danger" onclick="resetBracket()">Reset Bracket</button></div>'
+        bracket_admin_bar = '<div class="bracket-admin-bar"><button class="admin-btn" style="background:#00ff88;color:#000" onclick="createWQFMatches()">Create WQF Matches</button><button class="admin-btn danger" onclick="resetBracket()">Reset Bracket</button></div>'
     bracket_tab_btn = f'<button class="tab-btn {bracket_active}" onclick="switchTab(\'bracket\')">Finals Bracket</button>'
     bracket_tab_content = f'''
         <div id="tab-bracket" class="tab-content {bracket_content_active}">
@@ -8029,6 +8029,90 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
     }
     
     return web.json_response({"success": True, "match": result})
+
+
+async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to get the full bracket state (requires API key)."""
+    log.info("[RPC] get_bracket request received from %s", request.remote)
+    if not _check_rpc_key(request):
+        log.warning("[RPC] get_bracket rejected - invalid API key from %s", request.remote)
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    slots = await db.get_all_bracket_slots()
+    claims = await db.get_all_bracket_claims()
+
+    # Build enriched slot data with match info and crew details
+    bracket = {}
+    for slot_name, slot_data in slots.items():
+        entry = {
+            "slot": slot_name,
+            "label": _BRACKET_SLOT_LABELS.get(slot_name, slot_name),
+            "team_a": slot_data.get("team_a"),
+            "team_b": slot_data.get("team_b"),
+            "winner": slot_data.get("winner"),
+            "match_id": slot_data.get("match_id"),
+            "stream_channel": slot_data.get("stream_channel"),
+        }
+
+        # Get team logos
+        for side in ("team_a", "team_b"):
+            team = slot_data.get(side)
+            if team:
+                logo = await db.get_team_logo(team)
+                entry[f"{side}_logo"] = f"{config.WEB_PUBLIC_URL}/team-logo/{team}" if logo else None
+            else:
+                entry[f"{side}_logo"] = None
+
+        # Get full match info if match exists
+        match_info = None
+        if slot_data.get("match_id"):
+            match = await db.get_match(slot_data["match_id"])
+            if match:
+                match_info = {
+                    "id": match.get("simple_id"),
+                    "match_id": match["match_id"],
+                    "has_channel": bool(match.get("private_channel_id")),
+                    "stream_channel": match.get("stream_channel"),
+                }
+        entry["match"] = match_info
+
+        # Enrich crew claims with avatar/display info
+        slot_claims = claims.get(slot_name, [])
+        crew = []
+        for c in slot_claims:
+            crew_entry = {
+                "role": c["role"],
+                "slot_num": c["slot_num"],
+                "user_id": str(c["user_id"]),
+                "display_name": c["display_name"],
+            }
+            if guild:
+                member = guild.get_member(c["user_id"])
+                if member:
+                    crew_entry["display_name"] = member.display_name
+                    crew_entry["avatar_url"] = await get_user_avatar_url(bot, c["user_id"])
+            crew.append(crew_entry)
+        entry["crew"] = crew
+
+        bracket[slot_name] = entry
+
+    # Also include empty slots that have no data yet
+    for slot_name in _BRACKET_SLOT_LABELS:
+        if slot_name not in bracket:
+            bracket[slot_name] = {
+                "slot": slot_name,
+                "label": _BRACKET_SLOT_LABELS[slot_name],
+                "team_a": None, "team_b": None, "winner": None,
+                "match_id": None, "stream_channel": None,
+                "team_a_logo": None, "team_b_logo": None,
+                "match": None, "crew": [],
+            }
+
+    log.info("[RPC] get_bracket success - %d slots with data", len(slots))
+    return web.json_response({"success": True, "bracket": bracket})
 
 
 # Admin API helpers
@@ -10167,6 +10251,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/rpc/go_live", rpc_go_live_handler)
     app.router.add_post("/rpc/set_stream_channel", rpc_set_stream_channel_handler)
     app.router.add_get("/rpc/match", rpc_get_match_handler)
+    app.router.add_get("/rpc/bracket", rpc_get_bracket_handler)
     # Admin API routes
     app.router.add_post("/api/admin/sync", api_admin_sync_handler)
     app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
