@@ -9068,13 +9068,10 @@ async def _ensure_bracket_match(bot, slot: str) -> str | None:
     if stream_ch:
         await db.set_stream_channel(match_id, stream_ch)
 
-    # Auto-create private channel if crew has claimed (at least 1 caster + 1 camop)
+    # Auto-create private channel for finals once both teams are set
     if bot and team_a and team_b:
         slot_claims = await db.get_bracket_claims(slot)
-        has_caster = any(c["role"] == "caster" for c in slot_claims)
-        has_camop = any(c["role"] == "camop" for c in slot_claims)
-        if has_caster and has_camop:
-            await _create_bracket_channel(bot, match_id, slot, slot_claims)
+        await _create_bracket_channel(bot, match_id, slot, slot_claims)
 
     log.info(f"Bracket auto-created match for {label}: {team_a or 'TBD'} vs {team_b or 'TBD'}")
     return match_id
@@ -9102,6 +9099,10 @@ async def api_bracket_update_handler(request: web.Request) -> web.Response:
     winner = data.get("winner") or None
     match_id = data.get("match_id") or None
 
+    # Grab existing slot data so we can close the channel when a winner is set
+    existing_slot = await db.get_bracket_slot(slot)
+    existing_match_id = existing_slot.get("match_id") if existing_slot else None
+
     await db.set_bracket_slot(slot, team_a, team_b, winner, match_id)
 
     # WQF (initial seeding) slots don't auto-create matches;
@@ -9125,6 +9126,11 @@ async def api_bracket_update_handler(request: web.Request) -> web.Response:
         mid = await _ensure_bracket_match(bot, pslot)
         if mid:
             created_matches.append(f"{_BRACKET_SLOT_LABELS.get(pslot, pslot)}")
+
+    # Auto-close (transcript + delete) the bracket channel when a winner is picked
+    if winner and existing_match_id and bot:
+        from .views import close_bracket_channel
+        await close_bracket_channel(bot, existing_match_id, slot)
 
     msg = "Bracket updated."
     if created_matches:
@@ -9414,10 +9420,7 @@ async def api_bracket_claim_handler(request: web.Request) -> web.Response:
         slot_data = await db.get_bracket_slot(slot)
         if slot_data and slot_data.get("team_a") and slot_data.get("team_b") and slot_data.get("match_id"):
             slot_claims = await db.get_bracket_claims(slot)
-            has_caster = any(c["role"] == "caster" for c in slot_claims)
-            has_camop = any(c["role"] == "camop" for c in slot_claims)
-            if has_caster and has_camop:
-                await _create_bracket_channel(bot, slot_data["match_id"], slot, slot_claims)
+            await _create_bracket_channel(bot, slot_data["match_id"], slot, slot_claims)
 
     return web.json_response({"success": True})
 

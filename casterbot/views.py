@@ -867,6 +867,127 @@ class CloseChannelView(LayoutView):
             pass
 
 
+async def close_bracket_channel(bot, match_id: str, slot: str) -> None:
+    """Transcript and delete a bracket match channel (no interaction needed).
+
+    Called automatically when a bracket winner is picked.
+    """
+    match = await db.get_match(match_id)
+    if not match:
+        return
+
+    channel_id = match.get("private_channel_id")
+    if not channel_id:
+        return
+
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return
+
+    channel = guild.get_channel(channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        # Channel already gone – just clean up DB
+        await db.delete_match(match_id)
+        return
+
+    # Credit crew from bracket_claims
+    slot_claims = await db.get_bracket_claims(slot)
+    credited_users: set[int] = set()
+    for claim in slot_claims:
+        if claim["role"] in ("caster", "camop", "sideline"):
+            credited_users.add(claim["user_id"])
+    for user_id in credited_users:
+        await db.increment_cast_count(user_id)
+
+    # Generate transcript
+    if config.TRANSCRIPT_CHANNEL_ID:
+        transcript_channel = bot.get_channel(config.TRANSCRIPT_CHANNEL_ID)
+        if transcript_channel:
+            messages = []
+            try:
+                async for msg in channel.history(limit=500, oldest_first=True):
+                    messages.append(msg)
+            except Exception:
+                messages = []
+
+            if messages:
+                season = await db.get_setting("season") or ""
+                week = await db.get_setting("week") or ""
+
+                transcript = StringIO()
+                transcript.write(f"TRANSCRIPT: {match['team_a']} vs {match['team_b']}\n")
+                if season:
+                    transcript.write(f"Season: {season}\n")
+                if week:
+                    transcript.write(f"Week: {week}\n")
+                match_type = match.get("match_type", "")
+                if match_type:
+                    transcript.write(f"Match Type: {match_type}\n")
+                ts = match.get("match_timestamp")
+                if ts:
+                    eastern = dateutil_tz.gettz("US/Eastern")
+                    match_dt = datetime.fromtimestamp(ts, tz=eastern)
+                    transcript.write(f"Match Date/Time: {match_dt.strftime('%B %d, %Y at %I:%M %p')} ET\n")
+                else:
+                    transcript.write(f"Match Date: {match.get('match_date', 'Unknown')} {match.get('match_time', '')}\n")
+                transcript.write(f"Channel: #{channel.name}\n")
+                transcript.write(f"Closed by: Bot (winner selected)\n")
+                transcript.write(f"Closed at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+                transcript.write(f"Message count: {len(messages)}\n")
+                transcript.write("=" * 60 + "\n\n")
+
+                for msg in messages:
+                    timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                    author = f"{msg.author.display_name} ({msg.author.name})"
+                    transcript.write(f"[{timestamp}] {author}:\n")
+                    if msg.content:
+                        transcript.write(f"{msg.content}\n")
+                    for attachment in msg.attachments:
+                        transcript.write(f"[Attachment: {attachment.filename} - {attachment.url}]\n")
+                    if msg.embeds:
+                        transcript.write(f"[{len(msg.embeds)} embed(s)]\n")
+                    transcript.write("\n")
+
+                transcript_content = transcript.getvalue()
+                transcript.close()
+
+                embed = discord.Embed(
+                    title="Channel Transcript",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now(timezone.utc),
+                )
+                embed.add_field(name="Match", value=f"{match['team_a']} vs {match['team_b']}", inline=True)
+                if season:
+                    embed.add_field(name="Season", value=season, inline=True)
+                if week:
+                    embed.add_field(name="Week", value=week, inline=True)
+                if match_type:
+                    embed.add_field(name="Type", value=match_type, inline=True)
+                if ts:
+                    eastern = dateutil_tz.gettz("US/Eastern")
+                    match_dt = datetime.fromtimestamp(ts, tz=eastern)
+                    embed.add_field(name="Match Time", value=f"{match_dt.strftime('%b %d, %Y %I:%M %p')} ET", inline=True)
+                embed.add_field(name="Channel", value=f"#{channel.name}", inline=True)
+                embed.add_field(name="Messages", value=str(len(messages)), inline=True)
+
+                filename = f"transcript-{channel.name}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.txt"
+                file = discord.File(StringIO(transcript_content), filename=filename)
+
+                try:
+                    await transcript_channel.send(embed=embed, file=file)
+                except Exception:
+                    pass
+
+    # Delete match from DB (clears claims too)
+    await db.delete_match(match_id)
+
+    # Delete the channel
+    try:
+        await channel.delete(reason="Bracket match closed – winner selected")
+    except Exception:
+        pass
+
+
 async def create_private_match_channel_web(
     bot, match: dict, claims: list[dict]
 ) -> discord.TextChannel | None:
