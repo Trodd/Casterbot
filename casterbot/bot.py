@@ -126,6 +126,60 @@ class CasterBot(commands.Bot):
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
 
+    async def on_message(self, message: discord.Message) -> None:
+        # Ignore messages from bots (including self)
+        if message.author.bot:
+            return
+
+        # Only respond to replies to the bot in private match channels
+        if not message.reference or not message.reference.message_id:
+            return
+
+        # Check if OpenAI is configured
+        if not config.OPENAI_API_KEY:
+            return
+
+        # Check if this is a private match channel
+        match = await db.get_match_by_channel_id(message.channel.id)
+        if not match:
+            return
+
+        # Check if the replied-to message is from the bot
+        try:
+            replied_msg = await message.channel.fetch_message(message.reference.message_id)
+        except discord.NotFound:
+            return
+        if replied_msg.author != self.user:
+            return
+
+        # Generate AI response
+        try:
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are Jack, the AI companion from the VR game Lone Echo. "
+                            "You're helpful, witty, and have a calm but warm personality. "
+                            "You refer to the user casually, like a trusted crewmate. "
+                            "You're currently assisting a broadcast crew for an Echo VR esports league. "
+                            "Keep responses concise and conversational — a few sentences max. "
+                            "Sprinkle in subtle space/zero-g references when it feels natural, but don't overdo it."
+                        ),
+                    },
+                    {"role": "user", "content": message.content},
+                ],
+            )
+            reply_text = response.choices[0].message.content
+            if reply_text:
+                await message.reply(reply_text)
+        except Exception as e:
+            log.error(f"OpenAI response error: {e}")
+
     async def close(self) -> None:
         # Stop web server if running
         if self._web_runner:

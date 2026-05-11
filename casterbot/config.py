@@ -105,6 +105,9 @@ TEAM_LOGO_CHANNEL_ID: int = _int("TEAM_LOGO_CHANNEL_ID")
 # RPC API key for remote app access (optional)
 RPC_API_KEY: str = _get("RPC_API_KEY", "")
 
+# OpenAI (for bot replies in private channels)
+OPENAI_API_KEY: str = _get("OPENAI_API_KEY", "")
+
 # Database path (SQLite)
 DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"
 

@@ -3224,6 +3224,7 @@ HTML_TEMPLATE = """
             {bracket_tab_btn}
             {admin_tab_btn}
             {logos_tab_btn}
+            <button class="tab-btn" onclick="switchTab('margarita')">🍹 Margarita</button>
             {broadcast_tabs}
         </div>
     </div>
@@ -3258,6 +3259,194 @@ HTML_TEMPLATE = """
         {bracket_tab_content}
         {admin_tab_content}
         {logos_tab_content}
+        <div id="tab-margarita" class="tab-content">
+            <div class="margarita-machine">
+                <h2 style="text-align:center;color:#00e5ff;margin-bottom:20px;">🍹 Margarita Machine</h2>
+                <div class="machine-container">
+                    <div class="flavor-picker">
+                        <label style="color:#ccc;font-weight:bold;margin-bottom:8px;display:block;">Choose your flavor:</label>
+                        <div class="flavor-options">
+                            <button class="flavor-btn active" data-flavor="classic" onclick="selectFlavor(this)" style="--fc1:#7fff00;--fc2:#32cd32;">🍋 Classic Lime</button>
+                            <button class="flavor-btn" data-flavor="strawberry" onclick="selectFlavor(this)" style="--fc1:#ff6b9d;--fc2:#c0392b;">🍓 Strawberry</button>
+                            <button class="flavor-btn" data-flavor="mango" onclick="selectFlavor(this)" style="--fc1:#ffa500;--fc2:#ff6600;">🥭 Mango</button>
+                            <button class="flavor-btn" data-flavor="blue" onclick="selectFlavor(this)" style="--fc1:#00d4ff;--fc2:#0066cc;">🫐 Blue Curaçao</button>
+                            <button class="flavor-btn" data-flavor="watermelon" onclick="selectFlavor(this)" style="--fc1:#ff4d6d;--fc2:#c9184a;">🍉 Watermelon</button>
+                            <button class="flavor-btn" data-flavor="passion" onclick="selectFlavor(this)" style="--fc1:#b039cc;--fc2:#6a0dad;">💜 Passion Fruit</button>
+                        </div>
+                    </div>
+                    <div class="machine-body">
+                        <div class="machine-tank">
+                            <div class="liquid" id="marg-liquid"></div>
+                            <div class="bubbles" id="marg-bubbles"></div>
+                        </div>
+                        <div class="machine-spout"></div>
+                        <div class="glass" id="marg-glass">
+                            <div class="glass-liquid" id="glass-liquid"></div>
+                            <div class="lime"></div>
+                        </div>
+                    </div>
+                    <div class="machine-controls">
+                        <button class="marg-btn" id="marg-blend-btn" onclick="blendMargarita()">BLEND</button>
+                        <button class="marg-btn" id="marg-pour-btn" onclick="pourMargarita()" disabled>POUR</button>
+                        <button class="marg-btn" id="marg-reset-btn" onclick="resetMachine()">RESET</button>
+                    </div>
+                    <div class="marg-status" id="marg-status">Ready to blend! 🍹</div>
+                    <div class="marg-quote" id="marg-quote">"One tequila, two tequila, three tequila, floor." — George Carlin</div>
+                    <div class="marg-counter">Margaritas served: <span id="marg-count">0</span></div>
+                </div>
+            </div>
+            <style>
+                .margarita-machine { padding: 20px; }
+                .machine-container { display:flex; flex-direction:column; align-items:center; gap:20px; }
+                .flavor-picker { text-align:center; }
+                .flavor-options { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+                .flavor-btn { padding:8px 16px; border:2px solid #333; border-radius:20px; background:#1a1a2e; color:#ccc; cursor:pointer; transition:all 0.2s; font-size:13px; }
+                .flavor-btn:hover { border-color:#555; transform:scale(1.05); }
+                .flavor-btn.active { border-color:var(--fc1); color:#fff; background:linear-gradient(135deg, rgba(127,255,0,0.1), rgba(50,205,50,0.1)); box-shadow:0 0 12px rgba(127,255,0,0.3); }
+                .machine-body { position:relative; width:200px; height:320px; display:flex; flex-direction:column; align-items:center; }
+                .machine-tank { width:160px; height:180px; border:4px solid #444; border-radius:10px 10px 5px 5px; background:#1a1a2e; position:relative; overflow:hidden; }
+                .liquid { position:absolute; bottom:0; width:100%; height:70%; background:linear-gradient(180deg, var(--liquid-c1, #7fff00), var(--liquid-c2, #32cd32)); border-radius:0 0 5px 5px; transition:height 1.5s ease, background 0.5s ease; }
+                .liquid.blending { animation: blend 0.3s infinite alternate; }
+                .liquid.pouring { height:20% !important; transition:height 2s ease; }
+                .bubbles { position:absolute; bottom:0; width:100%; height:100%; pointer-events:none; }
+                .bubbles.active .bubble { animation: rise 1s infinite; }
+                .bubble { position:absolute; width:8px; height:8px; background:rgba(255,255,255,0.4); border-radius:50%; }
+                .machine-spout { width:20px; height:40px; background:#666; margin-top:-2px; border-radius:0 0 5px 5px; position:relative; }
+                .machine-spout::after { content:''; position:absolute; bottom:-30px; left:50%; transform:translateX(-50%); width:4px; height:0; background:var(--liquid-c1, #7fff00); border-radius:2px; transition:height 0.3s; }
+                .machine-spout.pouring::after { height:30px; animation:drip 0.5s infinite; }
+                .glass { width:80px; height:70px; border:3px solid rgba(255,255,255,0.3); border-top:none; border-radius:0 0 15px 15px; margin-top:30px; position:relative; overflow:hidden; background:rgba(255,255,255,0.05); }
+                .glass-liquid { position:absolute; bottom:0; width:100%; height:0%; background:linear-gradient(180deg, var(--liquid-c1, #adff2f), var(--liquid-c2, #7fff00)); transition:height 2s ease, background 0.5s ease; border-radius:0 0 12px 12px; }
+                .glass-liquid.full { height:80%; }
+                .lime { position:absolute; top:0; right:5px; width:20px; height:10px; background:#32cd32; border-radius:0 0 10px 10px; opacity:0; transition:opacity 0.5s; }
+                .lime.show { opacity:1; }
+                .machine-controls { display:flex; gap:15px; }
+                .marg-btn { padding:12px 24px; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; transition:all 0.2s; text-transform:uppercase; }
+                .marg-btn:first-child { background:linear-gradient(135deg,#7fff00,#32cd32); color:#000; }
+                .marg-btn:nth-child(2) { background:linear-gradient(135deg,#00bfff,#1e90ff); color:#fff; }
+                .marg-btn:last-child { background:linear-gradient(135deg,#ff6b6b,#ee5a24); color:#fff; }
+                .marg-btn:disabled { opacity:0.4; cursor:not-allowed; }
+                .marg-btn:not(:disabled):hover { transform:scale(1.05); box-shadow:0 4px 15px rgba(0,0,0,0.3); }
+                .marg-status { font-size:18px; color:#ccc; text-align:center; min-height:30px; }
+                .marg-quote { font-style:italic; color:#888; text-align:center; max-width:400px; font-size:14px; min-height:40px; transition:opacity 0.3s; padding:8px 12px; border-left:3px solid #444; background:rgba(255,255,255,0.02); border-radius:0 4px 4px 0; }
+                .marg-counter { font-size:14px; color:#888; }
+                @keyframes blend { 0%{transform:translateX(-2px) scaleY(1.02)} 100%{transform:translateX(2px) scaleY(0.98)} }
+                @keyframes rise { 0%{bottom:0;opacity:1} 100%{bottom:100%;opacity:0} }
+                @keyframes drip { 0%{opacity:1} 50%{opacity:0.5} 100%{opacity:1} }
+            </style>
+            <script>
+                const margQuotes = [
+                    {q: "Disc go brrr.", a: "Every Echo VR player ever"},
+                    {q: "You miss 100% of the shots you don't take... especially in zero-g.", a: "Echo Arena Wisdom"},
+                    {q: "I came here to drink margaritas and throw discs. And I'm all out of discs.", a: "The Arena"},
+                    {q: "Boost, grab, throw. The holy trinity.", a: "Echo VR Fundamentals"},
+                    {q: "In space, no one can hear you scream... unless you leave your mic on.", a: "Echo Lobby"},
+                    {q: "Float like a butterfly, stun like a disc to the face.", a: "Combat Philosophy"},
+                    {q: "The disc doesn't care about your feelings. It only cares about physics.", a: "Zero-G Truth"},
+                    {q: "Remember: the goal is a cylinder, not your teammate's head.", a: "Coach Wisdom"},
+                    {q: "Jousting is not a strategy, it's a cry for help.", a: "Every Caster"},
+                    {q: "You're not stuck in the arena with them. They're stuck in the arena with YOU.", a: "Solo Queue Energy"},
+                    {q: "Regrab is temporary. Goals are forever.", a: "Arena Proverbs"},
+                    {q: "Left hand rule: if you're holding the disc with your left hand, something has gone wrong.", a: "Debatable Advice"},
+                    {q: "One does not simply fly past the goalie.", a: "Lord of the Discs"},
+                    {q: "Headbutts aren't in the rulebook. Just in our hearts.", a: "Echo Combat Veterans"},
+                    {q: "The real disc was the friends we stunned along the way.", a: "Post-Game Feels"},
+                    {q: "I didn't choose the zero-g life. The zero-g life chose me.", a: "Vrml Veteran"},
+                    {q: "A margarita after a clutch 3-pointer? That's called a victory sip.", a: "Celebration Protocol"},
+                    {q: "Keep your boost full and your margarita fuller.", a: "Priorities"},
+                    {q: "GG, WP. Now blend me something tropical.", a: "Post-Match Ritual"},
+                    {q: "It's not about the rank. It's about sending a message... and then drinking.", a: "Ranked Grinders"},
+                ];
+                const flavorColors = {
+                    classic: {c1:'#7fff00', c2:'#32cd32'},
+                    strawberry: {c1:'#ff6b9d', c2:'#c0392b'},
+                    mango: {c1:'#ffa500', c2:'#ff6600'},
+                    blue: {c1:'#00d4ff', c2:'#0066cc'},
+                    watermelon: {c1:'#ff4d6d', c2:'#c9184a'},
+                    passion: {c1:'#b039cc', c2:'#6a0dad'},
+                };
+                let currentFlavor = 'classic';
+                let margCount = parseInt(localStorage.getItem('margCount') || '0');
+                document.getElementById('marg-count').textContent = margCount;
+                
+                function selectFlavor(btn) {
+                    document.querySelectorAll('.flavor-btn').forEach(b => {
+                        b.classList.remove('active');
+                        b.style.boxShadow = '';
+                    });
+                    btn.classList.add('active');
+                    currentFlavor = btn.dataset.flavor;
+                    const colors = flavorColors[currentFlavor];
+                    btn.style.boxShadow = '0 0 12px ' + colors.c1 + '66';
+                    // Update active button highlight
+                    btn.style.borderColor = colors.c1;
+                    // Update liquid colors
+                    const liquid = document.getElementById('marg-liquid');
+                    const glassLiquid = document.getElementById('glass-liquid');
+                    const machine = document.querySelector('.machine-body');
+                    machine.style.setProperty('--liquid-c1', colors.c1);
+                    machine.style.setProperty('--liquid-c2', colors.c2);
+                    liquid.style.setProperty('--liquid-c1', colors.c1);
+                    liquid.style.setProperty('--liquid-c2', colors.c2);
+                    glassLiquid.style.setProperty('--liquid-c1', colors.c1);
+                    glassLiquid.style.setProperty('--liquid-c2', colors.c2);
+                    document.querySelector('.machine-spout').style.setProperty('--liquid-c1', colors.c1);
+                }
+
+                function getRandomQuote() {
+                    return margQuotes[Math.floor(Math.random() * margQuotes.length)];
+                }
+                function showQuote() {
+                    const q = getRandomQuote();
+                    const el = document.getElementById('marg-quote');
+                    el.style.opacity = '0';
+                    setTimeout(() => { el.textContent = '"' + q.q + '" — ' + q.a; el.style.opacity = '1'; }, 300);
+                }
+
+                function blendMargarita() {
+                    const liquid = document.getElementById('marg-liquid');
+                    const bubbles = document.getElementById('marg-bubbles');
+                    const status = document.getElementById('marg-status');
+                    const blendBtn = document.getElementById('marg-blend-btn');
+                    const pourBtn = document.getElementById('marg-pour-btn');
+                    blendBtn.disabled = true;
+                    liquid.classList.add('blending');
+                    bubbles.innerHTML = '';
+                    bubbles.classList.add('active');
+                    for(let i=0;i<8;i++){let b=document.createElement('div');b.className='bubble';b.style.left=Math.random()*90+'%';b.style.animationDelay=Math.random()+'s';bubbles.appendChild(b);}
+                    const flavorName = document.querySelector('.flavor-btn.active').textContent.trim();
+                    status.textContent = 'Blending ' + flavorName + '... 🌀';
+                    showQuote();
+                    setTimeout(()=>{ liquid.classList.remove('blending'); bubbles.classList.remove('active'); status.textContent='Ready to pour ' + flavorName + '! 🥤'; pourBtn.disabled=false; },3000);
+                }
+                function pourMargarita() {
+                    const liquid = document.getElementById('marg-liquid');
+                    const spout = document.querySelector('.machine-spout');
+                    const glassLiquid = document.getElementById('glass-liquid');
+                    const lime = document.querySelector('.lime');
+                    const status = document.getElementById('marg-status');
+                    const pourBtn = document.getElementById('marg-pour-btn');
+                    pourBtn.disabled = true;
+                    liquid.classList.add('pouring');
+                    spout.classList.add('pouring');
+                    status.textContent = 'Pouring... 🍹';
+                    setTimeout(()=>{ glassLiquid.classList.add('full'); },500);
+                    setTimeout(()=>{ spout.classList.remove('pouring'); lime.classList.add('show'); margCount++; localStorage.setItem('margCount',margCount); document.getElementById('marg-count').textContent=margCount; showQuote(); const flavorName=document.querySelector('.flavor-btn.active').textContent.trim(); status.textContent='Enjoy your '+flavorName+' margarita! 🎉'; },2500);
+                }
+                function resetMachine() {
+                    document.getElementById('marg-liquid').className='liquid';
+                    document.getElementById('marg-liquid').style.height='';
+                    document.getElementById('glass-liquid').className='glass-liquid';
+                    document.querySelector('.lime').className='lime';
+                    document.querySelector('.machine-spout').className='machine-spout';
+                    document.getElementById('marg-bubbles').innerHTML='';
+                    document.getElementById('marg-blend-btn').disabled=false;
+                    document.getElementById('marg-pour-btn').disabled=true;
+                    document.getElementById('marg-status').textContent='Ready to blend! 🍹';
+                }
+                // Show initial quote
+                showQuote();
+            </script>
+        </div>
     </div>
     <script>
         // Refresh function that preserves scroll position and tab state
