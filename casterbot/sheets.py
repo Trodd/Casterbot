@@ -166,6 +166,11 @@ def get_top_teams() -> list[tuple[str, str]]:
     return masters + diamonds[:3]
 
 
+def get_all_teams() -> list[tuple[str, str]]:
+    """Return all ranked teams in ranking order."""
+    return list(_ranked_teams_ordered)
+
+
 # Tier -> (emoji for Discord, CSS color hex for web)
 _RANK_TIERS: dict[str, tuple[str, str]] = {
     "master":   ("👑", "#a855f7"),  # purple

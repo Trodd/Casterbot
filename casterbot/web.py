@@ -4401,25 +4401,18 @@ HTML_TEMPLATE = """
         }
         
         async function loadFinalsTeams() {
-            const selA = document.getElementById('finals-team-a');
-            const selB = document.getElementById('finals-team-b');
-            if (!selA || !selB) return;
+            const datalist = document.getElementById('finals-team-list');
+            if (!datalist) return;
             try {
-                const resp = await fetch('/api/admin/top-teams', {credentials: 'include'});
+                const resp = await fetch('/api/admin/all-teams', {credentials: 'include'});
                 const data = await resp.json();
                 if (data.success && data.teams.length > 0) {
-                    const opts = '<option value="">-- Select team --</option>' +
-                        data.teams.map(t => '<option value="' + t.name + '">' + t.name + ' (' + t.rank + ')</option>').join('');
-                    selA.innerHTML = opts;
-                    selB.innerHTML = opts;
+                    datalist.innerHTML = data.teams.map(t => `<option value="${t.name}">${t.name}${t.rank ? ' (' + t.rank + ')' : ''}</option>`).join('');
                 } else {
-                    const msg = '<option value="">No ranked teams found</option>';
-                    selA.innerHTML = msg;
-                    selB.innerHTML = msg;
+                    datalist.innerHTML = '';
                 }
             } catch(e) {
-                selA.innerHTML = '<option value="">Failed to load teams</option>';
-                selB.innerHTML = '<option value="">Failed to load teams</option>';
+                datalist.innerHTML = '';
             }
         }
         // Pre-load finals teams if admin tab exists
@@ -4762,32 +4755,28 @@ HTML_TEMPLATE = """
             
             // Admin section
             if (_isAdmin) {
-                // Get top teams for dropdowns
-                let teamOptions = '<option value="">TBD</option>';
+                // Get all teams for searchable dropdowns
+                let allTeams = [];
                 try {
-                    const resp = await fetch('/api/admin/top-teams', {credentials: 'include'});
+                    const resp = await fetch('/api/admin/all-teams', {credentials: 'include'});
                     const tdata = await resp.json();
                     if (tdata.success) {
-                        for (const t of tdata.teams) {
-                            teamOptions += `<option value="${t.name}">${t.name} (${t.rank})</option>`;
-                        }
+                        allTeams = tdata.teams;
                     }
                 } catch(e) {}
+                // Also include any teams already in the bracket but not in the list
                 const allBracketTeams = new Set();
                 for (const sd of Object.values(_bracketData)) {
                     if (sd.team_a) allBracketTeams.add(sd.team_a);
                     if (sd.team_b) allBracketTeams.add(sd.team_b);
                 }
+                const teamNames = new Set(allTeams.map(t => t.name));
                 for (const t of allBracketTeams) {
-                    if (!teamOptions.includes(`value="${t}"`)) {
-                        teamOptions += `<option value="${t}">${t}</option>`;
+                    if (!teamNames.has(t)) {
+                        allTeams.push({name: t, rank: ''});
                     }
                 }
-                const selA = teamOptions.replace(`value="${d.team_a||''}"`, `value="${d.team_a||''}" selected`);
-                const selB = teamOptions.replace(`value="${d.team_b||''}"`, `value="${d.team_b||''}" selected`);
-                let winOpts = '<option value="">No winner yet</option>';
-                if (d.team_a) winOpts += `<option value="${d.team_a}" ${d.winner===d.team_a?'selected':''}>${d.team_a}</option>`;
-                if (d.team_b) winOpts += `<option value="${d.team_b}" ${d.winner===d.team_b?'selected':''}>${d.team_b}</option>`;
+                let datalistOpts = allTeams.map(t => `<option value="${t.name}">${t.rank ? t.name + ' (' + t.rank + ')' : t.name}</option>`).join('');
                 
                 html += '<hr style="border-color:var(--echo-border);margin:12px 0">';
                 html += '<div style="font-size:0.8em;color:var(--echo-danger);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px">Admin</div>';
@@ -4798,8 +4787,12 @@ HTML_TEMPLATE = """
                 html += `<option value="1" ${curStream==1?'selected':''}>Channel 1</option>`;
                 html += `<option value="2" ${curStream==2?'selected':''}>Channel 2</option>`;
                 html += `</select></div>`;
-                html += '<div class="admin-input-group"><label>Team A</label><select class="admin-select" id="be-team-a">' + selA + '</select></div>';
-                html += '<div class="admin-input-group"><label>Team B</label><select class="admin-select" id="be-team-b">' + selB + '</select></div>';
+                html += `<datalist id="be-team-list">${datalistOpts}</datalist>`;
+                html += `<div class="admin-input-group"><label>Team A</label><input class="admin-select" id="be-team-a" list="be-team-list" value="${d.team_a||''}" placeholder="Type to search teams..." autocomplete="off"></div>`;
+                html += `<div class="admin-input-group"><label>Team B</label><input class="admin-select" id="be-team-b" list="be-team-list" value="${d.team_b||''}" placeholder="Type to search teams..." autocomplete="off"></div>`;
+                let winOpts = '<option value="">No winner yet</option>';
+                if (d.team_a) winOpts += `<option value="${d.team_a}" ${d.winner===d.team_a?'selected':''}>${d.team_a}</option>`;
+                if (d.team_b) winOpts += `<option value="${d.team_b}" ${d.winner===d.team_b?'selected':''}>${d.team_b}</option>`;
                 html += '<div class="admin-input-group"><label>Winner</label><select class="admin-select" id="be-winner">' + winOpts + '</select></div>';
                 html += '<div style="font-size:0.8em;color:var(--echo-text-dim);margin-top:4px">Setting a winner auto-populates the next round.</div>';
                 html += '<div class="modal-actions">';
@@ -4817,6 +4810,8 @@ HTML_TEMPLATE = """
             document.body.insertAdjacentHTML('beforeend', html);
             
             if (_isAdmin) {
+                document.getElementById('be-team-a').oninput = updateWinnerDropdown;
+                document.getElementById('be-team-b').oninput = updateWinnerDropdown;
                 document.getElementById('be-team-a').onchange = updateWinnerDropdown;
                 document.getElementById('be-team-b').onchange = updateWinnerDropdown;
             }
@@ -6806,19 +6801,16 @@ async def schedule_handler(request: web.Request) -> web.Response:
                         <h3>Force Create Finals Match</h3>
                     </div>
                     <div class="admin-row">
-                        <div class="admin-row-desc">Create a finals match. Teams are all Master ranked + top 3 Diamond from the rankings sheet.</div>
+                        <div class="admin-row-desc">Create a finals match. Start typing to search all ranked teams.</div>
                         <div class="admin-form">
+                            <datalist id="finals-team-list"></datalist>
                             <div class="admin-input-group">
                                 <label>Team A</label>
-                                <select class="admin-select" id="finals-team-a">
-                                    <option value="">Loading teams...</option>
-                                </select>
+                                <input class="admin-select" id="finals-team-a" list="finals-team-list" placeholder="Type to search teams..." autocomplete="off">
                             </div>
                             <div class="admin-input-group">
                                 <label>Team B</label>
-                                <select class="admin-select" id="finals-team-b">
-                                    <option value="">Loading teams...</option>
-                                </select>
+                                <input class="admin-select" id="finals-team-b" list="finals-team-list" placeholder="Type to search teams..." autocomplete="off">
                             </div>
                             <button class="admin-btn success" onclick="adminForceCreateFinals()">Create Finals Match</button>
                         </div>
@@ -8684,6 +8676,19 @@ async def api_admin_top_teams_handler(request: web.Request) -> web.Response:
     })
 
 
+async def api_admin_all_teams_handler(request: web.Request) -> web.Response:
+    """Admin API: Get all ranked teams for searchable dropdowns."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    all_teams = sheets.get_all_teams()
+    return web.json_response({
+        "success": True,
+        "teams": [{"name": name, "rank": rank} for name, rank in all_teams],
+    })
+
+
 async def api_admin_force_create_finals_handler(request: web.Request) -> web.Response:
     """Admin API: Force create a finals match from top 8 teams."""
     session, error = await _check_admin(request)
@@ -10456,6 +10461,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/force-delete", api_admin_force_delete_handler)
     app.router.add_post("/api/admin/force-create-match", api_admin_force_create_match_handler)
     app.router.add_get("/api/admin/top-teams", api_admin_top_teams_handler)
+    app.router.add_get("/api/admin/all-teams", api_admin_all_teams_handler)
     app.router.add_post("/api/admin/force-create-finals", api_admin_force_create_finals_handler)
     app.router.add_get("/api/bracket", api_bracket_get_handler)
     app.router.add_get("/bracket", public_bracket_handler)
