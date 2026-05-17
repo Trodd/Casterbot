@@ -116,13 +116,25 @@ DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"
 
 # Persistent data directory (use /data on Render with disk mount, local otherwise)
 _DATA_DIR = Path(os.getenv("RENDER_DISK_PATH", ""))
+_REPO_DIR = Path(__file__).resolve().parent.parent
+
 if _DATA_DIR and _DATA_DIR.exists():
     PROFILE_PICS_DIR: Path = _DATA_DIR / "profile_pics"
     TEAM_LOGOS_DIR: Path = _DATA_DIR / "team_logos"
 else:
-    PROFILE_PICS_DIR: Path = Path(__file__).resolve().parent.parent / "profile_pics"
-    TEAM_LOGOS_DIR: Path = Path(__file__).resolve().parent.parent / "team_logos"
+    PROFILE_PICS_DIR: Path = _REPO_DIR / "profile_pics"
+    TEAM_LOGOS_DIR: Path = _REPO_DIR / "team_logos"
 
 # Ensure directories exist
 PROFILE_PICS_DIR.mkdir(parents=True, exist_ok=True)
 TEAM_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Seed logos from repo to persistent disk on Render (one-time copy)
+if _DATA_DIR and _DATA_DIR.exists():
+    import shutil
+    _repo_logos = _REPO_DIR / "team_logos"
+    if _repo_logos.exists():
+        for f in _repo_logos.iterdir():
+            dest = TEAM_LOGOS_DIR / f.name
+            if not dest.exists():
+                shutil.copy2(f, dest)

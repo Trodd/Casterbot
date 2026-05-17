@@ -32,7 +32,7 @@ certs/
 
 # User uploads
 profile_pics/
-team_logos/
+# team_logos/ - included in repo for initial deploy, served from /data on Render
 
 # Integration docs (contains secrets)
 EML_RPC_INTEGRATION.txt
