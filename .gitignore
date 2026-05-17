@@ -11,6 +11,9 @@ ENV/
 # Environment variables
 .env
 
+# Render deploy config (contains server-specific IDs)
+render.yaml
+
 # Logs
 logs/
 *.log
