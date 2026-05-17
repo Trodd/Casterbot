@@ -17,63 +17,69 @@ services:
           name: casterbot-db
           property: connectionString
       - key: DISCORD_TOKEN
-        sync: false  # Set manually in Render dashboard
+        sync: false  # Set manually in Render dashboard - SECRET
       - key: GUILD_ID
-        sync: false
+        value: "1182380144887865406"
       - key: CLAIM_CHANNEL_ID
-        sync: false
+        value: "1469126063622852650"
       - key: PRIVATE_CATEGORY_ID
-        sync: false
+        value: "1196103170930258000"
       - key: TRANSCRIPT_CHANNEL_ID
-        sync: false
+        value: "1478970508556107847"
+      - key: TEAM_LOGO_CHANNEL_ID
+        value: "1461811401902391591"
+      - key: LEAGUE_NAME
+        value: Echo Master League
+      - key: REQUIRE_CLAIM_ROLE
+        value: "false"
       - key: CASTER_ROLE_ID
-        sync: false
+        value: "1209743670421753946"
       - key: CAMOP_ROLE_ID
-        sync: false
+        value: "1209746366314586233"
       - key: CASTER_TRAINING_ROLE_ID
-        sync: false
+        value: "1209744203400093736"
       - key: CAMOP_TRAINING_ROLE_ID
-        sync: false
+        value: "1470877757268431016"
       - key: STAFF_ROLE_ID
-        sync: false
+        value: "1182380145084993591"
       - key: LIVE_ANNOUNCEMENT_CHANNEL_ID
-        sync: false
+        value: "1187175946806099998"
       - key: LIVE_PING_ROLE_ID
-        sync: false
+        value: "1190072325178142730"
       - key: TWITCH_URL
         value: https://www.twitch.tv/echomasterleague
       - key: TWITCH_URL_2
         value: https://www.twitch.tv/echomasterleague_2
-      - key: LEAGUE_NAME
-        value: Echo Master League
+      - key: UPCOMING_MATCHES_CSV_URL
+        value: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIvdXGBkVZB5ZFdMVUCZqe8e8DbOj6UbSAeqBP0uzYAY5Z1q37c-ZVG7iV96_cOlX-0jsgNLYXfe6B/pub?gid=881384435&single=true&output=csv"
+      - key: RANKINGS_CSV_URL
+        value: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIvdXGBkVZB5ZFdMVUCZqe8e8DbOj6UbSAeqBP0uzYAY5Z1q37c-ZVG7iV96_cOlX-0jsgNLYXfe6B/pub?gid=1604124065&single=true&output=csv"
+      - key: DISCORD_CLIENT_ID
+        value: "1477542037682258050"
+      - key: DISCORD_CLIENT_SECRET
+        sync: false  # SECRET - set in Render dashboard
+      - key: WEB_LEAD_ROLE_ID
+        value: "1482240459035246754"
+      - key: RPC_API_KEY
+        sync: false  # SECRET - set in Render dashboard
+      - key: OPENAI_API_KEY
+        sync: false  # SECRET - set in Render dashboard
       - key: WEB_ENABLED
         value: "true"
       - key: WEB_HOST
         value: "0.0.0.0"
       - key: WEB_PORT
-        value: "10000"  # Render uses PORT env var; this is a fallback
-      - key: PYTHON_VERSION
-        value: "3.11.9"
-      - key: REQUIRE_CLAIM_ROLE
-        sync: false
-      - key: CLAIM_ELIGIBLE_ROLE_ID
-        sync: false
-      - key: DISCORD_CLIENT_ID
-        sync: false
-      - key: DISCORD_CLIENT_SECRET
-        sync: false
-      - key: WEB_LEAD_ROLE_ID
-        sync: false
-      - key: TEAM_LOGO_CHANNEL_ID
-        sync: false
-      - key: RPC_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: UPCOMING_MATCHES_CSV_URL
-        sync: false
+        value: "10000"
+      - key: MATCH_LOOKAHEAD_DAYS
+        value: "14"
+      - key: MATCH_GRACE_HOURS
+        value: "0"
+      - key: SYNC_INTERVAL_SECONDS
+        value: "300"
       - key: TIMEZONE
         value: US/Eastern
+      - key: PYTHON_VERSION
+        value: "3.11.9"
       - key: RENDER_DISK_PATH
         value: /data
     disk:
