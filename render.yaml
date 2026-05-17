@@ -1,0 +1,89 @@
+# render.yaml - Render Infrastructure as Code Blueprint
+# Deploy from GitHub: connect your repo at https://dashboard.render.com
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # The Discord bot + web UI (runs as a web service so the HTTP port is accessible)
+  - type: web
+    name: casterbot
+    runtime: python
+    region: ohio
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m casterbot
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: casterbot-db
+          property: connectionString
+      - key: DISCORD_TOKEN
+        sync: false  # Set manually in Render dashboard
+      - key: GUILD_ID
+        sync: false
+      - key: CLAIM_CHANNEL_ID
+        sync: false
+      - key: PRIVATE_CATEGORY_ID
+        sync: false
+      - key: TRANSCRIPT_CHANNEL_ID
+        sync: false
+      - key: CASTER_ROLE_ID
+        sync: false
+      - key: CAMOP_ROLE_ID
+        sync: false
+      - key: CASTER_TRAINING_ROLE_ID
+        sync: false
+      - key: CAMOP_TRAINING_ROLE_ID
+        sync: false
+      - key: STAFF_ROLE_ID
+        sync: false
+      - key: LIVE_ANNOUNCEMENT_CHANNEL_ID
+        sync: false
+      - key: LIVE_PING_ROLE_ID
+        sync: false
+      - key: TWITCH_URL
+        value: https://www.twitch.tv/echomasterleague
+      - key: TWITCH_URL_2
+        value: https://www.twitch.tv/echomasterleague_2
+      - key: LEAGUE_NAME
+        value: Echo Master League
+      - key: WEB_ENABLED
+        value: "true"
+      - key: WEB_HOST
+        value: "0.0.0.0"
+      - key: WEB_PORT
+        value: "10000"  # Render uses PORT env var; this is a fallback
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: REQUIRE_CLAIM_ROLE
+        sync: false
+      - key: CLAIM_ELIGIBLE_ROLE_ID
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: WEB_LEAD_ROLE_ID
+        sync: false
+      - key: TEAM_LOGO_CHANNEL_ID
+        sync: false
+      - key: RPC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: UPCOMING_MATCHES_CSV_URL
+        sync: false
+      - key: TIMEZONE
+        value: US/Eastern
+      - key: RENDER_DISK_PATH
+        value: /data
+    disk:
+      name: casterbot-data
+      mountPath: /data
+      sizeGB: 1
+
+databases:
+  - name: casterbot-db
+    plan: starter
+    region: ohio
+    databaseName: casterbot
+    user: casterbot

@@ -85,7 +85,8 @@ TIMEZONE: str = _get("TIMEZONE", "US/Eastern")
 # Web server (optional)
 WEB_ENABLED: bool = _bool("WEB_ENABLED", False)
 WEB_HOST: str = _get("WEB_HOST", "0.0.0.0")
-WEB_PORT: int = _int("WEB_PORT", 8080)
+# Render sets PORT env var; WEB_PORT overrides it; default 8080
+WEB_PORT: int = _int("PORT", _int("WEB_PORT", 8080))
 WEB_PUBLIC_URL: str = _get("WEB_PUBLIC_URL", "")  # e.g., "http://yourdomain.com:8080"
 
 # SSL/HTTPS (optional - provide paths to cert and key files)
@@ -108,11 +109,20 @@ RPC_API_KEY: str = _get("RPC_API_KEY", "")
 # OpenAI (for bot replies in private channels)
 OPENAI_API_KEY: str = _get("OPENAI_API_KEY", "")
 
-# Database path (SQLite)
+# Database configuration
+# If DATABASE_URL is set (Render PostgreSQL), use PostgreSQL; otherwise fall back to SQLite
+DATABASE_URL: str = _get("DATABASE_URL", "")
 DB_PATH: Path = Path(__file__).resolve().parent.parent / "casterbot.db"
 
-# Profile pictures directory
-PROFILE_PICS_DIR: Path = Path(__file__).resolve().parent.parent / "profile_pics"
+# Persistent data directory (use /data on Render with disk mount, local otherwise)
+_DATA_DIR = Path(os.getenv("RENDER_DISK_PATH", ""))
+if _DATA_DIR and _DATA_DIR.exists():
+    PROFILE_PICS_DIR: Path = _DATA_DIR / "profile_pics"
+    TEAM_LOGOS_DIR: Path = _DATA_DIR / "team_logos"
+else:
+    PROFILE_PICS_DIR: Path = Path(__file__).resolve().parent.parent / "profile_pics"
+    TEAM_LOGOS_DIR: Path = Path(__file__).resolve().parent.parent / "team_logos"
 
-# Team logos directory
-TEAM_LOGOS_DIR: Path = Path(__file__).resolve().parent.parent / "team_logos"
+# Ensure directories exist
+PROFILE_PICS_DIR.mkdir(parents=True, exist_ok=True)
+TEAM_LOGOS_DIR.mkdir(parents=True, exist_ok=True)

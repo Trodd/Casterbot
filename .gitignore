@@ -31,6 +31,7 @@ Thumbs.db
 certs/
 
 # User uploads
+profile_pics/
 team_logos/
 
 # Integration docs (contains secrets)
