@@ -1,0 +1,107 @@
+# render.yaml.example - Template for deploying your own instance
+# 1. Copy this file to render.yaml
+# 2. Fill in your Discord IDs, URLs, and secrets
+# 3. Push to GitHub and connect the repo at https://dashboard.render.com
+#
+# Values marked "sync: false" must be set manually in the Render dashboard.
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: casterbot
+    runtime: python
+    region: ohio
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m casterbot
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: casterbot-db
+          property: connectionString
+
+      # === SECRETS (set in Render dashboard) ===
+      - key: DISCORD_TOKEN
+        sync: false  # Your bot token from https://discord.com/developers
+      - key: DISCORD_CLIENT_SECRET
+        sync: false  # OAuth2 client secret
+      - key: RPC_API_KEY
+        sync: false  # Optional: API key for remote RPC calls
+      - key: OPENAI_API_KEY
+        sync: false  # Optional: for AI features
+
+      # === DISCORD IDs (replace with your server's IDs) ===
+      - key: GUILD_ID
+        value: "YOUR_GUILD_ID"
+      - key: CLAIM_CHANNEL_ID
+        value: "YOUR_CLAIM_CHANNEL_ID"
+      - key: PRIVATE_CATEGORY_ID
+        value: "YOUR_PRIVATE_CATEGORY_ID"
+      - key: TRANSCRIPT_CHANNEL_ID
+        value: "YOUR_TRANSCRIPT_CHANNEL_ID"
+      - key: TEAM_LOGO_CHANNEL_ID
+        value: "YOUR_TEAM_LOGO_CHANNEL_ID"
+      - key: CASTER_ROLE_ID
+        value: "YOUR_CASTER_ROLE_ID"
+      - key: CAMOP_ROLE_ID
+        value: "YOUR_CAMOP_ROLE_ID"
+      - key: CASTER_TRAINING_ROLE_ID
+        value: "YOUR_CASTER_TRAINING_ROLE_ID"
+      - key: CAMOP_TRAINING_ROLE_ID
+        value: "YOUR_CAMOP_TRAINING_ROLE_ID"
+      - key: STAFF_ROLE_ID
+        value: "YOUR_STAFF_ROLE_ID"
+      - key: LIVE_ANNOUNCEMENT_CHANNEL_ID
+        value: "YOUR_LIVE_ANNOUNCEMENT_CHANNEL_ID"
+      - key: LIVE_PING_ROLE_ID
+        value: "YOUR_LIVE_PING_ROLE_ID"
+      - key: DISCORD_CLIENT_ID
+        value: "YOUR_DISCORD_CLIENT_ID"
+      - key: WEB_LEAD_ROLE_ID
+        value: "YOUR_WEB_LEAD_ROLE_ID"
+
+      # === URLs (replace with your league's URLs) ===
+      - key: TWITCH_URL
+        value: https://www.twitch.tv/YOUR_CHANNEL
+      - key: TWITCH_URL_2
+        value: https://www.twitch.tv/YOUR_CHANNEL_2
+      - key: UPCOMING_MATCHES_CSV_URL
+        value: "https://docs.google.com/spreadsheets/d/e/YOUR_SHEET_ID/pub?gid=YOUR_GID&single=true&output=csv"
+      - key: RANKINGS_CSV_URL
+        value: "https://docs.google.com/spreadsheets/d/e/YOUR_SHEET_ID/pub?gid=YOUR_GID&single=true&output=csv"
+
+      # === DEFAULTS (usually fine as-is) ===
+      - key: LEAGUE_NAME
+        value: Your League Name
+      - key: REQUIRE_CLAIM_ROLE
+        value: "false"
+      - key: WEB_ENABLED
+        value: "true"
+      - key: WEB_HOST
+        value: "0.0.0.0"
+      - key: WEB_PORT
+        value: "10000"
+      - key: WEB_PUBLIC_URL
+        value: "https://YOUR-APP-NAME.onrender.com"
+      - key: MATCH_LOOKAHEAD_DAYS
+        value: "14"
+      - key: MATCH_GRACE_HOURS
+        value: "0"
+      - key: SYNC_INTERVAL_SECONDS
+        value: "300"
+      - key: TIMEZONE
+        value: US/Eastern
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: RENDER_DISK_PATH
+        value: /data
+    disk:
+      name: casterbot-data
+      mountPath: /data
+      sizeGB: 1
+
+databases:
+  - name: casterbot-db
+    plan: basic-256mb
+    region: ohio
+    databaseName: casterbot
