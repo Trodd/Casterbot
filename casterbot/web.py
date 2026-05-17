@@ -1182,6 +1182,86 @@ HTML_TEMPLATE = """
             object-fit: contain;
             border-radius: 8px;
         }
+        /* Chat file attachment */
+        .chat-file-attachment {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+        .chat-file-icon { font-size: 1.2em; }
+        .chat-file-link { color: var(--echo-cyan); text-decoration: none; }
+        .chat-file-link:hover { text-decoration: underline; }
+        .chat-file-size { color: var(--echo-text-dim); font-size: 0.85em; }
+        /* Chat embed (link previews, rich embeds) */
+        .chat-embed {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.3);
+            border-left: 3px solid var(--echo-border);
+            border-radius: 4px;
+            max-width: 400px;
+        }
+        .chat-embed-author {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8em;
+            color: var(--echo-text-dim);
+            margin-bottom: 4px;
+        }
+        .chat-embed-author-icon { width: 16px; height: 16px; border-radius: 50%; }
+        .chat-embed-author a { color: var(--echo-text-dim); text-decoration: none; }
+        .chat-embed-author a:hover { text-decoration: underline; }
+        .chat-embed-title { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
+        .chat-embed-title a { color: var(--echo-cyan); text-decoration: none; }
+        .chat-embed-title a:hover { text-decoration: underline; }
+        .chat-embed-desc { font-size: 0.85em; color: var(--echo-text-dim); margin-bottom: 6px; line-height: 1.4; }
+        .chat-embed-image { max-width: 100%; max-height: 250px; border-radius: 4px; cursor: pointer; margin-top: 6px; }
+        .chat-embed-thumbnail { max-width: 80px; max-height: 80px; border-radius: 4px; cursor: pointer; float: right; margin-left: 8px; }
+        .chat-embed-video { max-width: 100%; max-height: 250px; border-radius: 4px; margin-top: 6px; }
+        .chat-embed-footer { font-size: 0.75em; color: var(--echo-text-dim); margin-top: 6px; }
+        /* Chat upload button */
+        .chat-upload-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .chat-upload-btn:hover { background: rgba(255,255,255,0.1); }
+        .chat-upload-btn span { font-size: 1.3em; }
+        /* Chat file preview bar */
+        .chat-file-preview {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(0,212,255,0.1);
+            border: 1px solid rgba(0,212,255,0.3);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 0.85em;
+            color: var(--echo-cyan);
+        }
+        .chat-file-preview-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .chat-file-preview-name img { vertical-align: middle; }
+        .chat-file-preview-remove {
+            background: none; border: none; color: var(--echo-text-dim); cursor: pointer;
+            font-size: 1.1em; padding: 2px 6px; border-radius: 3px;
+        }
+        .chat-file-preview-remove:hover { background: rgba(255,255,255,0.1); color: var(--echo-text); }
+        /* Video in chat */
+        .chat-video { display: block; }
         /* Chats Tab Styles */
         .chats-header {
             margin-bottom: 20px;
@@ -5342,6 +5422,12 @@ HTML_TEMPLATE = """
                     // Format content with images, links, and mentions
                     const formattedContent = formatMessageContent(msg.content);
                     
+                    // Build attachments HTML
+                    const attachmentsHtml = renderAttachments(msg.attachments || []);
+                    
+                    // Build embeds HTML
+                    const embedsHtml = renderEmbeds(msg.embeds || []);
+                    
                     // Build reply reference HTML if this is a reply
                     let replyRefHtml = '';
                     if (isReply) {
@@ -5359,6 +5445,8 @@ HTML_TEMPLATE = """
                         <button class="chat-action-btn" onclick="startReply('${matchId}', '${msg.id}', '${escapeHtml(msg.author_name).replace(/'/g, "\\\\'")}', '${escapeHtml(msg.content.substring(0, 80)).replace(/'/g, "\\\\'")}')">↩ Reply</button>
                     </div>`;
                     
+                    const msgBody = formattedContent + attachmentsHtml + embedsHtml;
+                    
                     if (isNewAuthor) {
                         html += `<div class="chat-msg-wrapper" data-msg-id="${msg.id}"><div class="chat-msg${botClass}">
                             ${replyBtn}
@@ -5369,7 +5457,7 @@ HTML_TEMPLATE = """
                                     <span class="chat-author">${escapeHtml(msg.author_name)}</span>
                                     <span class="chat-time">${time}</span>
                                 </div>
-                                <div class="chat-text">${formattedContent}</div>
+                                <div class="chat-text">${msgBody}</div>
                             </div>
                         </div></div>`;
                     } else {
@@ -5377,7 +5465,7 @@ HTML_TEMPLATE = """
                             ${replyBtn}
                             <div class="chat-content">
                                 ${replyRefHtml}
-                                <div class="chat-text">${formattedContent}</div>
+                                <div class="chat-text">${msgBody}</div>
                             </div>
                         </div></div>`;
                     }
@@ -5491,6 +5579,113 @@ HTML_TEMPLATE = """
             document.addEventListener('keydown', closeOnEsc);
         }
         
+        function renderAttachments(attachments) {
+            if (!attachments || attachments.length === 0) return '';
+            let html = '';
+            const images = [];
+            const videos = [];
+            const files = [];
+            
+            for (const att of attachments) {
+                const ct = att.content_type || '';
+                if (ct.startsWith('image/')) {
+                    images.push(att);
+                } else if (ct.startsWith('video/')) {
+                    videos.push(att);
+                } else {
+                    files.push(att);
+                }
+            }
+            
+            // Render images
+            if (images.length === 1) {
+                html += `<img src="${escapeHtml(images[0].proxy_url || images[0].url)}" class="chat-image" onclick="openLightbox(this.src)" alt="${escapeHtml(images[0].filename)}" loading="lazy" onerror="this.style.display='none'">`;
+            } else if (images.length > 1) {
+                html += '<div class="chat-images-container">';
+                for (const img of images) {
+                    html += `<img src="${escapeHtml(img.proxy_url || img.url)}" class="chat-image" onclick="openLightbox(this.src)" alt="${escapeHtml(img.filename)}" loading="lazy" onerror="this.style.display='none'">`;
+                }
+                html += '</div>';
+            }
+            
+            // Render videos
+            for (const vid of videos) {
+                html += `<video class="chat-video" controls preload="metadata" style="max-width:100%;max-height:350px;border-radius:8px;margin-top:8px;">
+                    <source src="${escapeHtml(vid.proxy_url || vid.url)}" type="${escapeHtml(vid.content_type)}">
+                    <a href="${escapeHtml(vid.url)}" target="_blank" rel="noopener">${escapeHtml(vid.filename)}</a>
+                </video>`;
+            }
+            
+            // Render other files as download links
+            for (const f of files) {
+                const sizeStr = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : (f.size / 1024).toFixed(1) + ' KB';
+                html += `<div class="chat-file-attachment">
+                    <span class="chat-file-icon">📎</span>
+                    <a href="${escapeHtml(f.url)}" target="_blank" rel="noopener" class="chat-file-link">${escapeHtml(f.filename)}</a>
+                    <span class="chat-file-size">(${sizeStr})</span>
+                </div>`;
+            }
+            
+            return html;
+        }
+        
+        function renderEmbeds(embeds) {
+            if (!embeds || embeds.length === 0) return '';
+            let html = '';
+            
+            for (const embed of embeds) {
+                const borderColor = embed.color || 'var(--echo-border)';
+                html += `<div class="chat-embed" style="border-left-color:${borderColor}">`;
+                
+                if (embed.author) {
+                    html += `<div class="chat-embed-author">`;
+                    if (embed.author.icon_url) {
+                        html += `<img src="${escapeHtml(embed.author.icon_url)}" class="chat-embed-author-icon">`;
+                    }
+                    if (embed.author.url) {
+                        html += `<a href="${escapeHtml(embed.author.url)}" target="_blank" rel="noopener">${escapeHtml(embed.author.name || '')}</a>`;
+                    } else {
+                        html += escapeHtml(embed.author.name || '');
+                    }
+                    html += `</div>`;
+                }
+                
+                if (embed.title) {
+                    if (embed.url) {
+                        html += `<div class="chat-embed-title"><a href="${escapeHtml(embed.url)}" target="_blank" rel="noopener">${escapeHtml(embed.title)}</a></div>`;
+                    } else {
+                        html += `<div class="chat-embed-title">${escapeHtml(embed.title)}</div>`;
+                    }
+                }
+                
+                if (embed.description) {
+                    html += `<div class="chat-embed-desc">${escapeHtml(embed.description)}</div>`;
+                }
+                
+                if (embed.image) {
+                    html += `<img src="${escapeHtml(embed.image.proxy_url || embed.image.url)}" class="chat-embed-image" onclick="openLightbox(this.src)" loading="lazy" onerror="this.style.display='none'">`;
+                }
+                
+                if (embed.thumbnail && !embed.image) {
+                    html += `<img src="${escapeHtml(embed.thumbnail.proxy_url || embed.thumbnail.url)}" class="chat-embed-thumbnail" onclick="openLightbox(this.src)" loading="lazy" onerror="this.style.display='none'">`;
+                }
+                
+                if (embed.video) {
+                    html += `<video class="chat-embed-video" controls preload="metadata">
+                        <source src="${escapeHtml(embed.video.url)}">
+                    </video>`;
+                }
+                
+                if (embed.footer) {
+                    html += `<div class="chat-embed-footer">${escapeHtml(embed.footer.text || '')}</div>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            return html;
+        }
+        
         function convertMentionsToDiscord(text, matchId) {
             // Convert @username to <@user_id> and @role to <@&role_id> for Discord
             const users = chatMentionableUsers[matchId] || [];
@@ -5525,6 +5720,47 @@ HTML_TEMPLATE = """
         
         // Track current reply state per match
         const chatReplyState = {};  // matchId -> {messageId, authorName, content}
+        // Track pending file uploads per match
+        const chatPendingFiles = {};  // matchId -> File object
+        
+        function handleFileSelect(matchId, input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            // Validate size (8MB max)
+            if (file.size > 8 * 1024 * 1024) {
+                showToast('File too large (max 8MB)', 'error');
+                input.value = '';
+                return;
+            }
+            
+            chatPendingFiles[matchId] = file;
+            
+            // Show file preview
+            const preview = document.getElementById('chat-file-preview-' + matchId);
+            const nameEl = document.getElementById('chat-file-name-' + matchId);
+            if (preview && nameEl) {
+                const sizeStr = file.size > 1048576 ? (file.size / 1048576).toFixed(1) + ' MB' : (file.size / 1024).toFixed(1) + ' KB';
+                nameEl.textContent = file.name + ' (' + sizeStr + ')';
+                preview.style.display = 'flex';
+            }
+            
+            // If it's an image, show thumbnail preview
+            if (file.type.startsWith('image/')) {
+                const nameEl2 = document.getElementById('chat-file-name-' + matchId);
+                if (nameEl2) {
+                    nameEl2.innerHTML = `<img src="${URL.createObjectURL(file)}" style="max-height:40px;border-radius:4px;margin-right:8px;vertical-align:middle;"> ${escapeHtml(file.name)}`;
+                }
+            }
+        }
+        
+        function clearFileUpload(matchId) {
+            delete chatPendingFiles[matchId];
+            const preview = document.getElementById('chat-file-preview-' + matchId);
+            if (preview) preview.style.display = 'none';
+            const fileInput = document.getElementById('chat-file-' + matchId);
+            if (fileInput) fileInput.value = '';
+        }
         
         async function sendChatMessage(matchId, event) {
             if (event) event.preventDefault();
@@ -5534,10 +5770,15 @@ HTML_TEMPLATE = """
             if (!input || !btn) return;
             
             let message = input.value.trim();
-            if (!message) return;
+            const pendingFile = chatPendingFiles[matchId];
+            
+            // Need either message or file
+            if (!message && !pendingFile) return;
             
             // Convert @mentions to Discord format
-            message = convertMentionsToDiscord(message, matchId);
+            if (message) {
+                message = convertMentionsToDiscord(message, matchId);
+            }
             
             // Get reply_to_id if replying
             const replyToId = chatReplyState[matchId]?.messageId || null;
@@ -5545,18 +5786,35 @@ HTML_TEMPLATE = """
             btn.disabled = true;
             
             try {
-                const resp = await fetch('/api/chat/send', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({match_id: matchId, message: message, reply_to_id: replyToId})
-                });
+                let resp;
+                if (pendingFile) {
+                    // Upload with file via multipart form
+                    const formData = new FormData();
+                    formData.append('match_id', matchId);
+                    formData.append('message', message || '');
+                    formData.append('file', pendingFile);
+                    if (replyToId) formData.append('reply_to_id', replyToId);
+                    
+                    resp = await fetch('/api/chat/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // Text-only message
+                    resp = await fetch('/api/chat/send', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({match_id: matchId, message: message, reply_to_id: replyToId})
+                    });
+                }
+                
                 const data = await resp.json();
                 
                 if (data.success) {
                     input.value = '';
+                    clearFileUpload(matchId);
                     hideMentionSuggestions(matchId);
-                    cancelReply(matchId);  // Clear reply state
-                    // Immediately reload messages
+                    cancelReply(matchId);
                     await loadChatMessages(matchId);
                 } else {
                     showToast(data.error || 'Failed to send message', 'error');
@@ -5621,6 +5879,71 @@ HTML_TEMPLATE = """
                 sendChatMessage(matchId);
             }
         }
+        
+        // Support paste images (Ctrl+V) into chat
+        document.addEventListener('paste', function(e) {
+            // Find which match chat is active
+            const activeTab = document.querySelector('.tab-content.active[data-match-id]');
+            if (!activeTab) return;
+            const matchId = activeTab.getAttribute('data-match-id');
+            if (!matchId) return;
+            
+            const items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+            
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const file = item.getAsFile();
+                    if (file) {
+                        // Use DataTransfer to set the file input
+                        chatPendingFiles[matchId] = file;
+                        const preview = document.getElementById('chat-file-preview-' + matchId);
+                        const nameEl = document.getElementById('chat-file-name-' + matchId);
+                        if (preview && nameEl) {
+                            nameEl.innerHTML = `<img src="${URL.createObjectURL(file)}" style="max-height:40px;border-radius:4px;margin-right:8px;vertical-align:middle;"> ${escapeHtml(file.name || 'pasted-image.png')}`;
+                            preview.style.display = 'flex';
+                        }
+                    }
+                    break;
+                }
+            }
+        });
+        
+        // Support drag-and-drop files into chat
+        document.addEventListener('dragover', function(e) {
+            const activeTab = document.querySelector('.tab-content.active[data-match-id]');
+            if (activeTab) e.preventDefault();
+        });
+        document.addEventListener('drop', function(e) {
+            const activeTab = document.querySelector('.tab-content.active[data-match-id]');
+            if (!activeTab) return;
+            const matchId = activeTab.getAttribute('data-match-id');
+            if (!matchId) return;
+            
+            e.preventDefault();
+            const files = e.dataTransfer && e.dataTransfer.files;
+            if (!files || files.length === 0) return;
+            
+            const file = files[0];
+            if (file.size > 8 * 1024 * 1024) {
+                showToast('File too large (max 8MB)', 'error');
+                return;
+            }
+            
+            chatPendingFiles[matchId] = file;
+            const preview = document.getElementById('chat-file-preview-' + matchId);
+            const nameEl = document.getElementById('chat-file-name-' + matchId);
+            if (preview && nameEl) {
+                if (file.type.startsWith('image/')) {
+                    nameEl.innerHTML = `<img src="${URL.createObjectURL(file)}" style="max-height:40px;border-radius:4px;margin-right:8px;vertical-align:middle;"> ${escapeHtml(file.name)}`;
+                } else {
+                    const sizeStr = file.size > 1048576 ? (file.size / 1048576).toFixed(1) + ' MB' : (file.size / 1024).toFixed(1) + ' KB';
+                    nameEl.textContent = file.name + ' (' + sizeStr + ')';
+                }
+                preview.style.display = 'flex';
+            }
+        });
         
         function handleChatInput(matchId, event) {
             const input = event.target;
@@ -6578,7 +6901,17 @@ async def schedule_handler(request: web.Request) -> web.Response:
                                     <button type="button" class="chat-reply-cancel" onclick="cancelReply('{match_id}')">✕</button>
                                 </div>
                                 <div class="mention-suggestions" id="chat-suggestions-{match_id}"></div>
+                                <div class="chat-file-preview" id="chat-file-preview-{match_id}" style="display:none;">
+                                    <span class="chat-file-preview-name" id="chat-file-name-{match_id}"></span>
+                                    <button type="button" class="chat-file-preview-remove" onclick="clearFileUpload('{match_id}')">✕</button>
+                                </div>
                                 <form class="chat-input-row" onsubmit="sendChatMessage('{match_id}', event); return false;">
+                                    <label class="chat-upload-btn" title="Upload image or file">
+                                        <input type="file" id="chat-file-{match_id}" style="display:none" 
+                                               accept="image/*,video/*,.pdf,.txt,.zip,.json,.csv"
+                                               onchange="handleFileSelect('{match_id}', this)">
+                                        <span>📎</span>
+                                    </label>
                                     <input type="text" class="chat-input" id="chat-input-{match_id}" 
                                            placeholder="Type a message... (Use @ to mention)"
                                            onkeypress="handleChatKeypress('{match_id}', event)"
@@ -10290,6 +10623,48 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
             if msg.reference and msg.reference.message_id:
                 reply_to_id = str(msg.reference.message_id)
             
+            # Build attachments list
+            attachments = []
+            for att in msg.attachments:
+                att_data = {
+                    "id": str(att.id),
+                    "filename": att.filename,
+                    "url": att.url,
+                    "proxy_url": att.proxy_url,
+                    "size": att.size,
+                }
+                if att.content_type:
+                    att_data["content_type"] = att.content_type
+                if att.width and att.height:
+                    att_data["width"] = att.width
+                    att_data["height"] = att.height
+                attachments.append(att_data)
+            
+            # Build embeds list (link previews, rich embeds)
+            embeds = []
+            for embed in msg.embeds:
+                embed_data = {}
+                if embed.title:
+                    embed_data["title"] = embed.title
+                if embed.description:
+                    embed_data["description"] = embed.description
+                if embed.url:
+                    embed_data["url"] = embed.url
+                if embed.color:
+                    embed_data["color"] = f"#{embed.color.value:06x}"
+                if embed.thumbnail:
+                    embed_data["thumbnail"] = {"url": embed.thumbnail.url, "proxy_url": embed.thumbnail.proxy_url}
+                if embed.image:
+                    embed_data["image"] = {"url": embed.image.url, "proxy_url": embed.image.proxy_url, "width": embed.image.width, "height": embed.image.height}
+                if embed.video:
+                    embed_data["video"] = {"url": embed.video.url, "width": embed.video.width, "height": embed.video.height}
+                if embed.author:
+                    embed_data["author"] = {"name": embed.author.name, "url": embed.author.url, "icon_url": embed.author.icon_url}
+                if embed.footer:
+                    embed_data["footer"] = {"text": embed.footer.text, "icon_url": embed.footer.icon_url}
+                if embed_data:
+                    embeds.append(embed_data)
+            
             # Check if this is a bot message sent via web UI
             web_sender = _web_sent_messages.get(msg_id)
             if msg.author.bot and web_sender:
@@ -10305,6 +10680,8 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
                     "is_bot": False,  # Show as user message in UI
                     "is_web_sent": True,  # Flag to indicate it was sent via web
                     "content": content,
+                    "attachments": attachments,
+                    "embeds": embeds,
                     "timestamp": msg.created_at.isoformat(),
                     "reply_to_id": reply_to_id,
                 })
@@ -10317,6 +10694,8 @@ async def api_chat_messages_handler(request: web.Request) -> web.Response:
                     "author_avatar": avatar_url,
                     "is_bot": msg.author.bot,
                     "content": content,
+                    "attachments": attachments,
+                    "embeds": embeds,
                     "timestamp": msg.created_at.isoformat(),
                     "reply_to_id": reply_to_id,
                 })
@@ -10424,9 +10803,124 @@ async def api_chat_send_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Failed to send message"}, status=500)
 
 
+async def api_chat_upload_handler(request: web.Request) -> web.Response:
+    """API endpoint to upload a file/image to a private match channel."""
+    import io
+    
+    session = _get_session(request)
+    if not session:
+        return web.json_response({"success": False, "error": "Not logged in"}, status=401)
+    
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+    
+    # Parse multipart form data
+    try:
+        reader = await request.multipart()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid form data"}, status=400)
+    
+    match_id = None
+    message_text = ""
+    reply_to_id = None
+    file_data = None
+    file_name = None
+    file_content_type = None
+    
+    while True:
+        part = await reader.next()
+        if part is None:
+            break
+        
+        if part.name == "match_id":
+            match_id = (await part.text()).strip()
+        elif part.name == "message":
+            message_text = (await part.text()).strip()
+        elif part.name == "reply_to_id":
+            reply_to_id = (await part.text()).strip() or None
+        elif part.name == "file":
+            file_name = part.filename
+            file_content_type = part.headers.get("Content-Type", "application/octet-stream")
+            # Limit file size to 8MB (Discord free limit)
+            file_data = await part.read(chunk_size=8 * 1024 * 1024 + 1)
+            if len(file_data) > 8 * 1024 * 1024:
+                return web.json_response({"success": False, "error": "File too large (max 8MB)"}, status=400)
+    
+    if not match_id:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+    if not file_data or not file_name:
+        return web.json_response({"success": False, "error": "No file provided"}, status=400)
+    
+    match = await db.get_match(match_id)
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+    
+    # Check access
+    user_id = session["user_id"]
+    claims = await db.get_claims(match_id)
+    has_claim = any(c["user_id"] == user_id for c in claims)
+    
+    is_lead = False
+    guild = bot.get_guild(config.GUILD_ID)
+    if config.WEB_LEAD_ROLE_ID and guild:
+        member = guild.get_member(user_id)
+        if member and config.WEB_LEAD_ROLE_ID in [r.id for r in member.roles]:
+            is_lead = True
+    
+    if not is_lead and not has_claim:
+        return web.json_response({"success": False, "error": "No access to this match chat"}, status=403)
+    
+    if not match.get("private_channel_id"):
+        return web.json_response({"success": False, "error": "Private channel not created yet"}, status=400)
+    
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+    
+    channel = guild.get_channel(match["private_channel_id"])
+    if not channel:
+        return web.json_response({"success": False, "error": "Channel not found"}, status=404)
+    
+    # Get sender info
+    sender_name = session.get("global_name") or session["username"]
+    sender_id = session["user_id"]
+    sender_avatar = await get_user_avatar_url(bot, sender_id)
+    
+    # Build message reference if replying
+    reference = None
+    if reply_to_id:
+        try:
+            reference = discord.MessageReference(message_id=int(reply_to_id), channel_id=channel.id)
+        except (ValueError, TypeError):
+            pass
+    
+    # Send file to Discord
+    try:
+        discord_file = discord.File(io.BytesIO(file_data), filename=file_name)
+        sent_msg = await channel.send(
+            content=message_text or None,
+            file=discord_file,
+            reference=reference,
+            mention_author=False,
+        )
+        
+        # Store sender info
+        _web_sent_messages[str(sent_msg.id)] = {
+            "sender_id": str(sender_id),
+            "sender_name": sender_name,
+            "sender_avatar": sender_avatar,
+            "reply_to_id": reply_to_id,
+        }
+        
+        return web.json_response({"success": True, "message_id": str(sent_msg.id)})
+    except Exception as e:
+        log.error(f"Failed to upload file to chat: {e}")
+        return web.json_response({"success": False, "error": "Failed to send file"}, status=500)
+
+
 def create_app(bot=None) -> web.Application:
     """Create the aiohttp web application."""
-    app = web.Application()
+    app = web.Application(client_max_size=10 * 1024 * 1024)  # 10MB max upload
     app["bot"] = bot
     
     app.router.add_get("/", schedule_handler)
@@ -10452,6 +10946,7 @@ def create_app(bot=None) -> web.Application:
     # Chat API routes
     app.router.add_get("/api/chat/messages", api_chat_messages_handler)
     app.router.add_post("/api/chat/send", api_chat_send_handler)
+    app.router.add_post("/api/chat/upload", api_chat_upload_handler)
     # RPC API routes (for remote apps with API key)
     app.router.add_post("/rpc/create_channel", rpc_create_channel_handler)
     app.router.add_post("/rpc/crew_ready", rpc_crew_ready_handler)
