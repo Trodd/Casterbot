@@ -9108,6 +9108,10 @@ async def api_bracket_update_handler(request: web.Request) -> web.Response:
     existing_slot = await db.get_bracket_slot(slot)
     existing_match_id = existing_slot.get("match_id") if existing_slot else None
 
+    # Preserve existing match_id if not provided in request
+    if not match_id and existing_match_id:
+        match_id = existing_match_id
+
     await db.set_bracket_slot(slot, team_a, team_b, winner, match_id)
 
     # WQF (initial seeding) slots don't auto-create matches;
@@ -9252,97 +9256,101 @@ async def api_bracket_create_initial_matches_handler(request: web.Request) -> we
     return web.json_response({"success": True, "message": msg})
 
 
+_bracket_channel_lock = asyncio.Lock()
+
+
 async def _create_bracket_channel(bot, match_id: str, slot: str,
                                   slot_claims: list[dict]) -> None:
     """Create a private channel for a bracket match using bracket claims."""
-    match = await db.get_match(match_id)
-    if not match or match.get("private_channel_id"):
-        return  # already has a channel
+    async with _bracket_channel_lock:
+        match = await db.get_match(match_id)
+        if not match or match.get("private_channel_id"):
+            return  # already has a channel
 
-    team_a = match.get("team_a", "TBD")
-    team_b = match.get("team_b", "TBD")
-    if not team_a or team_a == "TBD" or not team_b or team_b == "TBD":
-        return  # need real team names
+        team_a = match.get("team_a", "TBD")
+        team_b = match.get("team_b", "TBD")
+        if not team_a or team_a == "TBD" or not team_b or team_b == "TBD":
+            return  # need real team names
 
-    guild = bot.get_guild(config.GUILD_ID)
-    if not guild:
-        return
+        guild = bot.get_guild(config.GUILD_ID)
+        if not guild:
+            return
 
-    import discord
+        import discord
 
-    category = None
-    if config.PRIVATE_CATEGORY_ID:
-        category = guild.get_channel(config.PRIVATE_CATEGORY_ID)
+        category = None
+        if config.PRIVATE_CATEGORY_ID:
+            category = guild.get_channel(config.PRIVATE_CATEGORY_ID)
 
-    overwrites: dict = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-    }
+        overwrites: dict = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        }
 
-    # Add claimed crew members
-    for c in slot_claims:
-        member = guild.get_member(c["user_id"])
-        if member:
-            overwrites[member] = discord.PermissionOverwrite(
-                read_messages=True, send_messages=True
+        # Add claimed crew members
+        for c in slot_claims:
+            member = guild.get_member(c["user_id"])
+            if member:
+                overwrites[member] = discord.PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
+
+        # Add standard roles
+        for role_id in (config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID, config.STAFF_ROLE_ID):
+            if role_id:
+                role = guild.get_role(role_id)
+                if role:
+                    overwrites[role] = discord.PermissionOverwrite(
+                        read_messages=True, send_messages=True
+                    )
+
+        # Add team roles
+        team_roles: list = []
+        for role in guild.roles:
+            if role.name.lower().startswith("team:"):
+                tname = role.name[5:].strip().lower()
+                if tname == team_a.lower() or tname == team_b.lower():
+                    overwrites[role] = discord.PermissionOverwrite(
+                        read_messages=True, send_messages=True
+                    )
+                    team_roles.append(role)
+
+        label = _BRACKET_SLOT_LABELS.get(slot, slot)
+        channel_name = f"finals-{team_a}-vs-{team_b}".lower().replace(" ", "-")
+
+        try:
+            channel = await guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                overwrites=overwrites,
+                reason=f"CasterBot bracket channel ({label})",
             )
+        except Exception as e:
+            log.error(f"Failed to create bracket channel for {slot}: {e}")
+            return
 
-    # Add standard roles
-    for role_id in (config.CASTER_ROLE_ID, config.CAMOP_ROLE_ID, config.STAFF_ROLE_ID):
-        if role_id:
-            role = guild.get_role(role_id)
-            if role:
-                overwrites[role] = discord.PermissionOverwrite(
-                    read_messages=True, send_messages=True
-                )
+        await db.set_private_channel(match_id, channel.id)
 
-    # Add team roles
-    team_roles: list = []
-    for role in guild.roles:
-        if role.name.lower().startswith("team:"):
-            tname = role.name[5:].strip().lower()
-            if tname == team_a.lower() or tname == team_b.lower():
-                overwrites[role] = discord.PermissionOverwrite(
-                    read_messages=True, send_messages=True
-                )
-                team_roles.append(role)
+        # Build roster message
+        casters = [c["display_name"] for c in slot_claims if c["role"] == "caster"]
+        camops = [c["display_name"] for c in slot_claims if c["role"] == "camop"]
+        team_pings = " ".join(r.mention for r in team_roles)
 
-    label = _BRACKET_SLOT_LABELS.get(slot, slot)
-    channel_name = f"finals-{team_a}-vs-{team_b}".lower().replace(" ", "-")
+        msg_lines = [
+            f"**{label}: {team_a} vs {team_b}**",
+            f"Casters: {', '.join(casters) if casters else 'None'}",
+            f"Cam Ops: {', '.join(camops) if camops else 'None'}",
+        ]
+        if team_pings:
+            msg_lines.append(f"\n{team_pings} — your finals match channel is ready!")
 
-    try:
-        channel = await guild.create_text_channel(
-            name=channel_name,
-            category=category,
-            overwrites=overwrites,
-            reason=f"CasterBot bracket channel ({label})",
-        )
-    except Exception as e:
-        log.error(f"Failed to create bracket channel for {slot}: {e}")
-        return
+        await channel.send("\n".join(msg_lines))
 
-    await db.set_private_channel(match_id, channel.id)
+        from .views import CloseChannelView
+        close_view = CloseChannelView(match_id)
+        bot.add_view(close_view)
+        await channel.send(view=close_view)
 
-    # Build roster message
-    casters = [c["display_name"] for c in slot_claims if c["role"] == "caster"]
-    camops = [c["display_name"] for c in slot_claims if c["role"] == "camop"]
-    team_pings = " ".join(r.mention for r in team_roles)
-
-    msg_lines = [
-        f"**{label}: {team_a} vs {team_b}**",
-        f"Casters: {', '.join(casters) if casters else 'None'}",
-        f"Cam Ops: {', '.join(camops) if camops else 'None'}",
-    ]
-    if team_pings:
-        msg_lines.append(f"\n{team_pings} — your finals match channel is ready!")
-
-    await channel.send("\n".join(msg_lines))
-
-    from .views import CloseChannelView
-    close_view = CloseChannelView(match_id)
-    bot.add_view(close_view)
-    await channel.send(view=close_view)
-
-    log.info(f"Created bracket channel for {label}: {channel_name}")
+        log.info(f"Created bracket channel for {label}: {channel_name}")
 
 
 async def api_bracket_crew_handler(request: web.Request) -> web.Response:
@@ -9420,12 +9428,14 @@ async def api_bracket_claim_handler(request: web.Request) -> web.Response:
 
     await db.claim_bracket_slot(slot, claim_user_id, claim_display_name, role, slot_num)
 
-    # Check if channel should be auto-created
+    # Check if channel should be auto-created (only if one doesn't exist yet)
     if bot:
         slot_data = await db.get_bracket_slot(slot)
         if slot_data and slot_data.get("team_a") and slot_data.get("team_b") and slot_data.get("match_id"):
-            slot_claims = await db.get_bracket_claims(slot)
-            await _create_bracket_channel(bot, slot_data["match_id"], slot, slot_claims)
+            match = await db.get_match(slot_data["match_id"])
+            if match and not match.get("private_channel_id"):
+                slot_claims = await db.get_bracket_claims(slot)
+                await _create_bracket_channel(bot, slot_data["match_id"], slot, slot_claims)
 
     return web.json_response({"success": True})
 
