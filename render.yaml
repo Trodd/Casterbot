@@ -83,7 +83,7 @@ services:
 
 databases:
   - name: casterbot-db
-    plan: starter
+    plan: basic
     region: ohio
     databaseName: casterbot
     user: casterbot
