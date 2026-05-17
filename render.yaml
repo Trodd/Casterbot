@@ -1,9 +1,11 @@
 # render.yaml - Render Infrastructure as Code Blueprint
 # Deploy from GitHub: connect your repo at https://dashboard.render.com
 # Docs: https://render.com/docs/blueprint-spec
+#
+# After deploying, set all "sync: false" variables in the Render dashboard.
+# See .env.example for descriptions of each variable.
 
 services:
-  # The Discord bot + web UI (runs as a web service so the HTTP port is accessible)
   - type: web
     name: casterbot
     runtime: python
@@ -12,58 +14,67 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python -m casterbot
     envVars:
+      # -- Database (auto-linked) --
       - key: DATABASE_URL
         fromDatabase:
           name: casterbot-db
           property: connectionString
+
+      # -- Secrets (set manually in Render dashboard) --
       - key: DISCORD_TOKEN
-        sync: false  # Set manually in Render dashboard - SECRET
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: RPC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # -- Discord IDs (set in Render dashboard for your server) --
       - key: GUILD_ID
-        value: "1182380144887865406"
+        sync: false
       - key: CLAIM_CHANNEL_ID
-        value: "1469126063622852650"
+        sync: false
       - key: PRIVATE_CATEGORY_ID
-        value: "1196103170930258000"
+        sync: false
       - key: TRANSCRIPT_CHANNEL_ID
-        value: "1478970508556107847"
+        sync: false
       - key: TEAM_LOGO_CHANNEL_ID
-        value: "1461811401902391591"
+        sync: false
+      - key: CASTER_ROLE_ID
+        sync: false
+      - key: CAMOP_ROLE_ID
+        sync: false
+      - key: CASTER_TRAINING_ROLE_ID
+        sync: false
+      - key: CAMOP_TRAINING_ROLE_ID
+        sync: false
+      - key: STAFF_ROLE_ID
+        sync: false
+      - key: LIVE_ANNOUNCEMENT_CHANNEL_ID
+        sync: false
+      - key: LIVE_PING_ROLE_ID
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: WEB_LEAD_ROLE_ID
+        sync: false
+
+      # -- URLs (set in Render dashboard for your league) --
+      - key: TWITCH_URL
+        sync: false
+      - key: TWITCH_URL_2
+        sync: false
+      - key: UPCOMING_MATCHES_CSV_URL
+        sync: false
+      - key: RANKINGS_CSV_URL
+        sync: false
+
+      # -- Defaults (safe to keep in repo) --
       - key: LEAGUE_NAME
         value: Echo Master League
       - key: REQUIRE_CLAIM_ROLE
         value: "false"
-      - key: CASTER_ROLE_ID
-        value: "1209743670421753946"
-      - key: CAMOP_ROLE_ID
-        value: "1209746366314586233"
-      - key: CASTER_TRAINING_ROLE_ID
-        value: "1209744203400093736"
-      - key: CAMOP_TRAINING_ROLE_ID
-        value: "1470877757268431016"
-      - key: STAFF_ROLE_ID
-        value: "1182380145084993591"
-      - key: LIVE_ANNOUNCEMENT_CHANNEL_ID
-        value: "1187175946806099998"
-      - key: LIVE_PING_ROLE_ID
-        value: "1190072325178142730"
-      - key: TWITCH_URL
-        value: https://www.twitch.tv/echomasterleague
-      - key: TWITCH_URL_2
-        value: https://www.twitch.tv/echomasterleague_2
-      - key: UPCOMING_MATCHES_CSV_URL
-        value: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIvdXGBkVZB5ZFdMVUCZqe8e8DbOj6UbSAeqBP0uzYAY5Z1q37c-ZVG7iV96_cOlX-0jsgNLYXfe6B/pub?gid=881384435&single=true&output=csv"
-      - key: RANKINGS_CSV_URL
-        value: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIvdXGBkVZB5ZFdMVUCZqe8e8DbOj6UbSAeqBP0uzYAY5Z1q37c-ZVG7iV96_cOlX-0jsgNLYXfe6B/pub?gid=1604124065&single=true&output=csv"
-      - key: DISCORD_CLIENT_ID
-        value: "1477542037682258050"
-      - key: DISCORD_CLIENT_SECRET
-        sync: false  # SECRET - set in Render dashboard
-      - key: WEB_LEAD_ROLE_ID
-        value: "1482240459035246754"
-      - key: RPC_API_KEY
-        sync: false  # SECRET - set in Render dashboard
-      - key: OPENAI_API_KEY
-        sync: false  # SECRET - set in Render dashboard
       - key: WEB_ENABLED
         value: "true"
       - key: WEB_HOST
@@ -71,7 +82,7 @@ services:
       - key: WEB_PORT
         value: "10000"
       - key: WEB_PUBLIC_URL
-        value: "https://casterbot.onrender.com"
+        sync: false
       - key: MATCH_LOOKAHEAD_DAYS
         value: "14"
       - key: MATCH_GRACE_HOURS
