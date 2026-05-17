@@ -101,27 +101,18 @@ class CasterBot(commands.Bot):
 
     async def _register_persistent_views(self) -> None:
         """Re-register views for matches that have claim messages."""
-        async with __import__("aiosqlite").connect(config.DB_PATH) as conn:
-            conn.row_factory = __import__("aiosqlite").Row
-            cursor = await conn.execute(
-                "SELECT match_id FROM matches WHERE message_id IS NOT NULL"
-            )
-            rows = await cursor.fetchall()
-        for row in rows:
+        matches_with_msg = await db.get_matches_with_message()
+        claim_rows = [m for m in matches_with_msg if m.get("message_id")]
+        for row in claim_rows:
             self.add_view(ClaimView(row["match_id"]))
-        log.info(f"Registered {len(rows)} persistent claim views")
+        log.info(f"Registered {len(claim_rows)} persistent claim views")
         
         # Register close channel views for private channels
-        async with __import__("aiosqlite").connect(config.DB_PATH) as conn:
-            conn.row_factory = __import__("aiosqlite").Row
-            cursor = await conn.execute(
-                "SELECT match_id FROM matches WHERE private_channel_id IS NOT NULL"
-            )
-            rows = await cursor.fetchall()
-        for row in rows:
+        channel_rows = [m for m in matches_with_msg if m.get("private_channel_id")]
+        for row in channel_rows:
             self.add_view(CloseChannelView(row["match_id"]))
             self.add_view(CloseChannelView(row["match_id"], confirming=True))
-        log.info(f"Registered {len(rows)} persistent close channel views")
+        log.info(f"Registered {len(channel_rows)} persistent close channel views")
 
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
