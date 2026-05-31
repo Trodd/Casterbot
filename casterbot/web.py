@@ -668,6 +668,278 @@ HTML_TEMPLATE = """
             background: #3a3a4a;
             border-color: var(--echo-orange);
         }
+        /* Match Detail Modal */
+        .match-detail-modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.92);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: fadeIn 0.2s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .match-detail-box {
+            background: #12121a;
+            border: 2px solid var(--echo-cyan);
+            border-radius: 14px;
+            padding: 28px;
+            width: 90vw;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 0 40px rgba(0,229,255,0.15), 0 0 20px rgba(0,0,0,0.8);
+        }
+        .match-detail-header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--echo-border);
+        }
+        .match-detail-header h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            font-size: 1.1em;
+            margin-bottom: 6px;
+        }
+        .match-detail-header .match-detail-time {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+        }
+        .match-detail-teams {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .match-detail-team {
+            background: #1a1a24;
+            border: 1px solid var(--echo-border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .match-detail-team-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--echo-border);
+        }
+        .match-detail-team-logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #2a2a3a;
+        }
+        .match-detail-team-name {
+            font-weight: 700;
+            color: #fff;
+            font-size: 0.95em;
+        }
+        .match-detail-team-rank {
+            font-size: 0.8em;
+            color: var(--echo-text-dim);
+            background: #2a2a3a;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: auto;
+        }
+        .match-detail-roster {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .match-detail-player {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 6px;
+            border-radius: 6px;
+            transition: background 0.15s;
+        }
+        .match-detail-player:hover {
+            background: #252535;
+        }
+        .match-detail-player-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #2a2a3a;
+        }
+        .match-detail-player-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .match-detail-player-name {
+            color: #e8e8f0;
+            font-size: 0.88em;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .match-detail-player-username {
+            color: var(--echo-text-dim);
+            font-size: 0.75em;
+        }
+        .match-detail-player-role {
+            font-size: 0.72em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        .match-detail-player-role.captain {
+            background: rgba(255,165,0,0.15);
+            color: #ffaa00;
+            border: 1px solid rgba(255,165,0,0.3);
+        }
+        .match-detail-player-role.member {
+            background: rgba(0,229,255,0.1);
+            color: var(--echo-cyan);
+            border: 1px solid rgba(0,229,255,0.2);
+        }
+        .match-detail-close {
+            display: block;
+            margin: 20px auto 0;
+            background: #2a2a3a;
+            color: var(--echo-text);
+            border: 1px solid var(--echo-border);
+            padding: 10px 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+        .match-detail-close:hover {
+            background: #3a3a4a;
+            border-color: var(--echo-cyan);
+        }
+        .match-detail-empty {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+            font-style: italic;
+            padding: 12px 6px;
+        }
+        .detail-btn {
+            background: none;
+            border: 1px solid var(--echo-border);
+            color: var(--echo-text-dim);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .detail-btn:hover {
+            border-color: var(--echo-cyan);
+            color: var(--echo-cyan);
+        }
+        /* Teams Tab */
+        .teams-tab-header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 20px 0 16px;
+        }
+        .teams-tab-header h2 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--echo-cyan);
+            margin-bottom: 4px;
+        }
+        .teams-tab-subtitle {
+            color: var(--echo-text-dim);
+            font-size: 0.85em;
+        }
+        .teams-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 0 12px;
+        }
+        .team-list-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            background: #1a1a24;
+            border: 1px solid var(--echo-border);
+            border-radius: 10px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .team-list-item:hover {
+            background: #222233;
+            border-color: var(--echo-cyan);
+            transform: translateX(2px);
+        }
+        .team-list-rank-num {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85em;
+            color: var(--echo-text-dim);
+            min-width: 28px;
+            text-align: center;
+        }
+        .team-list-logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #2a2a3a;
+        }
+        .team-list-logo-placeholder {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            background: #2a2a3a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #555;
+        }
+        .team-list-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .team-list-name {
+            font-weight: 600;
+            color: #e8e8f0;
+            font-size: 0.92em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .team-list-meta {
+            font-size: 0.78em;
+            color: var(--echo-text-dim);
+            margin-top: 2px;
+        }
+        .team-list-rank-badge {
+            font-size: 0.78em;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .team-list-rank-badge.master { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.3); }
+        .team-list-rank-badge.diamond { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+        .team-list-rank-badge.platinum { background: rgba(148,163,184,0.12); color: #94a3b8; border: 1px solid rgba(148,163,184,0.25); }
+        .team-list-rank-badge.gold { background: rgba(250,204,21,0.12); color: #facc15; border: 1px solid rgba(250,204,21,0.25); }
+        .team-list-rank-badge.silver { background: rgba(203,213,225,0.1); color: #cbd5e1; border: 1px solid rgba(203,213,225,0.2); }
+        .team-list-rank-badge.bronze { background: rgba(217,119,6,0.12); color: #d97706; border: 1px solid rgba(217,119,6,0.25); }
+        @media (max-width: 600px) {
+            .match-detail-teams {
+                grid-template-columns: 1fr;
+            }
+            .match-detail-box {
+                padding: 18px;
+                width: 95vw;
+            }
+        }
         .no-matches { 
             text-align: center; padding: 80px 20px; 
             color: var(--echo-text-dim);
@@ -3300,6 +3572,7 @@ HTML_TEMPLATE = """
         </div>
         <div class="tabs">
             <button class="tab-btn {schedule_active}" onclick="switchTab('schedule')">Schedule</button>
+            <button class="tab-btn" onclick="switchTab('teams')">Teams</button>
             <button class="tab-btn {leaderboard_active}" onclick="switchTab('leaderboard')">Leaderboard</button>
             {bracket_tab_btn}
             {admin_tab_btn}
@@ -3334,6 +3607,15 @@ HTML_TEMPLATE = """
             {cycle_info}
             {leaderboard_content}
             {cycle_history}
+        </div>
+        <div id="tab-teams" class="tab-content">
+            <div class="teams-tab-header">
+                <h2>Teams</h2>
+                <p class="teams-tab-subtitle">All teams ranked by rating</p>
+            </div>
+            <div id="teams-list" class="teams-list">
+                <p style="color:#888;text-align:center;padding:40px;">Loading teams...</p>
+            </div>
         </div>
         {broadcast_tab_contents}
         {bracket_tab_content}
@@ -3812,6 +4094,171 @@ HTML_TEMPLATE = """
             }, { passive: true });
         })();
         
+        let teamsLoaded = false;
+        async function loadTeamsList() {
+            if (teamsLoaded) return;
+            const container = document.getElementById('teams-list');
+            try {
+                const resp = await fetch('/api/teams');
+                const data = await resp.json();
+                if (!data.success || !data.teams || data.teams.length === 0) {
+                    container.innerHTML = '<p style="color:#888;text-align:center;padding:40px;">No teams available</p>';
+                    return;
+                }
+                const rankTier = (rank) => (rank || '').split(' ')[0].toLowerCase();
+                let html = '';
+                data.teams.forEach((team, idx) => {
+                    const tier = rankTier(team.rank);
+                    const logo = team.logo
+                        ? `<img class="team-list-logo" src="${team.logo}" alt="" loading="lazy">`
+                        : `<div class="team-list-logo-placeholder">⬡</div>`;
+                    const rosterText = team.roster_count ? `${team.roster_count} player${team.roster_count !== 1 ? 's' : ''}` : '';
+                    html += `
+                        <div class="team-list-item" onclick="showTeamDetail('${team.name.replace(/'/g, "\\'")}')">
+                            <span class="team-list-rank-num">#${idx + 1}</span>
+                            ${logo}
+                            <div class="team-list-info">
+                                <div class="team-list-name">${team.name}</div>
+                                <div class="team-list-meta">${rosterText}</div>
+                            </div>
+                            <span class="team-list-rank-badge ${tier}">${team.rank || 'Unranked'}</span>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+                teamsLoaded = true;
+            } catch (e) {
+                container.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:40px;">Failed to load teams</p>';
+            }
+        }
+
+        async function showTeamDetail(teamName) {
+            // Reuse the match detail modal to show a single team's roster
+            const existing = document.querySelector('.match-detail-modal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'match-detail-modal';
+            modal.innerHTML = '<div class="match-detail-box"><p style="color:#ccc;text-align:center;">Loading team roster...</p></div>';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+            document.body.appendChild(modal);
+
+            try {
+                const resp = await fetch(`/api/team-roster/${encodeURIComponent(teamName)}`);
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'failed');
+
+                const roster = data.roster;
+                const rank = data.rank;
+                const logo = data.logo;
+
+                const renderRoster = (rosterArr) => {
+                    if (!rosterArr || rosterArr.length === 0) return '<div class="match-detail-empty">No roster data available</div>';
+                    return '<ul class="match-detail-roster">' + rosterArr.map(p => `
+                        <li class="match-detail-player">
+                            ${p.avatar_url ? `<img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">` : ''}
+                            <div class="match-detail-player-info">
+                                <div class="match-detail-player-name">${p.display_name}</div>
+                                <div class="match-detail-player-username">@${p.username}</div>
+                            </div>
+                            <span class="match-detail-player-role ${(p.role||'member').toLowerCase()}">${p.role || 'Member'}</span>
+                        </li>
+                    `).join('') + '</ul>';
+                };
+
+                const logoHtml = logo ? `<img class="match-detail-team-logo" src="${logo}" alt="">` : '';
+                const rankHtml = rank ? `<span class="match-detail-team-rank">${rank}</span>` : '';
+
+                modal.querySelector('.match-detail-box').innerHTML = `
+                    <div class="match-detail-header">
+                        <h3>${teamName}</h3>
+                        <div class="match-detail-time">${rank || 'Unranked'}</div>
+                    </div>
+                    <div style="max-width:400px;margin:0 auto;">
+                        <div class="match-detail-team" style="border:none;background:transparent;padding:0;">
+                            <div class="match-detail-team-header">
+                                ${logoHtml}
+                                <span class="match-detail-team-name">${teamName}</span>
+                                ${rankHtml}
+                            </div>
+                            ${renderRoster(roster)}
+                        </div>
+                    </div>
+                    <button class="match-detail-close" onclick="this.closest('.match-detail-modal').remove()">Close</button>
+                `;
+            } catch (e) {
+                modal.querySelector('.match-detail-box').innerHTML = `<p style="color:#ff6b6b;text-align:center;">Failed to load team</p><button class="match-detail-close" onclick="this.closest('.match-detail-modal').remove()">Close</button>`;
+            }
+        }
+
+        async function showMatchDetail(matchId) {
+            // Remove any existing modal
+            const existing = document.querySelector('.match-detail-modal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'match-detail-modal';
+            modal.innerHTML = '<div class="match-detail-box"><p style="color:#ccc;text-align:center;">Loading match details...</p></div>';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+            document.body.appendChild(modal);
+
+            try {
+                const resp = await fetch(`/api/match-detail/${encodeURIComponent(matchId)}`);
+                const data = await resp.json();
+                if (!data.success) {
+                    modal.querySelector('.match-detail-box').innerHTML = `<p style="color:#ff6b6b;text-align:center;">${data.error || 'Failed to load'}</p><button class="match-detail-close" onclick="this.closest('.match-detail-modal').remove()">Close</button>`;
+                    return;
+                }
+                const m = data.match;
+                const renderRoster = (roster) => {
+                    if (!roster || roster.length === 0) return '<div class="match-detail-empty">No roster data available</div>';
+                    return '<ul class="match-detail-roster">' + roster.map(p => `
+                        <li class="match-detail-player">
+                            <img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">
+                            <div class="match-detail-player-info">
+                                <div class="match-detail-player-name">${p.display_name}</div>
+                                <div class="match-detail-player-username">@${p.username}</div>
+                            </div>
+                            <span class="match-detail-player-role ${p.role.toLowerCase()}">${p.role}</span>
+                        </li>
+                    `).join('') + '</ul>';
+                };
+
+                const teamALogo = m.team_a_logo ? `<img class="match-detail-team-logo" src="${m.team_a_logo}" alt="">` : '';
+                const teamBLogo = m.team_b_logo ? `<img class="match-detail-team-logo" src="${m.team_b_logo}" alt="">` : '';
+                const teamARank = m.team_a_rank ? `<span class="match-detail-team-rank">${m.team_a_rank}</span>` : '';
+                const teamBRank = m.team_b_rank ? `<span class="match-detail-team-rank">${m.team_b_rank}</span>` : '';
+
+                modal.querySelector('.match-detail-box').innerHTML = `
+                    <div class="match-detail-header">
+                        <h3>#${m.simple_id || '?'} — ${m.team_a} vs ${m.team_b}</h3>
+                        <div class="match-detail-time">${m.match_date || ''} ${m.match_time || ''}${m.match_type ? ' • ' + m.match_type : ''}</div>
+                    </div>
+                    <div class="match-detail-teams">
+                        <div class="match-detail-team">
+                            <div class="match-detail-team-header">
+                                ${teamALogo}
+                                <span class="match-detail-team-name">${m.team_a}</span>
+                                ${teamARank}
+                            </div>
+                            ${renderRoster(m.team_a_roster)}
+                        </div>
+                        <div class="match-detail-team">
+                            <div class="match-detail-team-header">
+                                ${teamBLogo}
+                                <span class="match-detail-team-name">${m.team_b}</span>
+                                ${teamBRank}
+                            </div>
+                            ${renderRoster(m.team_b_roster)}
+                        </div>
+                    </div>
+                    <button class="match-detail-close" onclick="this.closest('.match-detail-modal').remove()">Close</button>
+                `;
+            } catch (e) {
+                modal.querySelector('.match-detail-box').innerHTML = `<p style="color:#ff6b6b;text-align:center;">Network error</p><button class="match-detail-close" onclick="this.closest('.match-detail-modal').remove()">Close</button>`;
+            }
+        }
+
         async function claimSlot(matchId, role, slot) {
             try {
                 const resp = await fetch('/api/claim', {
@@ -4072,6 +4519,10 @@ HTML_TEMPLATE = """
                 if (tab === 'logos') {
                     loadPendingLogos();
                     loadApprovedLogos();
+                }
+                // If it's the teams tab, load teams
+                if (tab === 'teams') {
+                    loadTeamsList();
                 }
                 // If it's the admin tab, load finals team dropdowns
                 if (tab === 'admin') {
@@ -6191,6 +6642,7 @@ def _build_match_card(match: dict, claims: list[dict], users: dict[int, str], cu
             <p class="match-time">{formatted_time} <span class="time-relative">{status_badge} {relative}</span></p>
             <div class="claims">{"".join(slots)}</div>
             {match_type_html}
+            <button class="detail-btn" onclick="event.stopPropagation(); showMatchDetail('{match_id}')">Match Details</button>
         </div>
     '''
 
@@ -8062,18 +8514,32 @@ async def api_matches_handler(request: web.Request) -> web.Response:
         if not team_role:
             return []
         
+        # Find the captain role for this team (e.g. "Captain: TeamName" or generic "Captain")
+        captain_role = None
+        for role in guild.roles:
+            rn = role.name.lower()
+            if rn.startswith("captain:"):
+                cap_team = role.name[8:].strip().lower()
+                if cap_team == team_name_lower:
+                    captain_role = role
+                    break
+            elif rn == "captain" or rn == "team captain":
+                captain_role = role
+        
         members = []
         for member in team_role.members:
             if member.bot:
                 continue
+            is_captain = captain_role in member.roles if captain_role else False
             members.append({
                 "user_id": str(member.id),
                 "username": member.name,
                 "display_name": member.display_name,
+                "role": "Captain" if is_captain else "Member",
             })
         
-        # Sort by display name
-        members.sort(key=lambda m: m["display_name"].lower())
+        # Sort: captains first, then by display name
+        members.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
         return members
     
     # Helper to get team logo URL
@@ -8165,6 +8631,211 @@ async def api_matches_handler(request: web.Request) -> web.Response:
         })
     
     return web.json_response({"success": True, "matches": result})
+
+
+async def api_match_detail_handler(request: web.Request) -> web.Response:
+    """API endpoint to get detailed match info with full rosters, roles, and rank."""
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    match_id_param = request.match_info.get("match_id", "")
+    if not match_id_param:
+        return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
+
+    # Look up by simple_id if numeric
+    if match_id_param.isdigit():
+        match = await db.get_match_by_simple_id(int(match_id_param))
+    else:
+        match = await db.get_match(match_id_param)
+
+    if not match:
+        return web.json_response({"success": False, "error": "Match not found"}, status=404)
+
+    # Helper to build detailed roster for a team
+    async def get_detailed_roster(team_name: str) -> list:
+        if not guild or not team_name:
+            return []
+
+        team_name_lower = team_name.lower()
+        team_role = None
+
+        for role in guild.roles:
+            if role.name.lower().startswith("team:"):
+                role_team_name = role.name[5:].strip().lower()
+                if role_team_name == team_name_lower:
+                    team_role = role
+                    break
+
+        if not team_role:
+            return []
+
+        # Find captain role
+        captain_role = None
+        for role in guild.roles:
+            rn = role.name.lower()
+            if rn.startswith("captain:"):
+                cap_team = role.name[8:].strip().lower()
+                if cap_team == team_name_lower:
+                    captain_role = role
+                    break
+            elif rn == "captain" or rn == "team captain":
+                captain_role = role
+
+        members = []
+        for member in team_role.members:
+            if member.bot:
+                continue
+            is_captain = captain_role in member.roles if captain_role else False
+            avatar_url = await get_user_avatar_url(bot, member.id)
+            members.append({
+                "user_id": str(member.id),
+                "username": member.name,
+                "display_name": member.display_name,
+                "avatar_url": avatar_url,
+                "role": "Captain" if is_captain else "Member",
+            })
+
+        # Captains first, then alphabetical
+        members.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
+        return members
+
+    team_a = match["team_a"]
+    team_b = match["team_b"]
+
+    team_a_logo = None
+    team_b_logo = None
+    logo_a = await db.get_team_logo(team_a)
+    if logo_a:
+        base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+        team_a_logo = f"{base_url}/team-logo/{team_a}"
+    logo_b = await db.get_team_logo(team_b)
+    if logo_b:
+        base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+        team_b_logo = f"{base_url}/team-logo/{team_b}"
+
+    result = {
+        "match_id": match["match_id"],
+        "simple_id": match.get("simple_id"),
+        "team_a": team_a,
+        "team_b": team_b,
+        "team_a_rank": sheets.get_team_rank(team_a) or None,
+        "team_b_rank": sheets.get_team_rank(team_b) or None,
+        "team_a_logo": team_a_logo,
+        "team_b_logo": team_b_logo,
+        "team_a_roster": await get_detailed_roster(team_a),
+        "team_b_roster": await get_detailed_roster(team_b),
+        "match_date": match["match_date"],
+        "match_time": match["match_time"],
+        "match_timestamp": match.get("match_timestamp"),
+        "week_number": match.get("week_number"),
+        "match_type": match.get("match_type"),
+    }
+
+    return web.json_response({"success": True, "match": result})
+
+
+async def api_teams_handler(request: web.Request) -> web.Response:
+    """Public API endpoint to get all teams with rank, logo, and roster count."""
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    all_teams = sheets.get_all_teams()  # Already ordered by rank (highest first)
+
+    teams_data = []
+    for name, rank in all_teams:
+        # Get logo URL
+        logo_url = None
+        logo = await db.get_team_logo(name)
+        if logo:
+            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+            logo_url = f"{base_url}/team-logo/{name}"
+
+        # Get roster count and members from Discord role
+        roster_count = 0
+        if guild:
+            team_name_lower = name.lower()
+            for role in guild.roles:
+                if role.name.lower().startswith("team:"):
+                    role_team_name = role.name[5:].strip().lower()
+                    if role_team_name == team_name_lower:
+                        roster_count = sum(1 for m in role.members if not m.bot)
+                        break
+
+        teams_data.append({
+            "name": name,
+            "rank": rank,
+            "logo": logo_url,
+            "roster_count": roster_count,
+        })
+
+    return web.json_response({"success": True, "teams": teams_data})
+
+
+async def api_team_roster_handler(request: web.Request) -> web.Response:
+    """Public API endpoint to get a single team's roster with roles and avatars."""
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    team_name = request.match_info.get("team_name", "")
+    if not team_name:
+        return web.json_response({"success": False, "error": "Missing team_name"}, status=400)
+
+    rank = sheets.get_team_rank(team_name) or None
+
+    # Get logo
+    logo_url = None
+    logo = await db.get_team_logo(team_name)
+    if logo:
+        base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+        logo_url = f"{base_url}/team-logo/{team_name}"
+
+    # Build roster from Discord role
+    roster = []
+    if guild:
+        team_name_lower = team_name.lower()
+        team_role = None
+        for role in guild.roles:
+            if role.name.lower().startswith("team:"):
+                role_team_name = role.name[5:].strip().lower()
+                if role_team_name == team_name_lower:
+                    team_role = role
+                    break
+
+        if team_role:
+            # Find captain role
+            captain_role = None
+            for role in guild.roles:
+                rn = role.name.lower()
+                if rn.startswith("captain:"):
+                    cap_team = role.name[8:].strip().lower()
+                    if cap_team == team_name_lower:
+                        captain_role = role
+                        break
+                elif rn == "captain" or rn == "team captain":
+                    captain_role = role
+
+            for member in team_role.members:
+                if member.bot:
+                    continue
+                is_captain = captain_role in member.roles if captain_role else False
+                avatar_url = await get_user_avatar_url(bot, member.id)
+                roster.append({
+                    "user_id": str(member.id),
+                    "username": member.name,
+                    "display_name": member.display_name,
+                    "avatar_url": avatar_url,
+                    "role": "Captain" if is_captain else "Member",
+                })
+
+            roster.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
+
+    return web.json_response({
+        "success": True,
+        "name": team_name,
+        "rank": rank,
+        "logo": logo_url,
+        "roster": roster,
+    })
 
 
 # ============ RPC API (for remote apps with API key) ============
@@ -10939,6 +11610,9 @@ def create_app(bot=None) -> web.Application:
     app.router.add_get("/api/proxy-avatar", api_proxy_avatar_handler)
     app.router.add_get("/api/crew-members", api_crew_members_handler)
     app.router.add_get("/api/matches", api_matches_handler)
+    app.router.add_get("/api/match-detail/{match_id}", api_match_detail_handler)
+    app.router.add_get("/api/teams", api_teams_handler)
+    app.router.add_get("/api/team-roster/{team_name}", api_team_roster_handler)
     # Profile picture routes
     app.router.add_get("/profile-pic/{user_id}", profile_pic_handler)
     app.router.add_post("/api/profile-pic/upload", api_profile_pic_upload_handler)
