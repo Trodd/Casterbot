@@ -8514,17 +8514,12 @@ async def api_matches_handler(request: web.Request) -> web.Response:
         if not team_role:
             return []
         
-        # Find the captain role for this team (e.g. "Captain: TeamName" or generic "Captain")
+        # Find the captain role (CaptainNA / role ID 1182380145047249000)
         captain_role = None
         for role in guild.roles:
-            rn = role.name.lower()
-            if rn.startswith("captain:"):
-                cap_team = role.name[8:].strip().lower()
-                if cap_team == team_name_lower:
-                    captain_role = role
-                    break
-            elif rn == "captain" or rn == "team captain":
+            if role.id == 1182380145047249000 or role.name.lower() == "captainna":
                 captain_role = role
+                break
         
         members = []
         for member in team_role.members:
@@ -8669,17 +8664,12 @@ async def api_match_detail_handler(request: web.Request) -> web.Response:
         if not team_role:
             return []
 
-        # Find captain role
+        # Find captain role (CaptainNA / role ID 1182380145047249000)
         captain_role = None
         for role in guild.roles:
-            rn = role.name.lower()
-            if rn.startswith("captain:"):
-                cap_team = role.name[8:].strip().lower()
-                if cap_team == team_name_lower:
-                    captain_role = role
-                    break
-            elif rn == "captain" or rn == "team captain":
+            if role.id == 1182380145047249000 or role.name.lower() == "captainna":
                 captain_role = role
+                break
 
         members = []
         for member in team_role.members:
@@ -8802,17 +8792,12 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
                     break
 
         if team_role:
-            # Find captain role
+            # Find captain role (CaptainNA / role ID 1182380145047249000)
             captain_role = None
             for role in guild.roles:
-                rn = role.name.lower()
-                if rn.startswith("captain:"):
-                    cap_team = role.name[8:].strip().lower()
-                    if cap_team == team_name_lower:
-                        captain_role = role
-                        break
-                elif rn == "captain" or rn == "team captain":
+                if role.id == 1182380145047249000 or role.name.lower() == "captainna":
                     captain_role = role
+                    break
 
             for member in team_role.members:
                 if member.bot:
