@@ -10852,6 +10852,36 @@ async def api_logo_delete_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "No logo found for this team"}, status=404)
 
 
+async def api_logo_cleanup_handler(request: web.Request) -> web.Response:
+    """Get stale team logos (teams with logos but no longer in rankings), or delete them."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+
+    current_teams = [name for name, _ in sheets.get_all_teams()]
+    stale = await db.get_stale_team_logos(current_teams)
+
+    # POST = delete, GET = preview
+    if request.method == "POST":
+        count = await db.delete_stale_team_logos(current_teams)
+        return web.json_response({
+            "success": True,
+            "deleted": count,
+            "removed_teams": [s["team_name"] for s in stale],
+        })
+
+    return web.json_response({
+        "success": True,
+        "current_team_count": len(current_teams),
+        "stale_logo_count": len(stale),
+        "stale_teams": [s["team_name"] for s in stale],
+    })
+
+
 async def api_logo_rename_handler(request: web.Request) -> web.Response:
     """Rename a team logo to a different team."""
     session, error = await _check_admin(request)
@@ -11722,6 +11752,8 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/logos/reject", api_logo_reject_handler)
     app.router.add_get("/api/logos", api_logo_list_handler)
     app.router.add_post("/api/logos/delete", api_logo_delete_handler)
+    app.router.add_get("/api/logos/cleanup", api_logo_cleanup_handler)
+    app.router.add_post("/api/logos/cleanup", api_logo_cleanup_handler)
     app.router.add_post("/api/logos/rename", api_logo_rename_handler)
     app.router.add_get("/team-logo/{team_name}", team_logo_handler)
     app.router.add_get("/health", health_handler)

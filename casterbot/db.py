@@ -1404,6 +1404,21 @@ async def clear_all_bracket_slots() -> None:
             await db.commit()
 
 
+async def get_stale_team_logos(current_teams: list[str]) -> list[dict]:
+    """Return team logos whose team name is NOT in current_teams (case-insensitive)."""
+    current_lower = {t.strip().lower() for t in current_teams}
+    all_logos = await get_all_team_logos()
+    return [logo for logo in all_logos if logo["team_name"].strip().lower() not in current_lower]
+
+
+async def delete_stale_team_logos(current_teams: list[str]) -> int:
+    """Delete logos for teams not in current_teams. Returns count of deleted logos."""
+    stale = await get_stale_team_logos(current_teams)
+    for logo in stale:
+        await delete_team_logo(logo["team_name"])
+    return len(stale)
+
+
 # ---- Bracket Claims ----
 
 
