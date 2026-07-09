@@ -10583,6 +10583,23 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
         f"read_message_history={channel_perms.read_message_history} | "
         f"read_messages={channel_perms.read_messages}"
     )
+    # Log category and permission overwrites to help diagnose denies
+    category = channel.category
+    log.info(f"Channel category: {category.name if category else 'None'} (ID: {category.id if category else 'N/A'})")
+    log.info(f"Bot roles (top→bottom): {[r.name for r in bot_member.roles]}")
+    # Log channel-level overwrites
+    for target, overwrite in channel.overwrites.items():
+        target_name = target.name if hasattr(target, 'name') else str(target)
+        denied = [p for p, v in overwrite if v is False]
+        allowed = [p for p, v in overwrite if v is True]
+        log.info(f"  Channel overwrite for {target_name}: allow={allowed}, deny={denied}")
+    # Log category-level overwrites
+    if category:
+        for target, overwrite in category.overwrites.items():
+            target_name = target.name if hasattr(target, 'name') else str(target)
+            denied = [p for p, v in overwrite if v is False]
+            allowed = [p for p, v in overwrite if v is True]
+            log.info(f"  Category overwrite for {target_name}: allow={allowed}, deny={denied}")
     if not channel_perms.read_message_history:
         return web.json_response(
             {"success": False, "error": "Bot lacks READ_MESSAGE_HISTORY permission on this channel"},
