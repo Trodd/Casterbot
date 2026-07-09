@@ -1,7 +1,7 @@
 """Main bot logic and sync loop."""
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
-import asyncio
+import asyncio  # AGENTS-AUDIT: ruff reports this import is unused.
 import logging
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -13,6 +13,22 @@ from discord.ext import commands, tasks
 
 from . import config, db, sheets
 from .views import ClaimView, CloseChannelView
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in an active module.
+# AGENTS violation: many broad `except Exception` blocks log and continue without re-raise.
+# AGENTS violation: command callbacks are missing explicit return type annotations (`-> None`).
+# AGENTS violation: no Protocol boundaries for external services (Discord/OpenAI/DB), increasing coupling.
+# AGENTS violation: no pydantic validation at untrusted boundaries before state-changing operations.
+# Code smell: this module is oversized and multi-responsibility (bot lifecycle, sync engine, command registry).
+# Code smell: `_register_commands` is a very large nested function, difficult to test and reason about.
+# Code smell: global mutable singleton `bot_instance` introduces hidden lifecycle state.
+# Code smell: role checks and team-role lookups are duplicated across commands.
+# Code smell: repeated message refresh/update logic appears in multiple command handlers.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=1; pyright findings=31.
+# AUDIT COUNTS: source scan found future_imports=1, broad_except=13, untyped_defs=15, print_calls=0.
+# AUDIT SCOPE: every `except Exception` in this file is part of the AGENTS fail-closed violation class.
+# AUDIT SCOPE: every command callback lacking `-> None` is part of the complete-typing violation class.
 
 # Set up logging to both console and file
 log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -168,7 +184,7 @@ class CasterBot(commands.Bot):
             reply_text = response.choices[0].message.content
             if reply_text:
                 await message.reply(reply_text)
-        except Exception as e:
+        except Exception as e:  # AGENTS-AUDIT: broad exception is logged without re-raise/fail-closed behavior.
             log.error(f"OpenAI response error: {e}")
 
     async def close(self) -> None:

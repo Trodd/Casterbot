@@ -29,11 +29,23 @@ import argparse
 import json
 import os
 import sys
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen  # AGENTS-AUDIT: urllib call path should be httpx.
 from urllib.error import HTTPError, URLError
 
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: many functions are missing full parameter and return type annotations.
+# AGENTS violation: urllib usage instead of httpx.
+# AGENTS violation: direct print-based diagnostics throughout; AGENTS requires logging/structlog patterns.
+# AGENTS violation: repeated `sys.exit()` in helper functions couples command handling and process control.
+# Code smell: command functions duplicate error handling / success formatting logic.
+# Code smell: weak response typing (`dict` shape assumed everywhere) makes API drift hard to detect.
+# Code smell: no input model validation at trust boundaries (argparse -> request body).
+# AUDIT COUNTS: format gate failed for this file; ruff findings=0; pyright findings=1.
+# AUDIT COUNTS: source scan found future_imports=0, print_calls=14, untyped_defs=8, dict_shapes=1.
+# AUDIT SCOPE: every command handler without `-> None` is part of the complete-typing violation class.
 
-def get_config():
+
+def get_config():  # AGENTS-AUDIT: public helper lacks parameter/return typing.
     """Get configuration from environment."""
     url = os.environ.get("EML_RPC_URL", "http://localhost:8080")
     api_key = os.environ.get("EML_RPC_API_KEY", "")
@@ -47,7 +59,7 @@ def rpc_call(endpoint: str, method: str = "POST", data: dict = None, api_key: st
         key = api_key
     
     if not key:
-        print("Error: EML_RPC_API_KEY environment variable not set", file=sys.stderr)
+        print("Error: EML_RPC_API_KEY environment variable not set", file=sys.stderr)  # AGENTS-AUDIT: print diagnostics violate logging/structlog rule.
         sys.exit(1)
     
     full_url = f"{url}{endpoint}"

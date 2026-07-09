@@ -1,10 +1,25 @@
 """Database persistence for match claims. Supports PostgreSQL (Render) and SQLite (local)."""
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import logging
 from contextlib import asynccontextmanager
 
 from . import config
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in an active module.
+# AGENTS violation: extensive use of shape-less `dict` return values instead of TypedDict/dataclass contracts.
+# AGENTS violation: helper signatures use untyped variadic args (`*args`) with no explicit types.
+# AGENTS violation: no Protocol abstraction for storage backend; business layer is directly DB-vendor aware.
+# Code smell: module is very large and combines schema, migration, queries, and domain logic.
+# Code smell: PostgreSQL and SQLite branches duplicate near-identical logic, increasing drift risk.
+# Code smell: global mutable connection pool state (`_pool`) complicates lifecycle and test isolation.
+# Code smell: many repeated runtime imports inside functions increase noise and maintenance overhead.
+# Code smell: weak transaction boundaries across multi-step writes can leave partial state on failures.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=0; pyright findings=4.
+# AUDIT COUNTS: source scan found future_imports=1, broad_except=0, untyped_defs=4, dict_shapes=43.
+# AUDIT SCOPE: every `dict`/`list[dict]` return shape is part of the TypedDict/dataclass violation class.
+# AUDIT SCOPE: `_pool = None` is the controlling site for optional-pool pyright failures.
 
 log = logging.getLogger("casterbot.db")
 
@@ -12,7 +27,7 @@ log = logging.getLogger("casterbot.db")
 _use_pg = bool(config.DATABASE_URL)
 
 # Connection pool (PostgreSQL only)
-_pool = None
+_pool = None  # AGENTS-AUDIT: optional global pool is the root of pyright optional-member failures.
 
 _PG_SCHEMA = """
 CREATE TABLE IF NOT EXISTS matches (
@@ -199,7 +214,7 @@ CREATE TABLE IF NOT EXISTS bracket_claims (
 
 
 @asynccontextmanager
-async def _get_pg_conn():
+async def _get_pg_conn():  # AGENTS-AUDIT: async context helper lacks explicit return type.
     """Get a connection from the PostgreSQL pool."""
     async with _pool.acquire() as conn:
         yield conn

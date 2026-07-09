@@ -1,5 +1,5 @@
 """Fetch and parse upcoming matches from Google Sheets CSV."""
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import csv
 import io
@@ -13,6 +13,17 @@ from dateutil import parser as dateparser
 from dateutil import tz
 
 from . import config
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in an active module.
+# AGENTS violation: broad `except Exception` handlers do not re-raise, masking root causes.
+# AGENTS violation: external/untrusted CSV payload is parsed without pydantic boundary validation.
+# Code smell: global mutable ranking caches are process-local and unsynchronized across workers.
+# Code smell: deduplication uses O(n^2) pattern (`any(...)` over growing list) on match collection.
+# Code smell: logger messages use f-strings, limiting structured log key/value querying.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=0; pyright findings=0.
+# AUDIT COUNTS: source scan found future_imports=1, broad_except=3, untyped_defs=0, dict_shapes=4.
+# AUDIT SCOPE: every external CSV parse path in this file lacks pydantic boundary validation.
 
 log = logging.getLogger("casterbot")
 
@@ -38,7 +49,7 @@ def _parse_datetime(date_str: str, time_str: str) -> datetime | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=local_tz)
         return dt
-    except Exception:
+    except Exception:  # AGENTS-AUDIT: broad parse failure is swallowed without structured error propagation.
         return None
 
 

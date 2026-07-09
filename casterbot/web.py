@@ -1,5 +1,5 @@
 """Optional web server to display claim status with Discord OAuth2."""
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import collections
 import logging
@@ -13,6 +13,22 @@ from aiohttp import web
 from dateutil import tz as dateutil_tz
 
 from . import config, db, sheets
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in an active module.
+# AGENTS violation: widespread broad `except Exception` handling with non-failing fallback paths.
+# AGENTS violation: many functions lack complete parameter/return typing, especially nested helpers.
+# AGENTS violation: untrusted HTTP inputs are parsed directly without pydantic validation boundaries.
+# AGENTS violation: no Protocol abstraction around bot/session/store dependencies, increasing hard coupling.
+# Code smell: extreme file size (>11k LOC) creates a high-change-risk monolith with poor navigability.
+# Code smell: backend routes, auth/session management, HTML/CSS/JS template, and API logic co-exist.
+# Code smell: in-memory session/message state is non-persistent and non-distributed by design.
+# Code smell: large inline HTML/JS string blocks prevent static analysis and template reuse.
+# Code smell: repeated authorization and claim-state checks indicate missing shared policy primitives.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=11; pyright findings=21.
+# AUDIT COUNTS: source scan found future_imports=1, broad_except=67, untyped_defs=6, dict_shapes=13.
+# AUDIT SCOPE: every HTTP handler reading request/query/form data directly lacks pydantic validation.
+# AUDIT SCOPE: every broad exception handler in this file is part of the AGENTS fail-closed violation class.
 
 log = logging.getLogger("casterbot.web")
 
@@ -41,7 +57,7 @@ _web_log_handler.setLevel(logging.INFO)
 logging.getLogger().addHandler(_web_log_handler)
 
 # Simple in-memory session store
-_sessions: dict[str, dict] = {}
+_sessions: dict[str, dict] = {}  # AGENTS-AUDIT: in-memory generic dict session store lacks TypedDict/dataclass model.
 
 # Track messages sent via web UI (message_id -> sender info)
 # This allows us to show the web sender's name in the chat UI
@@ -8190,7 +8206,7 @@ async def api_user_avatar_handler(request: web.Request) -> web.Response:
                 user = bot.get_user(user_id) or await bot.fetch_user(user_id)
                 username = user.name
                 display_name = user.display_name if hasattr(user, "display_name") else user.name
-        except Exception:
+        except Exception:  # AGENTS-AUDIT: broad log-handler failure is swallowed, hiding observability loss.
             pass
     
     return web.json_response({
@@ -10597,8 +10613,8 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
                 "has_existing_logo": existing_logo is not None,
             })
     except Exception as e:
-        log.error(f"Failed to read logo channel: {e}")
-        return web.json_response({"success": False, "error": "Failed to read logo channel"}, status=500)
+        log.error(f"Failed to read logo channel: {e}", exc_info=True)
+        return web.json_response({"success": False, "error": f"Failed to read logo channel: {e}"}, status=500)
     
     return web.json_response({"success": True, "pending": pending})
 

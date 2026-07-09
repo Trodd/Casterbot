@@ -25,9 +25,21 @@ Usage:
 
 import json
 import os
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen  # AGENTS-AUDIT: urllib call path should be httpx.
 from urllib.error import HTTPError, URLError
-from typing import Any
+from typing import Any  # AGENTS-AUDIT: Any is imported without an inline reason and is unused.
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: imports Any but does not justify usage with `# reason:`.
+# AGENTS violation: urllib usage instead of httpx.
+# AGENTS violation: several parameters use `= None` with non-optional annotations (e.g. url: str = None).
+# AGENTS violation: broad data shape typing (`dict`, `list[dict]`) instead of TypedDict / dataclass models.
+# Code smell: module-level mutable global config dictionary introduces hidden shared state.
+# Code smell: error mapping wraps exceptions without `raise ... from ...`, reducing traceback fidelity.
+# Code smell: synchronous network I/O API design can block callers and makes async integration harder.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=1; pyright findings=4.
+# AUDIT COUNTS: source scan found future_imports=0, print_calls=1, untyped_defs=1, dict_shapes=6.
+# AUDIT SCOPE: every generic dict-shaped boundary in this file is part of the TypedDict/dataclass violation class.
 
 
 # Module-level configuration
@@ -42,7 +54,7 @@ class EMLError(Exception):
     pass
 
 
-def configure(url: str = None, api_key: str = None):
+def configure(url: str = None, api_key: str = None):  # AGENTS-AUDIT: non-optional str defaults to None and lacks -> None.
     """
     Configure the client.
     

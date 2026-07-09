@@ -8,7 +8,7 @@ Example:
 
 You can find your DATABASE_URL in the Render dashboard under your database's "Info" tab.
 """
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import asyncio
 import sqlite3
@@ -16,12 +16,24 @@ import sys
 
 import asyncpg
 
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in a new/active module.
+# AGENTS violation: heavy use of print for diagnostics instead of structured logging.
+# AGENTS violation: broad exception handling patterns skip explicit re-raise in migration branches.
+# Code smell: one very large function mixes schema management, extraction, transformation, and loading.
+# Code smell: synchronous sqlite3 operations are embedded in async flow; this can block the event loop.
+# Code smell: SQL schema is duplicated here and in db layer, creating schema drift risk.
+# Code smell: per-row inserts without batched transaction strategy may degrade migration performance.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=1; pyright findings=0.
+# AUDIT COUNTS: source scan found future_imports=1, print_calls=29, untyped_defs=0, dict_shapes=0.
+# AUDIT SCOPE: every `print(...)` call in this file is part of the AGENTS diagnostics violation class.
+
 
 DB_PATH = "casterbot.db"
 
 
 async def migrate(database_url: str) -> None:
-    print(f"Connecting to PostgreSQL...")
+    print(f"Connecting to PostgreSQL...")  # AGENTS-AUDIT: print diagnostics violate logging/structlog rule.
     pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
 
     print(f"Reading local SQLite database: {DB_PATH}")

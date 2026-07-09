@@ -1,5 +1,5 @@
 """Discord UI components for claim buttons."""
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import asyncio
 from datetime import datetime, timezone
@@ -8,9 +8,23 @@ from io import StringIO
 import discord
 from dateutil import tz as dateutil_tz
 from discord import ButtonStyle, Interaction, SelectOption
-from discord.ui import ActionRow, Button, Container, LayoutView, Section, Select, Separator, TextDisplay, View
+from discord.ui import ActionRow, Button, Container, LayoutView, Section, Select, Separator, TextDisplay, View  # AGENTS-AUDIT: ruff reports Section is unused.
 
 from . import config, db, sheets
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in an active module.
+# AGENTS violation: numerous broad `except Exception` blocks suppress failures without escalation.
+# AGENTS violation: several callbacks omit explicit return annotations (`-> None`).
+# AGENTS violation: untrusted interaction payloads are used directly without validation models.
+# Code smell: UI construction, permission policy, DB writes, and channel lifecycle are tightly coupled.
+# Code smell: duplicated team-role scanning and announcement formatting patterns across handlers.
+# Code smell: side-effect-heavy methods are difficult to unit test due to direct Discord and DB dependencies.
+# Code smell: optimistic message edits in exception-swallowing blocks can hide stale UI state.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=2; pyright findings=20.
+# AUDIT COUNTS: source scan found future_imports=1, broad_except=11, untyped_defs=12, dict_shapes=9.
+# AUDIT SCOPE: every `except Exception` in this file is part of the AGENTS fail-closed violation class.
+# AUDIT SCOPE: every untyped callback below is part of the complete-typing violation class.
 
 
 MAX_CASTERS = 2
@@ -27,7 +41,7 @@ class ConfirmView(View):
         self.action_name = action_name
     
     @discord.ui.button(label="Yes", style=ButtonStyle.success)
-    async def confirm_button(self, interaction: Interaction, button: Button):
+    async def confirm_button(self, interaction: Interaction, button: Button):  # AGENTS-AUDIT: callback lacks -> None.
         self.confirmed = True
         self.stop()
         await interaction.response.edit_message(content="Confirmed!", view=None)
@@ -39,7 +53,7 @@ class ConfirmView(View):
         try:
             await interaction.response.defer()
             await interaction.delete_original_response()
-        except Exception:
+        except Exception:  # AGENTS-AUDIT: broad exception is swallowed, hiding UI cleanup failures.
             pass
 
 

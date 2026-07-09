@@ -1,10 +1,21 @@
 """Load configuration from environment / .env."""
-from __future__ import annotations
+from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# === MAINTAINABILITY / AGENTS AUDIT ANNOTATIONS ===
+# AGENTS violation: uses `from __future__ import annotations` in an active module.
+# AGENTS violation: module constants are not declared Final, despite policy requiring Final for constants.
+# AGENTS violation: import-time side effects (directory creation and file copy) reduce predictability.
+# Code smell: configuration parsing, filesystem bootstrapping, and data seeding are coupled in one module.
+# Code smell: broad, shape-less container typing (`STREAM_CHANNELS: dict`) weakens static guarantees.
+# Code smell: invalid environment values (e.g. non-int) can raise raw ValueError without domain context.
+# AUDIT COUNTS: format gate failed for this file; ruff findings=0; pyright findings=0.
+# AUDIT COUNTS: source scan found future_imports=1, print_calls=0, untyped_defs=0, dict_shapes=1.
+# AUDIT SCOPE: module-level constants below are part of the missing-Final violation class.
 
 # Load .env from project root
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -60,7 +71,7 @@ TWITCH_URL: str = _get("TWITCH_URL", "https://www.twitch.tv/echomasterleague")
 TWITCH_URL_2: str = _get("TWITCH_URL_2", "https://www.twitch.tv/echomasterleague_2")
 
 # Stream channel options: maps channel number to (label, URL)
-STREAM_CHANNELS: dict = {
+STREAM_CHANNELS: dict = {  # AGENTS-AUDIT: generic dict shape should be explicit TypedDict/dataclass/alias.
     1: ("Channel 1", TWITCH_URL),
     2: ("Channel 2", TWITCH_URL_2),
 }
