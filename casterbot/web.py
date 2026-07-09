@@ -10573,6 +10573,7 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
     approved_logos = await db.get_all_team_logos()
     approved_msg_ids = {logo["discord_message_id"] for logo in approved_logos if logo.get("discord_message_id")}
     
+    log.info(f"Reading logo channel: #{channel.name} (ID: {channel.id})")
     pending = []
     try:
         # Read recent messages with images
