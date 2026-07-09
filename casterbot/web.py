@@ -5741,6 +5741,80 @@ HTML_TEMPLATE = """
                 showToast('Failed to rename logo', 'error');
             }
         }
+
+        async function loadStaleLogos() {
+            const container = document.getElementById('stale-logos-container');
+            const btn = document.getElementById('cleanup-stale-btn');
+            if (!container) return;
+
+            container.innerHTML = '<div class="loading">Checking for stale logos...</div>';
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/logos/cleanup', {credentials: 'include'});
+                const data = await resp.json();
+
+                if (!data.success) {
+                    container.innerHTML = '<div class="no-data">Error: ' + (data.error || 'Unknown error') + '</div>';
+                    return;
+                }
+
+                if (data.stale_logo_count === 0) {
+                    container.innerHTML = '<div class="no-data" style="color:#4ecdc4;">All logos match current teams. No cleanup needed.</div>';
+                    return;
+                }
+
+                btn.disabled = false;
+                let html = '<p style="margin-bottom:10px;color:#f4a261;">' + data.stale_logo_count + ' stale team(s) found (not in current rankings):</p>';
+                html += '<div class="logo-grid">';
+                for (const name of data.stale_teams) {
+                    html += `
+                        <div class="logo-card" style="border-color:#f4a261;">
+                            <div class="logo-info">
+                                <div class="logo-team">${name}</div>
+                            </div>
+                            <div class="logo-actions">
+                                <button class="admin-btn danger" onclick="deleteLogo('${name.replace(/'/g, "\\'")}')">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div class="no-data">Failed to check stale logos</div>';
+            }
+        }
+
+        async function cleanupStaleLogos() {
+            if (!confirm('Delete ALL stale team logos? This cannot be undone.')) return;
+
+            const btn = document.getElementById('cleanup-stale-btn');
+            btn.disabled = true;
+            btn.textContent = 'Deleting...';
+
+            try {
+                const resp = await fetch('/api/logos/cleanup', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    showToast('Deleted ' + data.deleted + ' stale logo(s)', 'success');
+                    loadApprovedLogos();
+                    loadStaleLogos();
+                } else {
+                    showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Delete All Stale';
+                }
+            } catch(e) {
+                showToast('Failed to cleanup stale logos', 'error');
+                btn.disabled = false;
+                btn.textContent = 'Delete All Stale';
+            }
+        }
         
         // Load active cycle info
         (async function() {
@@ -7727,6 +7801,19 @@ async def schedule_handler(request: web.Request) -> web.Response:
                     </div>
                     <div id="approved-logos-container">
                         <div class="loading">Loading approved logos...</div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-section-header">
+                        <h3>Stale Teams <span style="font-weight:normal;font-size:0.85em;color:#888;">(not in current rankings)</span></h3>
+                        <div>
+                            <button class="admin-btn" onclick="loadStaleLogos()">Refresh</button>
+                            <button class="admin-btn danger" id="cleanup-stale-btn" onclick="cleanupStaleLogos()" disabled>Delete All Stale</button>
+                        </div>
+                    </div>
+                    <div id="stale-logos-container">
+                        <div class="loading">Click Refresh to check...</div>
                     </div>
                 </div>
             </div>
