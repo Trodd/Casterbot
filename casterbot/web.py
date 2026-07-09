@@ -10600,9 +10600,38 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
             denied = [p for p, v in overwrite if v is False]
             allowed = [p for p, v in overwrite if v is True]
             log.info(f"  Category overwrite for {target_name}: allow={allowed}, deny={denied}")
+    # Build permission debug info
+    debug_info = {
+        "channel_name": channel.name,
+        "channel_id": channel.id,
+        "channel_type": str(channel.type),
+        "view_channel": channel_perms.view_channel,
+        "read_message_history": channel_perms.read_message_history,
+        "read_messages": channel_perms.read_messages,
+        "bot_roles": [r.name for r in bot_member.roles],
+        "category_name": category.name if category else None,
+        "channel_overwrites": [],
+        "category_overwrites": [],
+    }
+    for target, overwrite in channel.overwrites.items():
+        target_name = target.name if hasattr(target, "name") else str(target)
+        debug_info["channel_overwrites"].append({
+            "target": target_name,
+            "allowed": [str(p) for p, v in overwrite if v is True],
+            "denied": [str(p) for p, v in overwrite if v is False],
+        })
+    if category:
+        for target, overwrite in category.overwrites.items():
+            target_name = target.name if hasattr(target, "name") else str(target)
+            debug_info["category_overwrites"].append({
+                "target": target_name,
+                "allowed": [str(p) for p, v in overwrite if v is True],
+                "denied": [str(p) for p, v in overwrite if v is False],
+            })
+
     if not channel_perms.read_message_history:
         return web.json_response(
-            {"success": False, "error": "Bot lacks READ_MESSAGE_HISTORY permission on this channel"},
+            {"success": False, "error": "Bot lacks READ_MESSAGE_HISTORY", "debug": debug_info},
             status=500,
         )
 
