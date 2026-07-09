@@ -10573,7 +10573,22 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
     approved_logos = await db.get_all_team_logos()
     approved_msg_ids = {logo["discord_message_id"] for logo in approved_logos if logo.get("discord_message_id")}
     
-    log.info(f"Reading logo channel: #{channel.name} (ID: {channel.id})")
+    # Debug: check bot permissions on this channel
+    bot_member = guild.me
+    channel_perms = channel.permissions_for(bot_member)
+    log.info(
+        f"Logo channel: #{channel.name} (ID: {channel.id}) | "
+        f"type={channel.type} | "
+        f"view_channel={channel_perms.view_channel} | "
+        f"read_message_history={channel_perms.read_message_history} | "
+        f"read_messages={channel_perms.read_messages}"
+    )
+    if not channel_perms.read_message_history:
+        return web.json_response(
+            {"success": False, "error": "Bot lacks READ_MESSAGE_HISTORY permission on this channel"},
+            status=500,
+        )
+
     pending = []
     try:
         # Read recent messages with images
