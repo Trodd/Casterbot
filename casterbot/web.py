@@ -8881,9 +8881,9 @@ async def api_teams_handler(request: web.Request) -> web.Response:
             base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
             logo_url = f"{base_url}/team-logo/{name}"
 
-        # Get roster count: prefer CSV roster data, fall back to Discord role count
-        roster_count = sheets.get_roster_count(name)
-        if roster_count == 0 and guild:
+        # Get roster count from Discord roles (primary) + CSV (supplement)
+        roster_count = 0
+        if guild:
             team_name_lower = name.lower()
             for role in guild.roles:
                 if role.name.lower().startswith("team:"):
@@ -8891,6 +8891,9 @@ async def api_teams_handler(request: web.Request) -> web.Response:
                     if role_team_name == team_name_lower:
                         roster_count = sum(1 for m in role.members if not m.bot)
                         break
+        # Use CSV count as fallback if Discord shows 0
+        if roster_count == 0:
+            roster_count = sheets.get_roster_count(name)
 
         teams_data.append({
             "name": name,
