@@ -4184,8 +4184,6 @@ HTML_TEMPLATE = """
                 renderTeamsList(allTeamsData);
             }
         }
-            }
-        }
 
         async function showTeamDetail(teamName) {
             // Reuse the match detail modal to show a single team's roster
