@@ -111,7 +111,9 @@ class CasterBot(commands.Bot):
         else:
             await self.tree.sync()
         log.info("Slash commands synced")
-
+        # Fetch rosters and rankings at startup so Teams tab has data immediately
+        await sheets.fetch_rankings()
+        await sheets.fetch_rosters()
         # Start background sync loop
         self.sync_matches_loop.start()
 
