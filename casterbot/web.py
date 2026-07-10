@@ -11037,10 +11037,8 @@ async def api_logo_cleanup_handler(request: web.Request) -> web.Response:
     if not bot:
         return web.json_response({"success": False, "error": "Bot not available"}, status=500)
 
-    # Current teams = rankings CSV + roster CSV
-    ranked_names = {name for name, _ in sheets.get_all_teams()}
-    roster_names = {r["team_name"] for r in sheets.get_all_rosters().values()}
-    current_teams = list(ranked_names | roster_names)
+    # Current teams = roster CSV only
+    current_teams = [r["team_name"] for r in sheets.get_all_rosters().values()]
     stale = await db.get_stale_team_logos(current_teams)
 
     # POST = delete, GET = preview
