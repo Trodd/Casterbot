@@ -8880,12 +8880,15 @@ async def api_teams_handler(request: web.Request) -> web.Response:
         await sheets.fetch_rosters()
         ranked_teams = sheets.get_all_teams()
         all_rosters = sheets.get_all_rosters()
-        if not ranked_teams and not all_rosters:
-            return web.json_response({
-                "success": False,
-                "error": "No team data loaded. Check RANKINGS_CSV_URL and ROSTERS_CSV_URL env vars on Render.",
-            }, status=503)
-    ranked_names = {name.lower() for name, _ in ranked_teams}
+
+    # If still no data at all, return error
+    if not ranked_teams and not all_rosters:
+        return web.json_response({
+            "success": False,
+            "error": "No team data loaded. Check RANKINGS_CSV_URL and ROSTERS_CSV_URL env vars on Render.",
+        }, status=503)
+
+    ranked_names = {name.lower() for name, _ in ranked_teams} if ranked_teams else set()
 
     seen: set[str] = set()
     teams_data: list[dict] = []
