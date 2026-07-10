@@ -5803,7 +5803,7 @@ HTML_TEMPLATE = """
                 }
 
                 btn.disabled = false;
-                let html = '<p style="margin-bottom:10px;color:#f4a261;">' + data.stale_logo_count + ' stale team(s) found (not in current rankings):</p>';
+                let html = '<p style="margin-bottom:10px;color:#f4a261;">' + data.stale_logo_count + ' stale team(s) found (not on roster sheet):</p>';
                 html += '<div class="logo-grid">';
                 for (const name of data.stale_teams) {
                     html += `
@@ -7844,7 +7844,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
                 
                 <div class="admin-section">
                     <div class="admin-section-header">
-                        <h3>Stale Teams <span style="font-weight:normal;font-size:0.85em;color:#888;">(not in current rankings)</span></h3>
+                        <h3>Stale Teams <span style="font-weight:normal;font-size:0.85em;color:#888;">(not on roster sheet)</span></h3>
                         <div>
                             <button class="admin-btn" onclick="loadStaleLogos()">Refresh</button>
                             <button class="admin-btn danger" id="cleanup-stale-btn" onclick="cleanupStaleLogos()" disabled>Delete All Stale</button>
