@@ -8873,6 +8873,18 @@ async def api_teams_handler(request: web.Request) -> web.Response:
     # Build team set: roster CSV teams + rankings CSV teams
     all_rosters = sheets.get_all_rosters()
     ranked_teams = sheets.get_all_teams()  # (name, rank) ordered by rank
+
+    # If both sources are empty, data hasn't loaded yet — try a one-shot fetch
+    if not ranked_teams and not all_rosters:
+        await sheets.fetch_rankings()
+        await sheets.fetch_rosters()
+        ranked_teams = sheets.get_all_teams()
+        all_rosters = sheets.get_all_rosters()
+        if not ranked_teams and not all_rosters:
+            return web.json_response({
+                "success": False,
+                "error": "No team data loaded. Check RANKINGS_CSV_URL and ROSTERS_CSV_URL env vars on Render.",
+            }, status=503)
     ranked_names = {name.lower() for name, _ in ranked_teams}
 
     seen: set[str] = set()

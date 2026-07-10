@@ -89,6 +89,10 @@ class CasterBot(commands.Bot):
         await db.init_db()
         log.info("Database initialized")
 
+        # Fetch rankings and rosters BEFORE starting web server
+        await sheets.fetch_rankings()
+        await sheets.fetch_rosters()
+
         # Register persistent views for existing matches
         await self._register_persistent_views()
 
@@ -111,9 +115,7 @@ class CasterBot(commands.Bot):
         else:
             await self.tree.sync()
         log.info("Slash commands synced")
-        # Fetch rosters and rankings at startup so Teams tab has data immediately
-        await sheets.fetch_rankings()
-        await sheets.fetch_rosters()
+
         # Start background sync loop
         self.sync_matches_loop.start()
 
