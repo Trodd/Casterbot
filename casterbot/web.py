@@ -868,6 +868,19 @@ HTML_TEMPLATE = """
             color: var(--echo-text-dim);
             font-size: 0.85em;
         }
+        .teams-filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            color: #ccc;
+            font-size: 0.85em;
+            cursor: pointer;
+            user-select: none;
+        }
+        .teams-filter-toggle input {
+            cursor: pointer;
+        }
         .teams-list {
             display: flex;
             flex-direction: column;
@@ -3628,6 +3641,9 @@ HTML_TEMPLATE = """
             <div class="teams-tab-header">
                 <h2>Teams</h2>
                 <p class="teams-tab-subtitle">All teams ranked by rating</p>
+                <label class="teams-filter-toggle" id="teams-filter-label" style="display:none;">
+                    <input type="checkbox" id="hide-empty-teams" onchange="filterTeamsList()"> Hide teams with no roster
+                </label>
             </div>
             <div id="teams-list" class="teams-list">
                 <p style="color:#888;text-align:center;padding:40px;">Loading teams...</p>
@@ -4111,6 +4127,7 @@ HTML_TEMPLATE = """
         })();
         
         let teamsLoaded = false;
+        let allTeamsData = [];
         async function loadTeamsList() {
             if (teamsLoaded) return;
             const container = document.getElementById('teams-list');
@@ -4121,30 +4138,52 @@ HTML_TEMPLATE = """
                     container.innerHTML = '<p style="color:#888;text-align:center;padding:40px;">No teams available</p>';
                     return;
                 }
-                const rankTier = (rank) => (rank || '').split(' ')[0].toLowerCase();
-                let html = '';
-                data.teams.forEach((team, idx) => {
-                    const tier = rankTier(team.rank);
-                    const logo = team.logo
-                        ? `<img class="team-list-logo" src="${team.logo}" alt="" loading="lazy">`
-                        : `<div class="team-list-logo-placeholder">⬡</div>`;
-                    const rosterText = team.roster_count ? `${team.roster_count} player${team.roster_count !== 1 ? 's' : ''}` : '';
-                    html += `
-                        <div class="team-list-item" onclick="showTeamDetail('${team.name.replace(/'/g, "\\'")}')">
-                            <span class="team-list-rank-num">#${idx + 1}</span>
-                            ${logo}
-                            <div class="team-list-info">
-                                <div class="team-list-name">${team.name}</div>
-                                <div class="team-list-meta">${rosterText}</div>
-                            </div>
-                            <span class="team-list-rank-badge ${tier}">${team.rank || 'Unranked'}</span>
-                        </div>
-                    `;
-                });
-                container.innerHTML = html;
+                allTeamsData = data.teams;
+                // Show filter toggle if any teams have 0 roster
+                const hasEmpty = data.teams.some(t => t.roster_count === 0);
+                const label = document.getElementById('teams-filter-label');
+                if (label) label.style.display = hasEmpty ? 'inline-flex' : 'none';
+                renderTeamsList(data.teams);
                 teamsLoaded = true;
             } catch (e) {
                 container.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:40px;">Failed to load teams</p>';
+            }
+        }
+
+        function renderTeamsList(teams) {
+            const container = document.getElementById('teams-list');
+            const rankTier = (rank) => (rank || '').split(' ')[0].toLowerCase();
+            let html = '';
+            teams.forEach((team, idx) => {
+                const tier = rankTier(team.rank);
+                const logo = team.logo
+                    ? `<img class="team-list-logo" src="${team.logo}" alt="" loading="lazy">`
+                    : `<div class="team-list-logo-placeholder">⬡</div>`;
+                const rosterText = team.roster_count ? `${team.roster_count} player${team.roster_count !== 1 ? 's' : ''}` : '<span style="color:#ff6b6b;">no roster</span>';
+                html += `
+                    <div class="team-list-item" onclick="showTeamDetail('${team.name.replace(/'/g, "\\'")}')">
+                        <span class="team-list-rank-num">#${idx + 1}</span>
+                        ${logo}
+                        <div class="team-list-info">
+                            <div class="team-list-name">${team.name}</div>
+                            <div class="team-list-meta">${rosterText}</div>
+                        </div>
+                        <span class="team-list-rank-badge ${tier}">${team.rank || 'Unranked'}</span>
+                    </div>
+                `;
+            });
+            container.innerHTML = html || '<p style="color:#888;text-align:center;padding:40px;">No teams match the filter</p>';
+        }
+
+        function filterTeamsList() {
+            const hideEmpty = document.getElementById('hide-empty-teams')?.checked;
+            if (hideEmpty) {
+                const filtered = allTeamsData.filter(t => t.roster_count > 0);
+                renderTeamsList(filtered);
+            } else {
+                renderTeamsList(allTeamsData);
+            }
+        }
             }
         }
 
