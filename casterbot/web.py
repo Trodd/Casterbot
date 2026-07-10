@@ -8870,34 +8870,60 @@ async def api_teams_handler(request: web.Request) -> web.Response:
     bot = request.app.get("bot")
     guild = bot.get_guild(config.GUILD_ID) if bot else None
 
-    all_teams = sheets.get_all_teams()  # Already ordered by rank (highest first)
+    # Build team set: roster CSV teams + rankings CSV teams
+    all_rosters = sheets.get_all_rosters()
+    ranked_teams = sheets.get_all_teams()  # (name, rank) ordered by rank
+    ranked_names = {name.lower() for name, _ in ranked_teams}
 
-    teams_data = []
-    for name, rank in all_teams:
-        # Get logo URL
+    seen: set[str] = set()
+    teams_data: list[dict] = []
+
+    # First: ranked teams in rank order
+    for name, rank in ranked_teams:
+        seen.add(name.lower())
+        roster = all_rosters.get(name.lower(), {})
+        roster_count = roster.get("roster_count", 0)
+        # Fall back to Discord if CSV has no count
+        if roster_count == 0 and guild:
+            for role in guild.roles:
+                if role.name.lower().startswith("team:"):
+                    if role.name[5:].strip().lower() == name.lower():
+                        roster_count = sum(1 for m in role.members if not m.bot)
+                        break
         logo_url = None
         logo = await db.get_team_logo(name)
         if logo:
             base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
             logo_url = f"{base_url}/team-logo/{name}"
-
-        # Get roster count from Discord roles (primary) + CSV (supplement)
-        roster_count = 0
-        if guild:
-            team_name_lower = name.lower()
-            for role in guild.roles:
-                if role.name.lower().startswith("team:"):
-                    role_team_name = role.name[5:].strip().lower()
-                    if role_team_name == team_name_lower:
-                        roster_count = sum(1 for m in role.members if not m.bot)
-                        break
-        # Use CSV count as fallback if Discord shows 0
-        if roster_count == 0:
-            roster_count = sheets.get_roster_count(name)
-
         teams_data.append({
             "name": name,
             "rank": rank,
+            "logo": logo_url,
+            "roster_count": roster_count,
+        })
+
+    # Second: roster CSV teams not in rankings (alphabetical)
+    unranked = []
+    for team_lower, roster in all_rosters.items():
+        if team_lower not in seen:
+            unranked.append((roster["team_name"], roster.get("roster_count", 0)))
+    unranked.sort(key=lambda t: t[0].lower())
+
+    for name, roster_count in unranked:
+        if roster_count == 0 and guild:
+            for role in guild.roles:
+                if role.name.lower().startswith("team:"):
+                    if role.name[5:].strip().lower() == name.lower():
+                        roster_count = sum(1 for m in role.members if not m.bot)
+                        break
+        logo_url = None
+        logo = await db.get_team_logo(name)
+        if logo:
+            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+            logo_url = f"{base_url}/team-logo/{name}"
+        teams_data.append({
+            "name": name,
+            "rank": "",
             "logo": logo_url,
             "roster_count": roster_count,
         })
