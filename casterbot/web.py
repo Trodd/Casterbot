@@ -3642,7 +3642,7 @@ HTML_TEMPLATE = """
                 <h2>Teams</h2>
                 <p class="teams-tab-subtitle">All teams ranked by rating</p>
                 <label class="teams-filter-toggle" id="teams-filter-label" style="display:none;">
-                    <input type="checkbox" id="hide-empty-teams" onchange="filterTeamsList()"> Hide teams with no roster
+                    <input type="checkbox" id="hide-empty-teams" onchange="filterTeamsList()" checked> Hide teams with no roster
                 </label>
             </div>
             <div id="teams-list" class="teams-list">
@@ -4143,7 +4143,8 @@ HTML_TEMPLATE = """
                 const hasEmpty = data.teams.some(t => t.roster_count === 0);
                 const label = document.getElementById('teams-filter-label');
                 if (label) label.style.display = hasEmpty ? 'inline-flex' : 'none';
-                renderTeamsList(data.teams);
+                // Apply default filter (hide empty teams since checkbox is checked by default)
+                filterTeamsList();
                 teamsLoaded = true;
             } catch (e) {
                 container.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:40px;">Failed to load teams</p>';
