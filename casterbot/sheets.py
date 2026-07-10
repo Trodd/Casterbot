@@ -277,3 +277,110 @@ async def fetch_rankings() -> dict[str, str]:
     _ranked_teams_ordered = new_ordered
     log.info(f"Loaded {len(_rankings)} team rankings")
     return _rankings
+
+
+# ---- Rosters cache ----
+_rosters: dict[str, dict] = {}  # team name (lower) -> {status, players: [{name, role}], roster_count}
+
+
+def get_team_roster(team_name: str) -> dict | None:
+    """Return cached roster data for a team, or None."""
+    return _rosters.get(team_name.strip().lower())
+
+
+def get_all_rosters() -> dict[str, dict]:
+    """Return all cached roster data."""
+    return dict(_rosters)
+
+
+def get_roster_count(team_name: str) -> int:
+    """Return roster player count for a team from CSV data."""
+    roster = _rosters.get(team_name.strip().lower())
+    if roster:
+        return roster.get("roster_count", 0)
+    return 0
+
+
+async def fetch_rosters() -> dict[str, dict]:
+    """Fetch team rosters from the published roster CSV and update the cache."""
+    global _rosters
+    if not config.ROSTERS_CSV_URL:
+        return _rosters
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                config.ROSTERS_CSV_URL,
+                headers={"User-Agent": "CasterBot/1.0"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"Rosters fetch failed with status {resp.status}")
+                    return _rosters
+                text = await resp.text()
+        except Exception as e:
+            log.warning(f"Rosters fetch failed: {e}")
+            return _rosters
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if len(rows) < 2:
+        return _rosters
+
+    header = [c.strip().lower() for c in rows[0]]
+
+    # Find columns
+    team_col = -1
+    status_col = -1
+    for i, h in enumerate(header):
+        if h == "team":
+            team_col = i
+        elif h == "status":
+            status_col = i
+
+    if team_col == -1:
+        log.warning(f"Rosters CSV missing 'Team' column (found: {header})")
+        return _rosters
+
+    new_rosters: dict[str, dict] = {}
+    for row in rows[1:]:
+        if len(row) <= team_col:
+            continue
+        team = row[team_col].strip()
+        if not team:
+            continue
+
+        status = row[status_col].strip() if status_col >= 0 and status_col < len(row) else ""
+        players: list[dict] = []
+        # Columns after Team: players (skip Status column)
+        for i in range(team_col + 1, len(row)):
+            if i == status_col:
+                continue
+            name = row[i].strip()
+            if not name:
+                continue
+            # Detect role from name prefix like "(CC)" or "Manager"
+            role = "Player"
+            cleaned = name
+            if name.startswith("(CC)"):
+                role = "Co-Captain"
+                cleaned = name[4:].strip()
+            elif name.lower().endswith("-manager"):
+                role = "Manager"
+            elif cleaned.lower() == "captain":
+                role = "Captain"
+            # First player column after Team = Captain
+            if not players:
+                role = "Captain"
+            players.append({"name": cleaned, "role": role})
+
+        new_rosters[team.lower()] = {
+            "team_name": team,
+            "status": status,
+            "players": players,
+            "roster_count": len(players),
+        }
+
+    _rosters = new_rosters
+    log.info(f"Loaded rosters for {len(_rosters)} teams")
+    return _rosters

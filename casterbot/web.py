@@ -8881,9 +8881,9 @@ async def api_teams_handler(request: web.Request) -> web.Response:
             base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
             logo_url = f"{base_url}/team-logo/{name}"
 
-        # Get roster count and members from Discord role
-        roster_count = 0
-        if guild:
+        # Get roster count: prefer CSV roster data, fall back to Discord role count
+        roster_count = sheets.get_roster_count(name)
+        if roster_count == 0 and guild:
             team_name_lower = name.lower()
             for role in guild.roles:
                 if role.name.lower().startswith("team:"):
@@ -8920,9 +8920,19 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
         base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
         logo_url = f"{base_url}/team-logo/{team_name}"
 
-    # Build roster from Discord role
+    # Build roster: prefer CSV data with player names, fall back to Discord role members
     roster = []
-    if guild:
+    csv_roster = sheets.get_team_roster(team_name)
+    if csv_roster and csv_roster.get("players"):
+        for p in csv_roster["players"]:
+            roster.append({
+                "user_id": "",
+                "username": p["name"],
+                "display_name": p["name"],
+                "avatar_url": None,
+                "role": p["role"],
+            })
+    elif guild:
         team_name_lower = team_name.lower()
         team_role = None
         for role in guild.roles:
@@ -8933,7 +8943,6 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
                     break
 
         if team_role:
-            # Find captain role (CaptainNA / role ID 1182380145047249000)
             captain_role = None
             for role in guild.roles:
                 if role.id == 1182380145047249000 or role.name.lower() == "captainna":

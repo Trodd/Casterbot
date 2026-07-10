@@ -224,6 +224,9 @@ async def sync_matches(bot: CasterBot) -> int:
     # Refresh team rankings cache
     await sheets.fetch_rankings()
 
+    # Refresh roster cache
+    await sheets.fetch_rosters()
+
     existing_matches = await db.get_matches_with_message()
 
     # Get current match IDs from sheet
