@@ -8989,68 +8989,44 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
         base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
         logo_url = f"{base_url}/team-logo/{team_name}"
 
-    # Build roster: prefer CSV data with player names, fall back to Discord role members
+    # Build roster from Discord team role members, enriched with CSV roles
     roster = []
     csv_roster = sheets.get_team_roster(team_name)
-    if csv_roster and csv_roster.get("players") and guild:
-        # Build a lookup: lowercase name → member
-        member_lookup: dict[str, discord.Member] = {}
-        for m in guild.members:
-            if not m.bot:
-                member_lookup[m.display_name.lower()] = m
-                member_lookup[m.name.lower()] = m
 
+    # Build CSV name → role lookup (case-insensitive)
+    csv_role_lookup: dict[str, str] = {}
+    if csv_roster and csv_roster.get("players"):
         for p in csv_roster["players"]:
-            csv_name = p["name"].lower()
-            member = member_lookup.get(csv_name)
-            if member:
-                avatar_url = await get_user_avatar_url(bot, member.id)
-                roster.append({
-                    "user_id": str(member.id),
-                    "username": member.name,
-                    "display_name": member.display_name,
-                    "avatar_url": avatar_url,
-                    "role": p["role"],
-                })
-            else:
-                roster.append({
-                    "user_id": "",
-                    "username": "",
-                    "display_name": p["name"],
-                    "avatar_url": None,
-                    "role": p["role"],
-                })
-    elif guild:
+            csv_role_lookup[p["name"].lower()] = p["role"]
+
+    if guild:
         team_name_lower = team_name.lower()
         team_role = None
         for role in guild.roles:
             if role.name.lower().startswith("team:"):
-                role_team_name = role.name[5:].strip().lower()
-                if role_team_name == team_name_lower:
+                if role.name[5:].strip().lower() == team_name_lower:
                     team_role = role
                     break
 
         if team_role:
-            captain_role = None
-            for role in guild.roles:
-                if role.id == 1182380145047249000 or role.name.lower() == "captainna":
-                    captain_role = role
-                    break
-
             for member in team_role.members:
                 if member.bot:
                     continue
-                is_captain = captain_role in member.roles if captain_role else False
                 avatar_url = await get_user_avatar_url(bot, member.id)
+                # Try to match Discord member to CSV player by name
+                csv_role = csv_role_lookup.get(member.display_name.lower()) or csv_role_lookup.get(member.name.lower())
+                role_label = csv_role or "Player"
                 roster.append({
                     "user_id": str(member.id),
                     "username": member.name,
                     "display_name": member.display_name,
                     "avatar_url": avatar_url,
-                    "role": "Captain" if is_captain else "Member",
+                    "role": role_label,
                 })
 
-            roster.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
+    # Sort: Captain → Co-Captain → Player
+    role_order = {"Captain": 0, "Co-Captain": 1, "Player": 2, "Member": 2}
+    roster.sort(key=lambda m: (role_order.get(m["role"], 3), m["display_name"].lower()))
 
     return web.json_response({
         "success": True,
