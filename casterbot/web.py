@@ -4238,7 +4238,7 @@ HTML_TEMPLATE = """
                             ${p.avatar_url ? `<img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">` : ''}
                             <div class="match-detail-player-info">
                                 <div class="match-detail-player-name">${p.display_name}</div>
-                                <div class="match-detail-player-username">@${p.username}</div>
+                                ${p.username ? `<div class="match-detail-player-username">@${p.username}</div>` : ''}
                             </div>
                             <span class="match-detail-player-role ${(p.role||'member').toLowerCase()}">${p.role || 'Member'}</span>
                         </li>
@@ -4296,7 +4296,7 @@ HTML_TEMPLATE = """
                             <img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">
                             <div class="match-detail-player-info">
                                 <div class="match-detail-player-name">${p.display_name}</div>
-                                <div class="match-detail-player-username">@${p.username}</div>
+                                ${p.username ? `<div class="match-detail-player-username">@${p.username}</div>` : ''}
                             </div>
                             <span class="match-detail-player-role ${p.role.toLowerCase()}">${p.role}</span>
                         </li>
@@ -8992,15 +8992,34 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
     # Build roster: prefer CSV data with player names, fall back to Discord role members
     roster = []
     csv_roster = sheets.get_team_roster(team_name)
-    if csv_roster and csv_roster.get("players"):
+    if csv_roster and csv_roster.get("players") and guild:
+        # Build a lookup: lowercase name → member
+        member_lookup: dict[str, discord.Member] = {}
+        for m in guild.members:
+            if not m.bot:
+                member_lookup[m.display_name.lower()] = m
+                member_lookup[m.name.lower()] = m
+
         for p in csv_roster["players"]:
-            roster.append({
-                "user_id": "",
-                "username": p["name"],
-                "display_name": p["name"],
-                "avatar_url": None,
-                "role": p["role"],
-            })
+            csv_name = p["name"].lower()
+            member = member_lookup.get(csv_name)
+            if member:
+                avatar_url = await get_user_avatar_url(bot, member.id)
+                roster.append({
+                    "user_id": str(member.id),
+                    "username": member.name,
+                    "display_name": member.display_name,
+                    "avatar_url": avatar_url,
+                    "role": p["role"],
+                })
+            else:
+                roster.append({
+                    "user_id": "",
+                    "username": "",
+                    "display_name": p["name"],
+                    "avatar_url": None,
+                    "role": p["role"],
+                })
     elif guild:
         team_name_lower = team_name.lower()
         team_role = None
