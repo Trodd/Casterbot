@@ -273,6 +273,11 @@ async def fetch_rankings() -> dict[str, str]:
             new_rankings[team.lower()] = rank
             new_ordered.append((team, rank))
 
+    # Guard: don't overwrite a large cache with a tiny result (likely fetch failure)
+    if len(new_rankings) < 5 and len(_rankings) > len(new_rankings):
+        log.warning(f"Rankings fetch returned only {len(new_rankings)} teams, keeping existing {len(_rankings)}")
+        return _rankings
+
     _rankings = new_rankings
     _ranked_teams_ordered = new_ordered
     log.info(f"Loaded {len(_rankings)} team rankings")
@@ -380,6 +385,11 @@ async def fetch_rosters() -> dict[str, dict]:
             "players": players,
             "roster_count": len(players),
         }
+
+    # Guard: don't overwrite a large cache with a tiny result (likely fetch failure)
+    if len(new_rosters) < 5 and len(_rosters) > len(new_rosters):
+        log.warning(f"Rosters fetch returned only {len(new_rosters)} teams, keeping existing {len(_rosters)}")
+        return _rosters
 
     _rosters = new_rosters
     log.info(f"Loaded rosters for {len(_rosters)} teams")
