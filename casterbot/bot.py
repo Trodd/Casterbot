@@ -89,10 +89,6 @@ class CasterBot(commands.Bot):
         await db.init_db()
         log.info("Database initialized")
 
-        # Fetch rankings and rosters BEFORE starting web server
-        await sheets.fetch_rankings()
-        await sheets.fetch_rosters()
-
         # Register persistent views for existing matches
         await self._register_persistent_views()
 
@@ -136,6 +132,9 @@ class CasterBot(commands.Bot):
 
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        # Fetch data now that the bot is fully connected
+        await sheets.fetch_rankings()
+        await sheets.fetch_rosters()
 
     async def on_message(self, message: discord.Message) -> None:
         # Ignore messages from bots (including self)
