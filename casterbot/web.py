@@ -881,6 +881,26 @@ HTML_TEMPLATE = """
         .teams-filter-toggle input {
             cursor: pointer;
         }
+        .teams-search-input {
+            display: block;
+            width: 100%;
+            max-width: 320px;
+            margin: 10px auto 0;
+            padding: 8px 14px;
+            border: 1px solid #333;
+            border-radius: 20px;
+            background: #1a1a2e;
+            color: #ccc;
+            font-size: 0.9em;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .teams-search-input:focus {
+            border-color: var(--echo-cyan);
+        }
+        .teams-search-input::placeholder {
+            color: #666;
+        }
         .teams-list {
             display: flex;
             flex-direction: column;
@@ -3641,6 +3661,7 @@ HTML_TEMPLATE = """
             <div class="teams-tab-header">
                 <h2>Teams</h2>
                 <p class="teams-tab-subtitle">All teams ranked by rating</p>
+                <input type="text" id="teams-search" class="teams-search-input" placeholder="Search teams..." oninput="filterTeamsList()" style="display:none;">
                 <label class="teams-filter-toggle" id="teams-filter-label" style="display:none;">
                     <input type="checkbox" id="hide-empty-teams" onchange="filterTeamsList()" checked> Hide teams with no roster
                 </label>
@@ -4139,7 +4160,8 @@ HTML_TEMPLATE = """
                     return;
                 }
                 allTeamsData = data.teams;
-                // Show filter toggle if any teams have 0 roster
+                // Show search and filter toggle
+                document.getElementById('teams-search').style.display = 'block';
                 const hasEmpty = data.teams.some(t => t.roster_count === 0);
                 const label = document.getElementById('teams-filter-label');
                 if (label) label.style.display = hasEmpty ? 'inline-flex' : 'none';
@@ -4178,12 +4200,15 @@ HTML_TEMPLATE = """
 
         function filterTeamsList() {
             const hideEmpty = document.getElementById('hide-empty-teams')?.checked;
+            const searchText = (document.getElementById('teams-search')?.value || '').toLowerCase().trim();
+            let teams = allTeamsData;
             if (hideEmpty) {
-                const filtered = allTeamsData.filter(t => t.roster_count > 0);
-                renderTeamsList(filtered);
-            } else {
-                renderTeamsList(allTeamsData);
+                teams = teams.filter(t => t.roster_count > 0);
             }
+            if (searchText) {
+                teams = teams.filter(t => t.name.toLowerCase().includes(searchText));
+            }
+            renderTeamsList(teams);
         }
 
         async function showTeamDetail(teamName) {
