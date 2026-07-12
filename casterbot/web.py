@@ -11391,24 +11391,187 @@ async def api_logo_rename_handler(request: web.Request) -> web.Response:
 
 
 async def team_logo_handler(request: web.Request) -> web.Response:
-    """Serve a team's logo image."""
+    """Serve a team's logo image, or generate an initials placeholder."""
+    import struct
+    import zlib
     from urllib.parse import unquote
-    
+
     team_name = unquote(request.match_info.get("team_name", ""))
     if not team_name:
         return web.Response(text="Missing team_name", status=400)
-    
+
     logo = await db.get_team_logo(team_name)
-    if not logo:
-        return web.Response(text="Logo not found", status=404)
-    
-    filepath = config.TEAM_LOGOS_DIR / logo["filename"]
-    if not filepath.exists():
-        return web.Response(text="Logo file not found", status=404)
-    
-    return web.FileResponse(filepath, headers={
-        "Cache-Control": "public, max-age=3600"
-    })
+    if logo:
+        filepath = config.TEAM_LOGOS_DIR / logo["filename"]
+        if filepath.exists():
+            return web.FileResponse(filepath, headers={
+                "Cache-Control": "public, max-age=3600"
+            })
+
+    # No approved logo — generate an initials placeholder PNG
+    initials = _team_initials(team_name)
+    png_bytes = _generate_team_placeholder_png(initials)
+    return web.Response(
+        body=png_bytes,
+        content_type="image/png",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+def _team_initials(name: str) -> str:
+    """Extract 1-3 letter initials from a team name."""
+    if not name:
+        return "??"
+    words = name.split()
+    parts = [w for w in words if w]
+    if not parts:
+        return "??"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return "".join(p[:1] for p in parts[:3]).upper()
+
+
+# Minimal 7-row × variable-width bitmap font for A-Z (pixel rows, top to bottom)
+# Each row is an integer where bit N = pixel at column N (0 = leftmost)
+_BITMAP_FONT: dict[str, list[int]] = {
+    "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    "B": [0b11110, 0b10001, 0b11110, 0b10001, 0b10001, 0b10001, 0b11110],
+    "C": [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+    "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+    "E": [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b11111],
+    "F": [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b10000],
+    "G": [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
+    "H": [0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001, 0b10001],
+    "I": [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
+    "J": [0b00111, 0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b01110],
+    "K": [0b10001, 0b10010, 0b11100, 0b10000, 0b11100, 0b10010, 0b10001],
+    "L": [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+    "M": [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001],
+    "N": [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
+    "O": [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+    "P": [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+    "Q": [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
+    "R": [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+    "S": [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+    "T": [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+    "U": [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+    "V": [0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b01010, 0b00100],
+    "W": [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+    "X": [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+    "Y": [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+    "Z": [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+    "?": [0b01110, 0b10001, 0b00001, 0b00110, 0b00100, 0b00000, 0b00100],
+}
+
+
+def _glyph_width(ch: str) -> int:
+    """Return the pixel width of a glyph (max set bit index + 1), minimum 3."""
+    rows = _BITMAP_FONT.get(ch.upper())
+    if not rows:
+        return 4
+    max_bit = max(r.bit_length() for r in rows)
+    return max(max_bit, 3)
+
+
+def _draw_glyph(pixels: bytearray, stride: int, ch: str, x: int, y: int, scale: int, color: tuple) -> int:
+    """Draw one glyph into pixel buffer at (x, y) with given scale. Returns glyph width * scale."""
+    rows = _BITMAP_FONT.get(ch.upper())
+    if not rows:
+        # Draw a filled rectangle for unknown chars
+        w = 4 * scale
+        for dy in range(7 * scale):
+            for dx in range(w):
+                px = x + dx
+                py = y + dy
+                if 0 <= px < stride and 0 <= py < (len(pixels) // (stride * 4)):
+                    off = (py * stride + px) * 4
+                    pixels[off:off + 4] = bytes(color)
+        return w
+
+    glyph_w = _glyph_width(ch)
+    for row_idx, row_bits in enumerate(rows):
+        for col in range(glyph_w):
+            if row_bits & (1 << col):
+                for sy in range(scale):
+                    for sx in range(scale):
+                        px = x + col * scale + sx
+                        py = y + row_idx * scale + sy
+                        off = (py * stride + px) * 4
+                        pixels[off:off + 4] = bytes(color)
+    return glyph_w * scale
+
+
+def _generate_team_placeholder_png(initials: str) -> bytes:
+    """Generate a 256×256 PNG with team initials in white on a dark gray gradient."""
+    import struct, zlib
+
+    size = 256
+    stride = size  # pixels per row
+
+    # RGBA pixel buffer
+    pixels = bytearray(size * stride * 4)
+
+    # Fill with dark gray gradient (top to bottom)
+    for y in range(size):
+        t = y / size
+        r = int(42 + (58 - 42) * t)  # 2a → 3a
+        g = int(42 + (58 - 42) * t)
+        b = int(58 - (58 - 42) * t)  # 3a → 2a
+        alpha = 255
+        for x in range(stride):
+            off = (y * stride + x) * 4
+            pixels[off] = r
+            pixels[off + 1] = g
+            pixels[off + 2] = b
+            pixels[off + 3] = alpha
+
+    # Scale font so text fits nicely
+    glyph_height = 7  # base font height in pixels
+    target_height = size * 0.28  # ~72px tall
+    scale = max(1, int(target_height / glyph_height))
+
+    # Measure total text width
+    spacing = 1  # pixels between glyphs (at base scale)
+    total_base_w = sum(_glyph_width(c) + spacing for c in initials) - (spacing if initials else 0)
+    total_w = total_base_w * scale
+
+    # Center the text
+    start_x = (size - total_w) // 2
+    start_y = (size - glyph_height * scale) // 2
+
+    # Draw each glyph
+    color = (255, 255, 255, 255)
+    cursor = start_x
+    for ch in initials:
+        gw = _draw_glyph(pixels, stride, ch, cursor, start_y, scale, color)
+        cursor += gw + spacing * scale
+
+    # Build PNG
+    def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+        chunk = chunk_type + data
+        crc = struct.pack(">I", zlib.crc32(chunk) & 0xFFFFFFFF)
+        return struct.pack(">I", len(data)) + chunk + crc
+
+    # PNG signature
+    png = b"\x89PNG\r\n\x1a\n"
+
+    # IHDR
+    ihdr_data = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)  # 8-bit RGBA
+    png += _png_chunk(b"IHDR", ihdr_data)
+
+    # IDAT — compress raw pixel data with filter byte 0 per row
+    raw = b""
+    for y in range(size):
+        raw += b"\x00"  # filter: None
+        raw += bytes(pixels[y * stride * 4:(y + 1) * stride * 4])
+
+    compressed = zlib.compress(raw)
+    png += _png_chunk(b"IDAT", compressed)
+
+    # IEND
+    png += _png_chunk(b"IEND", b"")
+
+    return png
 
 
 async def api_active_cycle_handler(request: web.Request) -> web.Response:
