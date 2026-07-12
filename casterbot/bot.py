@@ -89,6 +89,14 @@ class CasterBot(commands.Bot):
         await db.init_db()
         log.info("Database initialized")
 
+        # Eagerly preload rankings and rosters so the web UI has team data immediately
+        try:
+            await sheets.fetch_rankings()
+            await sheets.fetch_rosters()
+            log.info("Rankings and rosters preloaded")
+        except Exception as exc:
+            log.warning(f"Could not preload rankings/rosters: {exc}")
+
         # Register persistent views for existing matches
         await self._register_persistent_views()
 
