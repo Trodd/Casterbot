@@ -9499,6 +9499,238 @@ async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "bracket": bracket})
 
 
+# ============ RPC Logo Endpoints (for external site sync) ============
+
+async def rpc_logo_pending_handler(request: web.Request) -> web.Response:
+    """RPC endpoint: get pending logo submissions (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+
+    if not config.TEAM_LOGO_CHANNEL_ID:
+        return web.json_response({"success": False, "error": "TEAM_LOGO_CHANNEL_ID not configured"}, status=500)
+
+    guild = bot.get_guild(config.GUILD_ID)
+    if not guild:
+        return web.json_response({"success": False, "error": "Guild not found"}, status=500)
+
+    channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+    if not channel:
+        return web.json_response({"success": False, "error": "Logo channel not found"}, status=500)
+
+    approved_logos = await db.get_all_team_logos()
+    approved_msg_ids = {logo["discord_message_id"] for logo in approved_logos if logo.get("discord_message_id")}
+
+    pending = []
+    try:
+        async for msg in channel.history(limit=100):
+            if msg.id in approved_msg_ids:
+                continue
+            image_attachments = [a for a in msg.attachments if a.content_type and a.content_type.startswith("image/")]
+            if not image_attachments:
+                continue
+            team_name = None
+            member = guild.get_member(msg.author.id)
+            if member:
+                for role in member.roles:
+                    if role.name.lower().startswith("team:"):
+                        team_name = role.name[5:].strip()
+                        break
+            if not team_name:
+                continue
+            existing_logo = await db.get_team_logo(team_name)
+            pending.append({
+                "message_id": str(msg.id),
+                "user_id": str(msg.author.id),
+                "username": msg.author.name,
+                "display_name": msg.author.display_name,
+                "team_name": team_name,
+                "image_url": image_attachments[0].url,
+                "image_filename": image_attachments[0].filename,
+                "posted_at": msg.created_at.isoformat(),
+                "has_existing_logo": existing_logo is not None,
+            })
+    except Exception as e:
+        log.error(f"[RPC] Failed to read logo channel: {e}", exc_info=True)
+        return web.json_response({"success": False, "error": f"Failed to read logo channel: {e}"}, status=500)
+
+    return web.json_response({"success": True, "pending": pending})
+
+
+async def rpc_logo_approve_handler(request: web.Request) -> web.Response:
+    """RPC endpoint: approve a logo (requires API key)."""
+    import aiohttp as aiohttp_client
+    import uuid
+
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    message_id = data.get("message_id")
+    team_name = data.get("team_name")
+    image_url = data.get("image_url")
+    approved_by = data.get("approved_by", "rpc")  # identifier of who approved
+
+    if not message_id or not team_name or not image_url:
+        return web.json_response({"success": False, "error": "Missing required fields"}, status=400)
+
+    try:
+        message_id_int = int(message_id)
+    except ValueError:
+        return web.json_response({"success": False, "error": "Invalid message_id"}, status=400)
+
+    # Download the image
+    try:
+        async with aiohttp_client.ClientSession() as client_session:
+            async with client_session.get(image_url) as resp:
+                if resp.status != 200:
+                    return web.json_response({"success": False, "error": "Failed to download image"}, status=500)
+                content_type = resp.headers.get("Content-Type", "")
+                ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
+                ext = ext_map.get(content_type, ".png")
+                image_data = await resp.read()
+    except Exception as e:
+        log.error(f"[RPC] Failed to download logo image: {e}")
+        return web.json_response({"success": False, "error": "Failed to download image"}, status=500)
+
+    config.TEAM_LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+
+    old_filename = await db.delete_team_logo(team_name)
+    if old_filename:
+        old_path = config.TEAM_LOGOS_DIR / old_filename
+        if old_path.exists():
+            old_path.unlink()
+
+    safe_team_name = "".join(c if c.isalnum() else "_" for c in team_name)
+    filename = f"{safe_team_name}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = config.TEAM_LOGOS_DIR / filename
+    filepath.write_bytes(image_data)
+
+    await db.set_team_logo(team_name, filename, message_id_int, 0)  # 0 = approved via RPC
+
+    if config.TEAM_LOGO_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+            if channel:
+                msg = await channel.fetch_message(message_id_int)
+                await msg.add_reaction("\u2705")
+        except Exception as e:
+            log.warning(f"[RPC] Failed to add reaction: {e}")
+
+    log.info(f"[RPC] Logo approved for {team_name} by {approved_by}")
+    return web.json_response({"success": True, "message": f"Approved logo for {team_name}"})
+
+
+async def rpc_logo_reject_handler(request: web.Request) -> web.Response:
+    """RPC endpoint: reject a logo (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+
+    bot = request.app.get("bot")
+    if not bot:
+        return web.json_response({"success": False, "error": "Bot not available"}, status=500)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    message_id = data.get("message_id")
+    delete_message = data.get("delete_message", False)
+
+    if not message_id:
+        return web.json_response({"success": False, "error": "Missing message_id"}, status=400)
+
+    if config.TEAM_LOGO_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
+            if channel:
+                msg = await channel.fetch_message(int(message_id))
+                if delete_message:
+                    await msg.delete()
+                else:
+                    await msg.add_reaction("\u274C")
+        except Exception as e:
+            log.warning(f"[RPC] Failed to react/delete logo message: {e}")
+
+    log.info(f"[RPC] Logo rejected: message_id={message_id}")
+    return web.json_response({"success": True, "message": "Logo rejected"})
+
+
+async def rpc_logo_list_handler(request: web.Request) -> web.Response:
+    """RPC endpoint: get all approved logos (requires API key)."""
+    if not _check_rpc_key(request):
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+
+    logos = await db.get_all_team_logos()
+    base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+
+    result = []
+    for logo in logos:
+        result.append({
+            "team_name": logo["team_name"],
+            "logo_url": f"{base_url}/team-logo/{logo['team_name']}",
+            "approved_at": logo["approved_at"],
+        })
+
+    return web.json_response({"success": True, "logos": result})
+
+
+async def rpc_sso_handler(request: web.Request) -> web.Response:
+    """RPC SSO endpoint: accept a Discord access token, create a session, redirect.
+    Aaliyah's site calls: /rpc/sso?token=<discord_access_token>&redirect=<url>
+    """
+    import aiohttp as aiohttp_client
+
+    token = request.query.get("token")
+    redirect_url = request.query.get("redirect", "/")
+
+    if not token:
+        return web.Response(text="Missing token parameter", status=400)
+
+    # Verify the token with Discord
+    try:
+        async with aiohttp_client.ClientSession() as session:
+            async with session.get(
+                "https://discord.com/api/users/@me",
+                headers={"Authorization": f"Bearer {token}"},
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"[RPC] SSO - invalid Discord token from {request.remote}")
+                    return web.Response(text="Invalid or expired Discord token", status=401)
+                user_data = await resp.json()
+    except Exception as e:
+        log.error(f"[RPC] SSO - Discord verification failed: {e}")
+        return web.Response(text="Failed to verify token", status=500)
+
+    # Create session (same format as normal Discord login)
+    session_id = secrets.token_urlsafe(32)
+    _sessions[session_id] = {
+        "user_id": int(user_data["id"]),
+        "username": user_data["username"],
+        "discriminator": user_data.get("discriminator", "0"),
+        "avatar": user_data.get("avatar"),
+        "global_name": user_data.get("global_name"),
+    }
+
+    log.info(f"[RPC] SSO login - {user_data['username']} (ID: {user_data['id']})")
+
+    response = web.HTTPFound(redirect_url)
+    response.set_cookie("session", session_id, max_age=86400 * 7, httponly=True, samesite="Lax")
+    return response
+
+
 # Admin API helpers
 async def _check_admin(request: web.Request) -> tuple[dict | None, web.Response | None]:
     """Check if user is admin. Returns (session, error_response)."""
@@ -11920,6 +12152,13 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/rpc/set_stream_channel", rpc_set_stream_channel_handler)
     app.router.add_get("/rpc/match", rpc_get_match_handler)
     app.router.add_get("/rpc/bracket", rpc_get_bracket_handler)
+    # RPC logo endpoints (for external site sync)
+    app.router.add_get("/rpc/logos/pending", rpc_logo_pending_handler)
+    app.router.add_post("/rpc/logos/approve", rpc_logo_approve_handler)
+    app.router.add_post("/rpc/logos/reject", rpc_logo_reject_handler)
+    app.router.add_get("/rpc/logos", rpc_logo_list_handler)
+    # RPC SSO (single sign-on from Aaliyah's site)
+    app.router.add_get("/rpc/sso", rpc_sso_handler)
     # Admin API routes
     app.router.add_post("/api/admin/sync", api_admin_sync_handler)
     app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
