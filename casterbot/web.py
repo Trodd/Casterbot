@@ -8947,12 +8947,14 @@ async def api_teams_handler(request: web.Request) -> web.Response:
     all_rosters = sheets.get_all_rosters()
     ranked_teams = sheets.get_all_teams()  # (name, rank) ordered by rank
 
-    # If both sources are empty, data hasn't loaded yet — try a one-shot fetch
-    if not ranked_teams and not all_rosters:
-        await sheets.fetch_rankings()
-        await sheets.fetch_rosters()
-        ranked_teams = sheets.get_all_teams()
-        all_rosters = sheets.get_all_rosters()
+    # If either source is empty, data hasn't loaded yet — try a one-shot fetch
+    if not ranked_teams or not all_rosters:
+        if not ranked_teams:
+            await sheets.fetch_rankings()
+            ranked_teams = sheets.get_all_teams()
+        if not all_rosters:
+            await sheets.fetch_rosters()
+            all_rosters = sheets.get_all_rosters()
 
     # If still no data at all, return error
     if not ranked_teams and not all_rosters:
