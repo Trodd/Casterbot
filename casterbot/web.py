@@ -11491,7 +11491,8 @@ def _draw_glyph(pixels: bytearray, stride: int, ch: str, x: int, y: int, scale: 
     glyph_w = _glyph_width(ch)
     for row_idx, row_bits in enumerate(rows):
         for col in range(glyph_w):
-            if row_bits & (1 << col):
+            # bit 0 = rightmost pixel, so reverse: col 0 → MSB side
+            if row_bits & (1 << (glyph_w - 1 - col)):
                 for sy in range(scale):
                     for sx in range(scale):
                         px = x + col * scale + sx
@@ -11502,10 +11503,10 @@ def _draw_glyph(pixels: bytearray, stride: int, ch: str, x: int, y: int, scale: 
 
 
 def _generate_team_placeholder_png(initials: str) -> bytes:
-    """Generate a 256×256 PNG with team initials in white on a dark gray gradient."""
+    """Generate a 1254×1254 PNG with team initials in white on a dark gray gradient."""
     import struct, zlib
 
-    size = 256
+    size = 1254
     stride = size  # pixels per row
 
     # RGBA pixel buffer
