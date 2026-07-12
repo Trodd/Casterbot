@@ -4217,9 +4217,10 @@ HTML_TEMPLATE = """
             let html = '';
             teams.forEach((team, idx) => {
                 const tier = rankTier(team.rank);
+                const logoUrl = team.logo || `/team-logo/${encodeURIComponent(team.name)}`;
                 const logo = team.logo
-                    ? `<img class="team-list-logo" src="${team.logo}" alt="" loading="lazy">`
-                    : `<div class="team-list-logo-placeholder">${initialsFor(team.name)}</div>`;
+                    ? `<a href="${logoUrl}" target="_blank" onclick="event.stopPropagation()"><img class="team-list-logo" src="${team.logo}" alt="" loading="lazy"></a>`
+                    : `<a href="${logoUrl}" target="_blank" onclick="event.stopPropagation()"><div class="team-list-logo-placeholder">${initialsFor(team.name)}</div></a>`;
                 const rosterText = team.roster_count ? `${team.roster_count} player${team.roster_count !== 1 ? 's' : ''}` : '<span style="color:#ff6b6b;">no roster</span>';
                 html += `
                     <div class="team-list-item" onclick="showTeamDetail('${team.name.replace(/'/g, "\\'")}')">
@@ -4283,9 +4284,10 @@ HTML_TEMPLATE = """
                     `).join('') + '</ul>';
                 };
 
+                const logoUrl = logo || `/team-logo/${encodeURIComponent(teamName)}`;
                 const logoHtml = logo
-                    ? `<img class="match-detail-team-logo" src="${logo}" alt="">`
-                    : `<span class="match-detail-team-logo-placeholder">${initialsFor(teamName)}</span>`;
+                    ? `<a href="${logoUrl}" target="_blank"><img class="match-detail-team-logo" src="${logo}" alt=""></a>`
+                    : `<a href="${logoUrl}" target="_blank"><span class="match-detail-team-logo-placeholder">${initialsFor(teamName)}</span></a>`;
                 const rankHtml = rank ? `<span class="match-detail-team-rank">${rank}</span>` : '';
 
                 modal.querySelector('.match-detail-box').innerHTML = `
@@ -4343,12 +4345,14 @@ HTML_TEMPLATE = """
                     `).join('') + '</ul>';
                 };
 
+                const teamALogoUrl = m.team_a_logo || `/team-logo/${encodeURIComponent(m.team_a)}`;
+                const teamBLogoUrl = m.team_b_logo || `/team-logo/${encodeURIComponent(m.team_b)}`;
                 const teamALogo = m.team_a_logo
-                    ? `<img class="match-detail-team-logo" src="${m.team_a_logo}" alt="">`
-                    : `<span class="match-detail-team-logo-placeholder">${initialsFor(m.team_a)}</span>`;
+                    ? `<a href="${teamALogoUrl}" target="_blank"><img class="match-detail-team-logo" src="${m.team_a_logo}" alt=""></a>`
+                    : `<a href="${teamALogoUrl}" target="_blank"><span class="match-detail-team-logo-placeholder">${initialsFor(m.team_a)}</span></a>`;
                 const teamBLogo = m.team_b_logo
-                    ? `<img class="match-detail-team-logo" src="${m.team_b_logo}" alt="">`
-                    : `<span class="match-detail-team-logo-placeholder">${initialsFor(m.team_b)}</span>`;
+                    ? `<a href="${teamBLogoUrl}" target="_blank"><img class="match-detail-team-logo" src="${m.team_b_logo}" alt=""></a>`
+                    : `<a href="${teamBLogoUrl}" target="_blank"><span class="match-detail-team-logo-placeholder">${initialsFor(m.team_b)}</span></a>`;
                 const teamARank = m.team_a_rank ? `<span class="match-detail-team-rank">${m.team_a_rank}</span>` : '';
                 const teamBRank = m.team_b_rank ? `<span class="match-detail-team-rank">${m.team_b_rank}</span>` : '';
 
