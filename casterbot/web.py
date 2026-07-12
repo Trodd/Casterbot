@@ -12432,6 +12432,39 @@ def create_app(bot=None) -> web.Application:
     app = web.Application(client_max_size=10 * 1024 * 1024)  # 10MB max upload
     app["bot"] = bot
 
+    # --- CORS: allow external sites to call RPC / API endpoints ---
+    _ALLOWED_ORIGINS: frozenset[str] = frozenset({
+        "https://echo-master-league-website.pages.dev",
+        "https://casterbot.onrender.com",
+    })
+
+    @web.middleware
+    async def _cors_middleware(inner_request: web.Request, handler) -> web.StreamResponse:
+        # Handle preflight
+        if inner_request.method == "OPTIONS":
+            origin = inner_request.headers.get("Origin", "")
+            if origin in _ALLOWED_ORIGINS or True:  # allow any origin for RPC endpoints
+                resp = web.Response(status=204)
+                resp.headers["Access-Control-Allow-Origin"] = origin
+                resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+                resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key, Authorization"
+                resp.headers["Access-Control-Max-Age"] = "86400"
+                return resp
+            return web.Response(status=405)
+
+        # Actual request — add CORS headers to response
+        try:
+            resp = await handler(inner_request)
+        except web.HTTPException as exc:
+            resp = exc
+        origin = inner_request.headers.get("Origin", "")
+        if origin:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Expose-Headers"] = "Content-Type"
+        return resp
+
+    app.middlewares.append(_cors_middleware)
+
     # Serve static files (fonts, icons, etc.)
     _static_dir = pathlib.Path(__file__).parent / "static"
     app.router.add_static("/static/", path=str(_static_dir), show_index=False)

@@ -1,6 +1,6 @@
 # CasterBot RPC Integration Guide
 
-For connecting an external site to CasterBot's logo approval system and SSO.
+For connecting an external site to CasterBot — broadcast control, match data, logos, SSO, and monitoring.
 
 **Base URL:** `https://casterbot.onrender.com`
 
@@ -14,7 +14,213 @@ All RPC endpoints require an API key. Send it as an HTTP header:
 X-API-Key: your-shared-key
 ```
 
+You may also pass it as a query parameter: `?api_key=your-shared-key` (useful for GET requests from browser links).
+
 Ask Todd for the actual key value.
+
+---
+
+## Quick Reference — All Endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/rpc/create_channel` | Create private Discord channel for a match |
+| POST | `/rpc/crew_ready` | Send "crew ready" ping to teams |
+| POST | `/rpc/go_live` | Post live announcement |
+| POST | `/rpc/set_stream_channel` | Set stream channel (1 or 2) |
+| GET | `/rpc/match` | Get match details + crew + rosters |
+| GET | `/rpc/bracket` | Get full bracket state |
+| GET | `/rpc/logos/pending` | List pending logo submissions |
+| POST | `/rpc/logos/approve` | Approve a logo |
+| POST | `/rpc/logos/reject` | Reject a logo |
+| GET | `/rpc/logos` | List all approved logos |
+| GET | `/rpc/sso` | Single sign-on (browser redirect) |
+| GET | `/api/logs` | View live RPC logs (monitoring) |
+
+---
+
+## Match / Broadcast Endpoints
+
+These are the core endpoints for running a broadcast. The typical workflow is:
+
+1. **Get match info** → `GET /rpc/match`
+2. **Create channel** → `POST /rpc/create_channel`
+3. **Set stream** → `POST /rpc/set_stream_channel`
+4. **Crew ready** → `POST /rpc/crew_ready`
+5. **Go live** → `POST /rpc/go_live`
+
+All match endpoints accept either a numeric `id` (simple ID from the sheet) or the full match key (e.g. `nocturne_Valiants_03272026_1030_PM`).
+
+### GET `/rpc/match`
+
+Get full details for a single match including teams, crew claims, rosters, and logos.
+
+```
+GET /rpc/match?id=42
+Header: X-API-Key: your-shared-key
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "match": {
+    "id": 42,
+    "match_id": "nocturne_Valiants_03272026_1030_PM",
+    "team_a": "Nocturne",
+    "team_b": "Valiants",
+    "team_a_rank": 3,
+    "team_b_rank": 7,
+    "team_a_logo": "https://casterbot.onrender.com/team-logo/Nocturne",
+    "team_b_logo": "https://casterbot.onrender.com/team-logo/Valiants",
+    "team_a_roster": [
+      {"user_id": "123", "username": "player1", "display_name": "Player One"}
+    ],
+    "team_b_roster": [
+      {"user_id": "456", "username": "player2", "display_name": "Player Two"}
+    ],
+    "match_date": "2026-03-27",
+    "match_time": "10:30 PM",
+    "match_timestamp": "2026-03-27T22:30:00",
+    "stream_channel": 1,
+    "has_channel": true,
+    "casters": [
+      {"user_id": "789", "slot": 1, "display_name": "CasterOne", "avatar_url": "..."}
+    ],
+    "cam_op": {"user_id": "101", "display_name": "CamOpOne", "avatar_url": "..."}
+  }
+}
+```
+
+### POST `/rpc/create_channel`
+
+Create the private Discord text channel for a match. Requires at least 1 caster and 1 cam op claimed.
+
+```
+POST /rpc/create_channel
+Header: X-API-Key: your-shared-key
+Content-Type: application/json
+
+{ "id": 42 }
+```
+
+**Response (success):**
+
+```json
+{ "success": true, "channel_id": 1234567890123456789 }
+```
+
+**Response (errors):**
+
+```json
+{ "success": false, "error": "Need at least 1 caster and 1 cam op" }
+{ "success": false, "error": "Channel already exists" }
+```
+
+### POST `/rpc/set_stream_channel`
+
+Set which stream channel (1 or 2) this match will broadcast on.
+
+```
+POST /rpc/set_stream_channel
+Header: X-API-Key: your-shared-key
+Content-Type: application/json
+
+{ "id": 42, "channel": 1 }
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | int/string | Yes | Match ID |
+| `channel` | int | Yes | `1` or `2` |
+
+**Response:**
+
+```json
+{ "success": true }
+```
+
+### POST `/rpc/crew_ready`
+
+Send a "crew is ready" message in the private match channel, pinging both teams.
+
+```
+POST /rpc/crew_ready
+Header: X-API-Key: your-shared-key
+Content-Type: application/json
+
+{ "id": 42 }
+```
+
+**Response:**
+
+```json
+{ "success": true }
+```
+
+### POST `/rpc/go_live`
+
+Post the live announcement in the configured announcements channel with stream link and team mentions.
+
+**Prerequisites:** channel created, crew claimed, stream channel set.
+
+```
+POST /rpc/go_live
+Header: X-API-Key: your-shared-key
+Content-Type: application/json
+
+{ "id": 42 }
+```
+
+**Response:**
+
+```json
+{ "success": true }
+```
+
+---
+
+## Bracket Endpoint
+
+### GET `/rpc/bracket`
+
+Returns the full double-elimination bracket state (all 14 slots). See `BRACKET_RPC_INTEGRATION.md` for the complete slot reference and response shape.
+
+```
+GET /rpc/bracket
+Header: X-API-Key: your-shared-key
+```
+
+**Response (abbreviated):**
+
+```json
+{
+  "success": true,
+  "bracket": {
+    "WQF1": {
+      "slot": "WQF1",
+      "label": "WQF 1",
+      "team_a": "Nocturne",
+      "team_b": "Valiants",
+      "winner": null,
+      "match_id": "nocturne_Valiants_03272026_1030_PM",
+      "stream_channel": 1,
+      "team_a_logo": "https://casterbot.onrender.com/team-logo/Nocturne",
+      "team_b_logo": "https://casterbot.onrender.com/team-logo/Valiants",
+      "match": {
+        "id": 42,
+        "match_id": "nocturne_Valiants_03272026_1030_PM",
+        "has_channel": true,
+        "stream_channel": 1
+      },
+      "crew": [
+        {"role": "caster", "slot_num": 1, "user_id": "789", "display_name": "CasterOne"}
+      ]
+    }
+  }
+}
+```
 
 ---
 
@@ -188,6 +394,43 @@ exit;
 
 ---
 
+## Monitoring — Logs Endpoint
+
+### GET `/api/logs`
+
+View recent server logs to confirm RPC calls succeeded or debug failures. Accepts API key or lead-role session.
+
+```
+GET /api/logs?search=[RPC]&format=text
+Header: X-API-Key: your-shared-key
+```
+
+| Param | Description |
+|---|---|
+| `search` | Filter lines containing this text (case-insensitive). Use `[RPC]` for all RPC calls, `FAIL` for failures only, `PASS` for successes. |
+| `level` | Filter by log level: `INFO`, `WARNING`, `ERROR` |
+| `format` | `text` (default, plain text) or `json` |
+
+**Example: check if create_channel worked:**
+
+```bash
+curl -H "X-API-Key: $KEY" "https://casterbot.onrender.com/api/logs?search=create_channel"
+```
+
+**Example: see only failures:**
+
+```bash
+curl -H "X-API-Key: $KEY" "https://casterbot.onrender.com/api/logs?search=FAIL"
+```
+
+**Example: JSON for programmatic use:**
+
+```bash
+curl -H "X-API-Key: $KEY" "https://casterbot.onrender.com/api/logs?search=[RPC]&format=json"
+```
+
+---
+
 ## Error Responses
 
 All endpoints return errors in this format:
@@ -201,19 +444,19 @@ All endpoints return errors in this format:
 
 | Status | Meaning |
 |---|---|
-| 401 | Missing or invalid API key (logo endpoints) / expired token (SSO) |
-| 400 | Missing required fields or invalid JSON |
-| 500 | Server error (check Render logs) |
+| 401 | Missing or invalid API key / expired token (SSO) |
+| 400 | Missing required fields, invalid JSON, or precondition not met |
+| 404 | Match / bracket slot / channel not found |
+| 500 | Server error (check `/api/logs` or Render logs) |
 
 ---
 
-## Syncing Approvals Between Sites
+## Syncing Between Sites
 
-Both your site and CasterBot's admin panel operate on the **same Discord channel and database**. When either site approves or rejects a logo:
+Both your site and CasterBot operate on the **same Discord server and database**. When either side takes an action:
 
-- The image is saved to the CasterBot server
-- The Discord message gets a ✅ or ❌ reaction
-- `GET /rpc/logos/pending` no longer returns that submission
-- `GET /rpc/logos` includes it (if approved)
+- **Logo approvals**: Image saved to CasterBot, ✅ reaction on Discord, appears in `GET /rpc/logos`
+- **Channel creation**: Discord channel appears, `GET /rpc/match` reflects `has_channel: true`
+- **Go live**: Announcement posts to Discord, no further action needed
 
-No webhooks needed — just poll the endpoints or call them on user action.
+No webhooks needed — just call the endpoints directly.
