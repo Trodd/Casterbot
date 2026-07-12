@@ -951,12 +951,30 @@ HTML_TEMPLATE = """
             width: 36px;
             height: 36px;
             border-radius: 6px;
-            background: #2a2a3a;
+            background: linear-gradient(135deg, #3a3a4a, #2a2a3a);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
-            color: #555;
+            font-size: 12px;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .match-detail-team-logo-placeholder {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #3a3a4a, #2a2a3a);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(255,255,255,0.1);
+            flex-shrink: 0;
         }
         .team-list-info {
             flex: 1;
@@ -4157,6 +4175,18 @@ HTML_TEMPLATE = """
         
         let teamsLoaded = false;
         let allTeamsData = [];
+
+        function initialsFor(name) {
+            if (!name) return '??';
+            // Split on spaces, dashes, underscores — take first letter of each word
+            const words = name.split(/[\s\-_]+/).filter(Boolean);
+            if (words.length === 1) {
+                // Single word: first 2 chars, uppercase
+                return words[0].substring(0, 2).toUpperCase();
+            }
+            // Multi-word: first letter of each word (max 3), uppercase
+            return words.slice(0, 3).map(w => w[0]).join('').toUpperCase();
+        }
         async function loadTeamsList() {
             if (teamsLoaded) return;
             const container = document.getElementById('teams-list');
@@ -4189,7 +4219,7 @@ HTML_TEMPLATE = """
                 const tier = rankTier(team.rank);
                 const logo = team.logo
                     ? `<img class="team-list-logo" src="${team.logo}" alt="" loading="lazy">`
-                    : `<div class="team-list-logo-placeholder">⬡</div>`;
+                    : `<div class="team-list-logo-placeholder">${initialsFor(team.name)}</div>`;
                 const rosterText = team.roster_count ? `${team.roster_count} player${team.roster_count !== 1 ? 's' : ''}` : '<span style="color:#ff6b6b;">no roster</span>';
                 html += `
                     <div class="team-list-item" onclick="showTeamDetail('${team.name.replace(/'/g, "\\'")}')">
@@ -4253,7 +4283,9 @@ HTML_TEMPLATE = """
                     `).join('') + '</ul>';
                 };
 
-                const logoHtml = logo ? `<img class="match-detail-team-logo" src="${logo}" alt="">` : '';
+                const logoHtml = logo
+                    ? `<img class="match-detail-team-logo" src="${logo}" alt="">`
+                    : `<span class="match-detail-team-logo-placeholder">${initialsFor(teamName)}</span>`;
                 const rankHtml = rank ? `<span class="match-detail-team-rank">${rank}</span>` : '';
 
                 modal.querySelector('.match-detail-box').innerHTML = `
@@ -4311,8 +4343,12 @@ HTML_TEMPLATE = """
                     `).join('') + '</ul>';
                 };
 
-                const teamALogo = m.team_a_logo ? `<img class="match-detail-team-logo" src="${m.team_a_logo}" alt="">` : '';
-                const teamBLogo = m.team_b_logo ? `<img class="match-detail-team-logo" src="${m.team_b_logo}" alt="">` : '';
+                const teamALogo = m.team_a_logo
+                    ? `<img class="match-detail-team-logo" src="${m.team_a_logo}" alt="">`
+                    : `<span class="match-detail-team-logo-placeholder">${initialsFor(m.team_a)}</span>`;
+                const teamBLogo = m.team_b_logo
+                    ? `<img class="match-detail-team-logo" src="${m.team_b_logo}" alt="">`
+                    : `<span class="match-detail-team-logo-placeholder">${initialsFor(m.team_b)}</span>`;
                 const teamARank = m.team_a_rank ? `<span class="match-detail-team-rank">${m.team_a_rank}</span>` : '';
                 const teamBRank = m.team_b_rank ? `<span class="match-detail-team-rank">${m.team_b_rank}</span>` : '';
 
