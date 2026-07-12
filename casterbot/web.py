@@ -39,10 +39,17 @@ _log_buffer: collections.deque[dict] = collections.deque(maxlen=500)
 class _WebLogHandler(logging.Handler):
     """Captures log records into an in-memory ring buffer for the /logs page."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
             _log_buffer.append({
-                "ts": self.format(record).split(" [")[0] if " [" in self.format(record) else record.asctime if hasattr(record, "asctime") else datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S,%f")[:-3],
+                "ts": datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S"),
                 "level": record.levelname,
                 "name": record.name,
                 "message": record.getMessage(),
@@ -8704,6 +8711,25 @@ def _check_rpc_key(request: web.Request) -> bool:
     return api_key == config.RPC_API_KEY
 
 
+def _log_rpc(action: str, status: str, *, match_id: str = "", detail: str = "", remote: str = "") -> None:
+    """Log a structured RPC event to the ring buffer visible at /api/logs.
+
+    Produces a consistent ``[RPC]`` line that can be filtered with
+    ``?search=[RPC]`` or ``?search=FAIL`` / ``?search=PASS``.
+    """
+    tag = "PASS" if status == "success" else "FAIL"
+    parts = [f"[RPC] [{tag}] {action}"]
+    if status != "success":
+        parts.append(f"status={status}")
+    if match_id:
+        parts.append(f"match={match_id}")
+    if remote:
+        parts.append(f"from={remote}")
+    if detail:
+        parts.append(f"({detail})")
+    log.info(" ".join(parts))
+
+
 async def api_matches_handler(request: web.Request) -> web.Response:
     """Public API endpoint to get all matches with claim info (no auth required)."""
     bot = request.app.get("bot")
@@ -9094,20 +9120,24 @@ async def rpc_create_channel_handler(request: web.Request) -> web.Response:
     log.info("[RPC] create_channel request received from %s", request.remote)
     if not _check_rpc_key(request):
         log.warning("[RPC] create_channel rejected - invalid API key from %s", request.remote)
+        _log_rpc("create_channel", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
     if not bot:
+        _log_rpc("create_channel", "error", detail="bot not available", remote=request.remote)
         return web.json_response({"success": False, "error": "Bot not available"}, status=500)
     
     try:
         data = await request.json()
     except Exception:
+        _log_rpc("create_channel", "error", detail="invalid JSON", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
     
     # Accept simple match ID
     match_id_param = data.get("match_id") or data.get("id")
     if not match_id_param:
+        _log_rpc("create_channel", "error", detail="missing match_id", remote=request.remote)
         return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
     
     # Look up by simple_id if numeric
@@ -9117,6 +9147,7 @@ async def rpc_create_channel_handler(request: web.Request) -> web.Response:
         match = await db.get_match(match_id_param)
     
     if not match:
+        _log_rpc("create_channel", "not_found", match_id=str(match_id_param), remote=request.remote)
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     match_id = match["match_id"]
@@ -9127,6 +9158,7 @@ async def rpc_create_channel_handler(request: web.Request) -> web.Response:
         if guild:
             existing = guild.get_channel(match["private_channel_id"])
             if existing:
+                _log_rpc("create_channel", "exists", match_id=str(match_id_param), remote=request.remote)
                 return web.json_response({"success": False, "error": "Channel already exists"}, status=400)
         await db.clear_private_channel(match_id)
     
@@ -9135,6 +9167,7 @@ async def rpc_create_channel_handler(request: web.Request) -> web.Response:
     casters = [c for c in claims if c["role"] == "caster"]
     camops = [c for c in claims if c["role"] == "camop"]
     if not casters or not camops:
+        _log_rpc("create_channel", "error", match_id=str(match_id_param), detail="missing crew", remote=request.remote)
         return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
     
     # Create channel
@@ -9142,10 +9175,12 @@ async def rpc_create_channel_handler(request: web.Request) -> web.Response:
     channel = await create_private_match_channel_web(bot, match, claims)
     if channel:
         log.info("[RPC] create_channel success - match=%s channel_id=%s", match_id_param, channel.id)
+        _log_rpc("create_channel", "success", match_id=str(match_id_param), remote=request.remote)
         await _refresh_discord_message(bot, match_id)
         return web.json_response({"success": True, "channel_id": channel.id})
     else:
         log.error("[RPC] create_channel failed - match=%s could not create channel", match_id_param)
+        _log_rpc("create_channel", "error", match_id=str(match_id_param), detail="channel creation failed", remote=request.remote)
         return web.json_response({"success": False, "error": "Failed to create channel"}, status=500)
 
 
@@ -9154,20 +9189,24 @@ async def rpc_crew_ready_handler(request: web.Request) -> web.Response:
     log.info("[RPC] crew_ready request received from %s", request.remote)
     if not _check_rpc_key(request):
         log.warning("[RPC] crew_ready rejected - invalid API key from %s", request.remote)
+        _log_rpc("crew_ready", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
     if not bot:
+        _log_rpc("crew_ready", "error", detail="bot not available", remote=request.remote)
         return web.json_response({"success": False, "error": "Bot not available"}, status=500)
     
     try:
         data = await request.json()
     except Exception:
+        _log_rpc("crew_ready", "error", detail="invalid JSON", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
     
     # Accept simple match ID
     match_id_param = data.get("match_id") or data.get("id")
     if not match_id_param:
+        _log_rpc("crew_ready", "error", detail="missing match_id", remote=request.remote)
         return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
     
     # Look up by simple_id if numeric
@@ -9177,19 +9216,23 @@ async def rpc_crew_ready_handler(request: web.Request) -> web.Response:
         match = await db.get_match(match_id_param)
     
     if not match:
+        _log_rpc("crew_ready", "not_found", match_id=str(match_id_param), remote=request.remote)
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     match_id = match["match_id"]
     
     if not match.get("private_channel_id"):
+        _log_rpc("crew_ready", "error", match_id=str(match_id_param), detail="no channel yet", remote=request.remote)
         return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
     
     guild = bot.get_guild(config.GUILD_ID)
     if not guild:
+        _log_rpc("crew_ready", "error", match_id=str(match_id_param), detail="guild not found", remote=request.remote)
         return web.json_response({"success": False, "error": "Guild not found"}, status=500)
     
     channel = guild.get_channel(match["private_channel_id"])
     if not channel:
+        _log_rpc("crew_ready", "error", match_id=str(match_id_param), detail="channel not found", remote=request.remote)
         return web.json_response({"success": False, "error": "Channel not found"}, status=404)
     
     # Find team roles
@@ -9210,6 +9253,7 @@ async def rpc_crew_ready_handler(request: web.Request) -> web.Response:
     
     await channel.send(ready_msg)
     log.info("[RPC] crew_ready success - match=%s", match_id_param)
+    _log_rpc("crew_ready", "success", match_id=str(match_id_param), remote=request.remote)
     return web.json_response({"success": True})
 
 
@@ -9218,20 +9262,24 @@ async def rpc_go_live_handler(request: web.Request) -> web.Response:
     log.info("[RPC] go_live request received from %s", request.remote)
     if not _check_rpc_key(request):
         log.warning("[RPC] go_live rejected - invalid API key from %s", request.remote)
+        _log_rpc("go_live", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
     if not bot:
+        _log_rpc("go_live", "error", detail="bot not available", remote=request.remote)
         return web.json_response({"success": False, "error": "Bot not available"}, status=500)
     
     try:
         data = await request.json()
     except Exception:
+        _log_rpc("go_live", "error", detail="invalid JSON", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
     
     # Accept simple match ID
     match_id_param = data.get("match_id") or data.get("id")
     if not match_id_param:
+        _log_rpc("go_live", "error", detail="missing match_id", remote=request.remote)
         return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
     
     # Look up by simple_id if numeric
@@ -9241,11 +9289,13 @@ async def rpc_go_live_handler(request: web.Request) -> web.Response:
         match = await db.get_match(match_id_param)
     
     if not match:
+        _log_rpc("go_live", "not_found", match_id=str(match_id_param), remote=request.remote)
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     match_id = match["match_id"]
     
     if not match.get("private_channel_id"):
+        _log_rpc("go_live", "error", match_id=str(match_id_param), detail="no channel yet", remote=request.remote)
         return web.json_response({"success": False, "error": "Create the channel first"}, status=400)
     
     # Check requirements
@@ -9253,21 +9303,26 @@ async def rpc_go_live_handler(request: web.Request) -> web.Response:
     casters = [c for c in claims if c["role"] == "caster"]
     camops = [c for c in claims if c["role"] == "camop"]
     if not casters or not camops:
+        _log_rpc("go_live", "error", match_id=str(match_id_param), detail="missing crew", remote=request.remote)
         return web.json_response({"success": False, "error": "Need at least 1 caster and 1 cam op"}, status=400)
     
     # Check stream channel is selected
     if not match.get("stream_channel"):
+        _log_rpc("go_live", "error", match_id=str(match_id_param), detail="no stream channel", remote=request.remote)
         return web.json_response({"success": False, "error": "Please select a stream channel first"}, status=400)
     
     if not config.LIVE_ANNOUNCEMENT_CHANNEL_ID:
+        _log_rpc("go_live", "error", match_id=str(match_id_param), detail="announcement channel not configured", remote=request.remote)
         return web.json_response({"success": False, "error": "Live announcement channel not configured"}, status=500)
     
     guild = bot.get_guild(config.GUILD_ID)
     if not guild:
+        _log_rpc("go_live", "error", match_id=str(match_id_param), detail="guild not found", remote=request.remote)
         return web.json_response({"success": False, "error": "Guild not found"}, status=500)
     
     live_channel = guild.get_channel(config.LIVE_ANNOUNCEMENT_CHANNEL_ID)
     if not live_channel:
+        _log_rpc("go_live", "error", match_id=str(match_id_param), detail="live channel not found", remote=request.remote)
         return web.json_response({"success": False, "error": "Live announcement channel not found"}, status=404)
     
     # Find team roles
@@ -9307,6 +9362,7 @@ async def rpc_go_live_handler(request: web.Request) -> web.Response:
     
     await live_channel.send(announcement)
     log.info("[RPC] go_live success - match=%s stream_channel=%s", match_id_param, stream_channel)
+    _log_rpc("go_live", "success", match_id=str(match_id_param), remote=request.remote)
     return web.json_response({"success": True})
 
 
@@ -9315,11 +9371,13 @@ async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
     log.info("[RPC] set_stream_channel request received from %s", request.remote)
     if not _check_rpc_key(request):
         log.warning("[RPC] set_stream_channel rejected - invalid API key from %s", request.remote)
+        _log_rpc("set_stream_channel", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     try:
         data = await request.json()
     except Exception:
+        _log_rpc("set_stream_channel", "error", detail="invalid JSON", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
     
     # Accept simple match ID
@@ -9327,9 +9385,11 @@ async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
     stream_channel = data.get("stream_channel") or data.get("channel")
     
     if not match_id_param:
+        _log_rpc("set_stream_channel", "error", detail="missing match_id", remote=request.remote)
         return web.json_response({"success": False, "error": "Missing match_id"}, status=400)
     
     if stream_channel is None or stream_channel not in config.STREAM_CHANNELS:
+        _log_rpc("set_stream_channel", "error", match_id=str(match_id_param), detail="invalid channel", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid stream channel (use 1 or 2)"}, status=400)
     
     # Look up by simple_id if numeric
@@ -9339,10 +9399,12 @@ async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
         match = await db.get_match(match_id_param)
     
     if not match:
+        _log_rpc("set_stream_channel", "not_found", match_id=str(match_id_param), remote=request.remote)
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     await db.set_stream_channel(match["match_id"], stream_channel)
     log.info("[RPC] set_stream_channel success - match=%s channel=%s", match_id_param, stream_channel)
+    _log_rpc("set_stream_channel", "success", match_id=str(match_id_param), remote=request.remote)
     return web.json_response({"success": True})
 
 
@@ -9351,6 +9413,7 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
     log.info("[RPC] get_match request received from %s (id=%s)", request.remote, request.query.get("id") or request.query.get("match_id"))
     if not _check_rpc_key(request):
         log.warning("[RPC] get_match rejected - invalid API key from %s", request.remote)
+        _log_rpc("get_match", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
     
     bot = request.app.get("bot")
@@ -9390,6 +9453,7 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
     # Accept ID from query param or path
     match_id_param = request.query.get("id") or request.query.get("match_id")
     if not match_id_param:
+        _log_rpc("get_match", "error", detail="missing id", remote=request.remote)
         return web.json_response({"success": False, "error": "Missing id parameter"}, status=400)
     
     # Look up by simple_id if numeric
@@ -9399,6 +9463,7 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
         match = await db.get_match(match_id_param)
     
     if not match:
+        _log_rpc("get_match", "not_found", match_id=str(match_id_param), remote=request.remote)
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     match_id = match["match_id"]
@@ -9462,6 +9527,7 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
         "cam_op": cam_op,
     }
     
+    _log_rpc("get_match", "success", match_id=str(match_id_param), remote=request.remote)
     return web.json_response({"success": True, "match": result})
 
 
@@ -9470,6 +9536,7 @@ async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
     log.info("[RPC] get_bracket request received from %s", request.remote)
     if not _check_rpc_key(request):
         log.warning("[RPC] get_bracket rejected - invalid API key from %s", request.remote)
+        _log_rpc("get_bracket", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
 
     bot = request.app.get("bot")
@@ -9546,6 +9613,7 @@ async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
             }
 
     log.info("[RPC] get_bracket success - %d slots with data", len(slots))
+    _log_rpc("get_bracket", "success", remote=request.remote)
     return web.json_response({"success": True, "bracket": bracket})
 
 
@@ -9554,21 +9622,26 @@ async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
 async def rpc_logo_pending_handler(request: web.Request) -> web.Response:
     """RPC endpoint: get pending logo submissions (requires API key)."""
     if not _check_rpc_key(request):
+        _log_rpc("logo_pending", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
 
     bot = request.app.get("bot")
     if not bot:
+        _log_rpc("logo_pending", "error", detail="bot not available", remote=request.remote)
         return web.json_response({"success": False, "error": "Bot not available"}, status=500)
 
     if not config.TEAM_LOGO_CHANNEL_ID:
+        _log_rpc("logo_pending", "error", detail="logo channel not configured", remote=request.remote)
         return web.json_response({"success": False, "error": "TEAM_LOGO_CHANNEL_ID not configured"}, status=500)
 
     guild = bot.get_guild(config.GUILD_ID)
     if not guild:
+        _log_rpc("logo_pending", "error", detail="guild not found", remote=request.remote)
         return web.json_response({"success": False, "error": "Guild not found"}, status=500)
 
     channel = bot.get_channel(config.TEAM_LOGO_CHANNEL_ID)
     if not channel:
+        _log_rpc("logo_pending", "error", detail="logo channel not found", remote=request.remote)
         return web.json_response({"success": False, "error": "Logo channel not found"}, status=500)
 
     approved_logos = await db.get_all_team_logos()
@@ -9605,8 +9678,10 @@ async def rpc_logo_pending_handler(request: web.Request) -> web.Response:
             })
     except Exception as e:
         log.error(f"[RPC] Failed to read logo channel: {e}", exc_info=True)
+        _log_rpc("logo_pending", "error", detail=f"read failed: {e}", remote=request.remote)
         return web.json_response({"success": False, "error": f"Failed to read logo channel: {e}"}, status=500)
 
+    _log_rpc("logo_pending", "success", detail=f"{len(pending)} pending", remote=request.remote)
     return web.json_response({"success": True, "pending": pending})
 
 
@@ -9616,6 +9691,7 @@ async def rpc_logo_approve_handler(request: web.Request) -> web.Response:
     import uuid
 
     if not _check_rpc_key(request):
+        _log_rpc("logo_approve", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
 
     bot = request.app.get("bot")
@@ -9679,12 +9755,14 @@ async def rpc_logo_approve_handler(request: web.Request) -> web.Response:
             log.warning(f"[RPC] Failed to add reaction: {e}")
 
     log.info(f"[RPC] Logo approved for {team_name} by {approved_by}")
+    _log_rpc("logo_approve", "success", match_id=team_name, detail=f"by {approved_by}", remote=request.remote)
     return web.json_response({"success": True, "message": f"Approved logo for {team_name}"})
 
 
 async def rpc_logo_reject_handler(request: web.Request) -> web.Response:
     """RPC endpoint: reject a logo (requires API key)."""
     if not _check_rpc_key(request):
+        _log_rpc("logo_reject", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
 
     bot = request.app.get("bot")
@@ -9715,12 +9793,14 @@ async def rpc_logo_reject_handler(request: web.Request) -> web.Response:
             log.warning(f"[RPC] Failed to react/delete logo message: {e}")
 
     log.info(f"[RPC] Logo rejected: message_id={message_id}")
+    _log_rpc("logo_reject", "success", match_id=message_id, remote=request.remote)
     return web.json_response({"success": True, "message": "Logo rejected"})
 
 
 async def rpc_logo_list_handler(request: web.Request) -> web.Response:
     """RPC endpoint: get all approved logos (requires API key)."""
     if not _check_rpc_key(request):
+        _log_rpc("logo_list", "rejected", detail="invalid API key", remote=request.remote)
         return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
 
     logos = await db.get_all_team_logos()
@@ -9734,6 +9814,7 @@ async def rpc_logo_list_handler(request: web.Request) -> web.Response:
             "approved_at": logo["approved_at"],
         })
 
+    _log_rpc("logo_list", "success", detail=f"{len(result)} logos", remote=request.remote)
     return web.json_response({"success": True, "logos": result})
 
 
@@ -9747,6 +9828,7 @@ async def rpc_sso_handler(request: web.Request) -> web.Response:
     redirect_url = request.query.get("redirect", "/")
 
     if not token:
+        _log_rpc("sso", "error", detail="missing token", remote=request.remote)
         return web.Response(text="Missing token parameter", status=400)
 
     # Verify the token with Discord
@@ -9758,10 +9840,12 @@ async def rpc_sso_handler(request: web.Request) -> web.Response:
             ) as resp:
                 if resp.status != 200:
                     log.warning(f"[RPC] SSO - invalid Discord token from {request.remote}")
+                    _log_rpc("sso", "rejected", detail="invalid Discord token", remote=request.remote)
                     return web.Response(text="Invalid or expired Discord token", status=401)
                 user_data = await resp.json()
     except Exception as e:
         log.error(f"[RPC] SSO - Discord verification failed: {e}")
+        _log_rpc("sso", "error", detail=f"Discord verification failed: {e}", remote=request.remote)
         return web.Response(text="Failed to verify token", status=500)
 
     # Create session (same format as normal Discord login)
@@ -9775,6 +9859,7 @@ async def rpc_sso_handler(request: web.Request) -> web.Response:
     }
 
     log.info(f"[RPC] SSO login - {user_data['username']} (ID: {user_data['id']})")
+    _log_rpc("sso", "success", match_id=str(user_data['id']), detail=user_data['username'], remote=request.remote)
 
     response = web.HTTPFound(redirect_url)
     response.set_cookie("session", session_id, max_age=86400 * 7, httponly=True, samesite="Lax")
@@ -11615,23 +11700,36 @@ async def _check_lead_role(request: web.Request) -> tuple[dict | None, web.Respo
 
 
 async def api_logs_handler(request: web.Request) -> web.Response:
-    """Plain-text endpoint returning recent log entries (lead role only)."""
-    session, error = await _check_lead_role(request)
-    if error:
-        return web.Response(text="Unauthorized", status=error.status)
+    """Return recent log entries. Auth: lead-role session OR RPC API key."""
+    # Try API key first (for RPC client / automated monitoring)
+    if _check_rpc_key(request):
+        is_api_key = True
+    else:
+        session, error = await _check_lead_role(request)
+        if error:
+            return web.Response(text="Unauthorized", status=error.status)
+        is_api_key = False
 
     level = request.query.get("level", "").upper()
     search = request.query.get("search", "").lower()
+    fmt = request.query.get("format", "text")  # "text" or "json"
 
-    lines = []
+    entries = []
     for entry in _log_buffer:
         if level and entry.get("level") != level:
             continue
         line = f'{entry["ts"]}  [{entry["level"]}] {entry["name"]}: {entry["message"]}'
         if search and search not in line.lower():
             continue
-        lines.append(line)
+        entries.append(entry)
 
+    if fmt == "json":
+        return web.json_response({"success": True, "count": len(entries), "logs": entries})
+
+    lines = [
+        f'{e["ts"]}  [{e["level"]}] {e["name"]}: {e["message"]}'
+        for e in entries
+    ]
     return web.Response(text="\n".join(lines), content_type="text/plain")
 
 
