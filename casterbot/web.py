@@ -222,6 +222,14 @@ HTML_TEMPLATE = """
     
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        @font-face {
+            font-family: 'EchoStencil';
+            src: url('/static/fonts/EchoStencil.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+        
         :root {
             --echo-orange: #ff6a00;
             --echo-orange-glow: rgba(255, 106, 0, 0.6);
@@ -286,7 +294,7 @@ HTML_TEMPLATE = """
             display: none;
         }
         h1 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             font-size: 1.6em;
             font-weight: 900;
             letter-spacing: 3px;
@@ -301,7 +309,7 @@ HTML_TEMPLATE = """
             line-height: 1.2;
         }
         .subtitle {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-cyan);
             font-size: 0.7em;
             letter-spacing: 2px;
@@ -315,7 +323,7 @@ HTML_TEMPLATE = """
             background: linear-gradient(135deg, rgba(255,106,0,0.2), rgba(0,212,255,0.2));
             border: 1px solid var(--echo-orange);
             border-radius: 15px;
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             font-size: 0.75em;
             font-weight: 600;
             letter-spacing: 1px;
@@ -488,7 +496,7 @@ HTML_TEMPLATE = """
             margin-bottom: 16px;
         }
         .teams { 
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             font-size: 1.5em; 
             font-weight: 700; 
             color: #ffffff;
@@ -633,7 +641,7 @@ HTML_TEMPLATE = """
             box-shadow: 0 0 30px rgba(0,0,0,0.8), 0 0 20px var(--echo-orange-glow);
         }
         .assign-modal-box h3 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-cyan);
             margin-bottom: 16px;
         }
@@ -714,7 +722,7 @@ HTML_TEMPLATE = """
             border-bottom: 1px solid var(--echo-border);
         }
         .match-detail-header h3 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-cyan);
             font-size: 1.1em;
             margin-bottom: 6px;
@@ -860,7 +868,7 @@ HTML_TEMPLATE = """
             padding: 20px 0 16px;
         }
         .teams-tab-header h2 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-cyan);
             margin-bottom: 4px;
         }
@@ -996,7 +1004,7 @@ HTML_TEMPLATE = """
         .no-matches h2 { 
             margin-bottom: 12px; 
             color: var(--echo-orange);
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
         }
         .status-badge {
             display: inline-block; padding: 4px 10px; border-radius: 4px;
@@ -1035,7 +1043,7 @@ HTML_TEMPLATE = """
             margin-bottom: 12px;
             text-transform: uppercase;
             letter-spacing: 2px;
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
         }
         .broadcast-btns { display: flex; flex-wrap: wrap; gap: 10px; }
         .broadcast-btn {
@@ -1590,7 +1598,7 @@ HTML_TEMPLATE = """
             border-bottom: 1px solid rgba(255,106,0,0.2);
         }
         .chats-header h3 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-orange);
             font-size: 1.3em;
             margin: 0 0 5px 0;
@@ -1621,7 +1629,7 @@ HTML_TEMPLATE = """
             background: rgba(255,106,0,0.1);
         }
         .chat-group-title {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-cyan);
             font-size: 0.95em;
             letter-spacing: 1px;
@@ -1748,7 +1756,7 @@ HTML_TEMPLATE = """
         }
         .match-panel-header h2 {
             margin: 0 0 6px 0;
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             font-size: 1.3em;
             color: var(--echo-cyan);
             letter-spacing: 1px;
@@ -1874,7 +1882,7 @@ HTML_TEMPLATE = """
         .confirm-box h3 { 
             color: var(--echo-orange); 
             margin-bottom: 16px;
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             text-transform: uppercase;
             letter-spacing: 2px;
         }
@@ -1937,7 +1945,7 @@ HTML_TEMPLATE = """
             margin-bottom: 10px;
         }
         .sidebar-header h2 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             font-size: 0.75em;
             color: var(--echo-orange);
             letter-spacing: 2px;
@@ -2255,7 +2263,7 @@ HTML_TEMPLATE = """
             border-bottom: 1px solid var(--echo-border);
         }
         .leaderboard-header h2 {
-            font-family: 'Orbitron', sans-serif;
+            font-family: 'EchoStencil', 'Orbitron', sans-serif;
             color: var(--echo-orange);
             font-size: 1.2em;
             letter-spacing: 3px;
@@ -12115,9 +12123,15 @@ async def api_chat_upload_handler(request: web.Request) -> web.Response:
 
 def create_app(bot=None) -> web.Application:
     """Create the aiohttp web application."""
+    import pathlib
+
     app = web.Application(client_max_size=10 * 1024 * 1024)  # 10MB max upload
     app["bot"] = bot
-    
+
+    # Serve static files (fonts, icons, etc.)
+    _static_dir = pathlib.Path(__file__).parent / "static"
+    app.router.add_static("/static/", path=str(_static_dir), show_index=False)
+
     app.router.add_get("/", schedule_handler)
     app.router.add_get("/schedule", schedule_handler)
     app.router.add_get("/leaderboard", leaderboard_handler)
