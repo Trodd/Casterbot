@@ -460,3 +460,44 @@ Both your site and CasterBot operate on the **same Discord server and database**
 - **Go live**: Announcement posts to Discord, no further action needed
 
 No webhooks needed — just call the endpoints directly.
+
+---
+
+## CORS & Browser Access
+
+CORS is enabled on all endpoints. You can call these directly from a browser at any origin. If the browser sends an `OPTIONS` preflight, the server responds with the appropriate `Access-Control-Allow-*` headers.
+
+### Calling from a static site (Cloudflare Pages, Netlify, Vercel, etc.)
+
+**Do not expose the API key in client-side JavaScript.** Instead, use a serverless function to proxy the request:
+
+1. Store the key as an environment secret (`CASTERBOT_API_KEY`)
+2. Create a function that reads the secret and forwards the request
+3. Call your own function endpoint from the frontend
+
+**Cloudflare Pages example** — save as `functions/api/logos.js`:
+
+```js
+export async function onRequest(context) {
+  const url = new URL(context.request.url);
+  const target = url.pathname.endsWith("/pending")
+    ? "https://casterbot.onrender.com/rpc/logos/pending"
+    : "https://casterbot.onrender.com/rpc/logos";
+
+  const resp = await fetch(target, {
+    headers: { "X-API-Key": context.env.CASTERBOT_API_KEY }
+  });
+  return new Response(await resp.text(), {
+    headers: { "Content-Type": "application/json" }
+  });
+}
+```
+
+Then call from your frontend:
+
+```js
+fetch("/api/logos/pending")    // → proxies to /rpc/logos/pending
+fetch("/api/logos/approved")   // → proxies to /rpc/logos
+```
+
+Same pattern works for any endpoint — just add more Functions.

@@ -9675,6 +9675,7 @@ async def rpc_logo_pending_handler(request: web.Request) -> web.Response:
                 "image_filename": image_attachments[0].filename,
                 "posted_at": msg.created_at.isoformat(),
                 "has_existing_logo": existing_logo is not None,
+                "existing_approved_by": existing_logo.get("approved_by", "") if existing_logo else "",
             })
     except Exception as e:
         log.error(f"[RPC] Failed to read logo channel: {e}", exc_info=True)
@@ -9743,7 +9744,7 @@ async def rpc_logo_approve_handler(request: web.Request) -> web.Response:
     filepath = config.TEAM_LOGOS_DIR / filename
     filepath.write_bytes(image_data)
 
-    await db.set_team_logo(team_name, filename, message_id_int, 0)  # 0 = approved via RPC
+    await db.set_team_logo(team_name, filename, message_id_int, approved_by)
 
     if config.TEAM_LOGO_CHANNEL_ID:
         try:
@@ -9812,6 +9813,7 @@ async def rpc_logo_list_handler(request: web.Request) -> web.Response:
             "team_name": logo["team_name"],
             "logo_url": f"{base_url}/team-logo/{logo['team_name']}",
             "approved_at": logo["approved_at"],
+            "approved_by": logo.get("approved_by", ""),
         })
 
     _log_rpc("logo_list", "success", detail=f"{len(result)} logos", remote=request.remote)
@@ -11314,7 +11316,7 @@ async def api_logo_approve_handler(request: web.Request) -> web.Response:
     filepath.write_bytes(image_data)
     
     # Save to database
-    await db.set_team_logo(team_name, filename, message_id_int, session["user_id"])
+    await db.set_team_logo(team_name, filename, message_id_int, str(session["user_id"]))
     
     # Add checkmark reaction to the message
     if config.TEAM_LOGO_CHANNEL_ID:
@@ -11376,12 +11378,22 @@ async def api_logo_list_handler(request: web.Request) -> web.Response:
     
     result = []
     for logo in logos:
-        approved_by_name = None
-        approved_by_id = logo.get("approved_by")
-        if approved_by_id and guild:
-            member = guild.get_member(approved_by_id)
-            if member:
-                approved_by_name = member.display_name
+        approved_by_name: str = ""
+        approved_by_val = logo.get("approved_by", "")
+        if approved_by_val and guild:
+            # If it's a numeric Discord user ID, resolve to display name
+            if isinstance(approved_by_val, str) and approved_by_val.isdigit():
+                member = guild.get_member(int(approved_by_val))
+                if member:
+                    approved_by_name = member.display_name
+            elif isinstance(approved_by_val, int):
+                member = guild.get_member(approved_by_val)
+                if member:
+                    approved_by_name = member.display_name
+            else:
+                approved_by_name = str(approved_by_val)
+        elif approved_by_val:
+            approved_by_name = str(approved_by_val)
         result.append({
             "team_name": logo["team_name"],
             "logo_url": f"{base_url}/team-logo/{logo['team_name']}",

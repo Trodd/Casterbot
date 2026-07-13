@@ -971,7 +971,7 @@ def _register_commands(bot: CasterBot) -> None:
             filepath.write_bytes(image_data)
             
             # Save to database (approved by the lead who ran the command)
-            await db.set_team_logo(team_name, filename, 0, member.id)
+            await db.set_team_logo(team_name, filename, 0, str(member.id))
             
             # Optionally post to the logo channel for record
             if config.TEAM_LOGO_CHANNEL_ID:

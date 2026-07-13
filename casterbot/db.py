@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS team_logos (
     team_name TEXT PRIMARY KEY,
     filename TEXT NOT NULL,
     discord_message_id BIGINT,
-    approved_by BIGINT,
+    approved_by TEXT,
     approved_at INTEGER NOT NULL
 );
 
@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS team_logos (
     team_name TEXT PRIMARY KEY,
     filename TEXT NOT NULL,
     discord_message_id INTEGER,
-    approved_by INTEGER,
+    approved_by TEXT,
     approved_at INTEGER NOT NULL
 );
 
@@ -258,6 +258,21 @@ async def _pg_execute(query: str, *args):
 # ============ Initialization ============
 
 
+# ============ Migrations ============
+
+async def _migrate_approved_by_column() -> None:
+    """Migrate approved_by from BIGINT to TEXT (PostgreSQL only — SQLite is flexible)."""
+    if not _use_pg:
+        return
+    try:
+        await _pg_execute(
+            "ALTER TABLE team_logos ALTER COLUMN approved_by TYPE TEXT USING approved_by::TEXT"
+        )
+        log.info("Migrated team_logos.approved_by to TEXT")
+    except Exception:
+        pass  # Column might already be TEXT or table doesn't exist yet
+
+
 async def init_db() -> None:
     """Initialize the database (create tables, run migrations)."""
     global _pool
@@ -268,6 +283,8 @@ async def init_db() -> None:
         # Create all tables
         async with _get_pg_conn() as conn:
             await conn.execute(_PG_SCHEMA)
+        # Run migrations
+        await _migrate_approved_by_column()
         log.info("PostgreSQL database initialized")
     else:
         import aiosqlite
@@ -1232,8 +1249,8 @@ async def get_all_team_logos() -> list[dict]:
             return [dict(row) for row in rows]
 
 
-async def set_team_logo(team_name: str, filename: str, discord_message_id: int, approved_by: int) -> None:
-    """Set/update a team's approved logo."""
+async def set_team_logo(team_name: str, filename: str, discord_message_id: int, approved_by: str) -> None:
+    """Set/update a team's approved logo. approved_by is a user ID string or RPC name."""
     import time
     if _use_pg:
         now = int(time.time())
