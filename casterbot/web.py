@@ -2,8 +2,10 @@
 from __future__ import annotations  # AGENTS-AUDIT: banned by AGENTS for active Python 3.14-oriented code.
 
 import collections
+import io
 import logging
 import secrets
+import zipfile
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -11515,6 +11517,38 @@ async def team_logo_handler(request: web.Request) -> web.Response:
     )
 
 
+async def api_team_logos_zip_handler(request: web.Request) -> web.Response:
+    """Download all approved team logos as a ZIP file for TouchPortal / OBS.
+
+    Public endpoint — no auth required. Casters extract to their local TouchPortal
+    image folder to get all team logos automatically.
+    """
+    logos = await db.get_all_team_logos()
+    if not logos:
+        return web.Response(text="No approved logos yet", status=404)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for logo in logos:
+            filepath = config.TEAM_LOGOS_DIR / logo["filename"]
+            if filepath.exists():
+                # Use team name in the zip so filenames are readable
+                safe_name = "".join(c if c.isalnum() else "_" for c in logo["team_name"])
+                ext = filepath.suffix or ".png"
+                zf.write(filepath, f"{safe_name}{ext}")
+
+    buf.seek(0)
+    log.info("Served team-logos.zip with %d logos", len(logos))
+    return web.Response(
+        body=buf.read(),
+        content_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="team-logos.zip"',
+            "Cache-Control": "public, max-age=300",
+        },
+    )
+
+
 def _team_initials(name: str) -> str:
     """Extract 1-3 letter initials from a team name."""
     if not name:
@@ -12557,6 +12591,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/logos/cleanup", api_logo_cleanup_handler)
     app.router.add_post("/api/logos/rename", api_logo_rename_handler)
     app.router.add_get("/team-logo/{team_name}", team_logo_handler)
+    app.router.add_get("/api/team-logos.zip", api_team_logos_zip_handler)
     app.router.add_get("/health", health_handler)
     # Logs page (lead role only)
     app.router.add_get("/logs", logs_page_handler)
