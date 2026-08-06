@@ -9496,6 +9496,18 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
             if member:
                 cam_op["display_name"] = member.display_name
                 cam_op["avatar_url"] = await get_user_avatar_url(bot, user_id)
+
+    # Build sideline info
+    sideline = None
+    sideline_claim = next((c for c in claims if c["role"] == "sideline" and c["slot"] == 1), None)
+    if sideline_claim:
+        user_id = sideline_claim["user_id"]
+        sideline = {"user_id": str(user_id)}
+        if guild:
+            member = guild.get_member(user_id)
+            if member:
+                sideline["display_name"] = member.display_name
+                sideline["avatar_url"] = await get_user_avatar_url(bot, user_id)
     
     # Get team logos
     async def get_team_logo_url(team_name: str) -> str | None:
@@ -9527,6 +9539,7 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
         "has_channel": bool(match.get("private_channel_id")),
         "casters": casters,
         "cam_op": cam_op,
+        "sideline": sideline,
     }
     
     _log_rpc("get_match", "success", match_id=str(match_id_param), remote=request.remote)
