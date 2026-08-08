@@ -9546,6 +9546,93 @@ async def rpc_get_match_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "match": result})
 
 
+async def rpc_get_rankings_handler(request: web.Request) -> web.Response:
+    """RPC endpoint to get all team rankings with logos and roster counts (requires API key)."""
+    log.info("[RPC] get_rankings request received from %s", request.remote)
+    if not _check_rpc_key(request):
+        log.warning("[RPC] get_rankings rejected - invalid API key from %s", request.remote)
+        _log_rpc("get_rankings", "rejected", detail="invalid API key", remote=request.remote)
+        return web.json_response({"success": False, "error": "Invalid or missing API key"}, status=401)
+
+    bot = request.app.get("bot")
+    guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    all_rosters = sheets.get_all_rosters()
+    ranked_teams = sheets.get_all_teams()  # (name, rank) ordered by rank
+
+    # If either source is empty, try a one-shot fetch
+    if not ranked_teams or not all_rosters:
+        if not ranked_teams:
+            await sheets.fetch_rankings()
+            ranked_teams = sheets.get_all_teams()
+        if not all_rosters:
+            await sheets.fetch_rosters()
+            all_rosters = sheets.get_all_rosters()
+
+    if not ranked_teams and not all_rosters:
+        _log_rpc("get_rankings", "error", detail="no team data loaded", remote=request.remote)
+        return web.json_response({
+            "success": False,
+            "error": "No team data loaded. Check RANKINGS_CSV_URL and ROSTERS_CSV_URL env vars.",
+        }, status=503)
+
+    ranked_names = {name.lower() for name, _ in ranked_teams} if ranked_teams else set()
+    seen: set[str] = set()
+    teams_data: list[dict] = []
+
+    # First: ranked teams in rank order
+    for name, rank in ranked_teams:
+        seen.add(name.lower())
+        roster = all_rosters.get(name.lower(), {})
+        roster_count = roster.get("roster_count", 0)
+        if roster_count == 0 and guild:
+            for role in guild.roles:
+                if role.name.lower().startswith("team:"):
+                    if role.name[5:].strip().lower() == name.lower():
+                        roster_count = sum(1 for m in role.members if not m.bot)
+                        break
+        logo_url = None
+        logo = await db.get_team_logo(name)
+        if logo:
+            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+            logo_url = f"{base_url}/team-logo/{name}"
+        teams_data.append({
+            "name": name,
+            "rank": rank,
+            "logo": logo_url,
+            "roster_count": roster_count,
+        })
+
+    # Second: roster CSV teams not in rankings (alphabetical)
+    unranked: list[tuple[str, int]] = []
+    for team_lower, roster in all_rosters.items():
+        if team_lower not in seen:
+            unranked.append((roster["team_name"], roster.get("roster_count", 0)))
+    unranked.sort(key=lambda t: t[0].lower())
+
+    for name, roster_count in unranked:
+        if roster_count == 0 and guild:
+            for role in guild.roles:
+                if role.name.lower().startswith("team:"):
+                    if role.name[5:].strip().lower() == name.lower():
+                        roster_count = sum(1 for m in role.members if not m.bot)
+                        break
+        logo_url = None
+        logo = await db.get_team_logo(name)
+        if logo:
+            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+            logo_url = f"{base_url}/team-logo/{name}"
+        teams_data.append({
+            "name": name,
+            "rank": "",
+            "logo": logo_url,
+            "roster_count": roster_count,
+        })
+
+    _log_rpc("get_rankings", "success", detail=f"returned {len(teams_data)} teams", remote=request.remote)
+    return web.json_response({"success": True, "teams": teams_data})
+
+
 async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
     """RPC endpoint to get the full bracket state (requires API key)."""
     log.info("[RPC] get_bracket request received from %s", request.remote)
@@ -12561,6 +12648,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/rpc/go_live", rpc_go_live_handler)
     app.router.add_post("/rpc/set_stream_channel", rpc_set_stream_channel_handler)
     app.router.add_get("/rpc/match", rpc_get_match_handler)
+    app.router.add_get("/rpc/rankings", rpc_get_rankings_handler)
     app.router.add_get("/rpc/bracket", rpc_get_bracket_handler)
     # RPC logo endpoints (for external site sync)
     app.router.add_get("/rpc/logos/pending", rpc_logo_pending_handler)
