@@ -247,16 +247,25 @@ async def fetch_rankings() -> dict[str, str]:
     if len(rows) < 2:
         return _rankings
 
-    header = [c.strip().lower() for c in rows[0]]
+    # Find header row (first row containing "Team" or "Rank")
+    header_idx = 0
+    for i, row in enumerate(rows):
+        row_lower = [c.strip().lower() for c in row]
+        if any("team" in c or "rank" in c for c in row_lower):
+            header_idx = i
+            break
 
-    # Find columns
-    name_col = -1
-    rank_col = -1
-    for i, h in enumerate(header):
-        if "team" in h and "name" in h:
-            name_col = i
-        elif h == "rank":
-            rank_col = i
+    header = [c.strip().lower() for c in rows[header_idx]]
+
+    # Flexible column helper
+    def col(name: str) -> int:
+        for i, h in enumerate(header):
+            if name in h:
+                return i
+        return -1
+
+    name_col = col("team")
+    rank_col = col("rank")
 
     if name_col == -1 or rank_col == -1:
         log.warning(f"Rankings CSV missing expected columns (found: {header})")
@@ -264,7 +273,7 @@ async def fetch_rankings() -> dict[str, str]:
 
     new_rankings: dict[str, str] = {}
     new_ordered: list[tuple[str, str]] = []
-    for row in rows[1:]:
+    for row in rows[header_idx + 1 :]:
         if len(row) <= max(name_col, rank_col):
             continue
         team = row[name_col].strip()
@@ -332,23 +341,32 @@ async def fetch_rosters() -> dict[str, dict]:
     if len(rows) < 2:
         return _rosters
 
-    header = [c.strip().lower() for c in rows[0]]
+    # Find header row (first row containing "Team" or "Status")
+    header_idx = 0
+    for i, row in enumerate(rows):
+        row_lower = [c.strip().lower() for c in row]
+        if any("team" in c or "status" in c for c in row_lower):
+            header_idx = i
+            break
 
-    # Find columns
-    team_col = -1
-    status_col = -1
-    for i, h in enumerate(header):
-        if h == "team":
-            team_col = i
-        elif h == "status":
-            status_col = i
+    header = [c.strip().lower() for c in rows[header_idx]]
+
+    # Flexible column helper
+    def col(name: str) -> int:
+        for i, h in enumerate(header):
+            if name in h:
+                return i
+        return -1
+
+    team_col = col("team")
+    status_col = col("status")
 
     if team_col == -1:
         log.warning(f"Rosters CSV missing 'Team' column (found: {header})")
         return _rosters
 
     new_rosters: dict[str, dict] = {}
-    for row in rows[1:]:
+    for row in rows[header_idx + 1 :]:
         if len(row) <= team_col:
             continue
         team = row[team_col].strip()
