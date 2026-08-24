@@ -8736,6 +8736,9 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     """Public API endpoint to get all matches with claim info (no auth required)."""
     bot = request.app.get("bot")
     guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    # Fall back to the global week setting when a match has no week_number set
+    current_week = await db.get_setting("week")
     
     # Helper to get team members from role
     def get_team_members(team_name: str) -> list:
@@ -8857,7 +8860,7 @@ async def api_matches_handler(request: web.Request) -> web.Response:
             "match_date": match["match_date"],
             "match_time": match["match_time"],
             "match_timestamp": match.get("match_timestamp"),
-            "week_number": match.get("week_number"),
+            "week_number": match.get("week_number") or current_week,
             "match_type": match.get("match_type"),
             "stream_channel": match.get("stream_channel"),
             "casters": casters,
@@ -8872,6 +8875,9 @@ async def api_match_detail_handler(request: web.Request) -> web.Response:
     """API endpoint to get detailed match info with full rosters, roles, and rank."""
     bot = request.app.get("bot")
     guild = bot.get_guild(config.GUILD_ID) if bot else None
+
+    # Fall back to the global week setting when a match has no week_number set
+    current_week = await db.get_setting("week")
 
     match_id_param = request.match_info.get("match_id", "")
     if not match_id_param:
@@ -8957,7 +8963,7 @@ async def api_match_detail_handler(request: web.Request) -> web.Response:
         "match_date": match["match_date"],
         "match_time": match["match_time"],
         "match_timestamp": match.get("match_timestamp"),
-        "week_number": match.get("week_number"),
+        "week_number": match.get("week_number") or current_week,
         "match_type": match.get("match_type"),
     }
 
