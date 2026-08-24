@@ -8779,13 +8779,11 @@ async def api_matches_handler(request: web.Request) -> web.Response:
         members.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
         return members
     
-    # Helper to get team logo URL
-    async def get_team_logo_url(team_name: str) -> str | None:
-        logo = await db.get_team_logo(team_name)
-        if logo:
-            base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
-            return f"{base_url}/team-logo/{team_name}"
-        return None
+    # Helper to get team logo URL. The /team-logo endpoint serves the approved
+    # logo, or generates an initials placeholder PNG when none exists.
+    def get_team_logo_url(team_name: str) -> str:
+        base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
+        return f"{base_url}/team-logo/{team_name}"
     
     # Get all active matches
     matches = await db.get_all_matches_sorted_by_time()
@@ -8842,8 +8840,8 @@ async def api_matches_handler(request: web.Request) -> web.Response:
                     sideline["avatar_url"] = await get_user_avatar_url(bot, user_id)
         
         # Get team logos
-        team_a_logo = await get_team_logo_url(match["team_a"])
-        team_b_logo = await get_team_logo_url(match["team_b"])
+        team_a_logo = get_team_logo_url(match["team_a"])
+        team_b_logo = get_team_logo_url(match["team_b"])
         
         result.append({
             "id": match.get("simple_id"),
