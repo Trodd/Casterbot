@@ -834,6 +834,16 @@ HTML_TEMPLATE = """
             color: var(--echo-cyan);
             border: 1px solid rgba(0,229,255,0.2);
         }
+        .match-detail-player-role.co-captain {
+            background: rgba(255,106,0,0.15);
+            color: var(--echo-orange);
+            border: 1px solid rgba(255,106,0,0.3);
+        }
+        .match-detail-player-role.player {
+            background: rgba(0,229,255,0.1);
+            color: var(--echo-cyan);
+            border: 1px solid rgba(0,229,255,0.2);
+        }
         .match-detail-player.on-cooldown {
             background: rgba(255, 51, 102, 0.12);
             box-shadow: inset 3px 0 0 var(--echo-danger);
@@ -4363,7 +4373,7 @@ HTML_TEMPLATE = """
                     if (!roster || roster.length === 0) return '<div class="match-detail-empty">No roster data available</div>';
                     return '<ul class="match-detail-roster">' + roster.map(p => `
                         <li class="match-detail-player ${p.on_cooldown ? 'on-cooldown' : ''}">
-                            <img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">
+                            ${p.avatar_url ? `<img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">` : ''}
                             <div class="match-detail-player-info">
                                 <div class="match-detail-player-name">${p.display_name}${p.on_cooldown ? ' <span class="match-detail-player-cooldown-badge">COOLDOWN</span>' : ''}</div>
                                 ${p.username ? `<div class="match-detail-player-username">@${p.username}</div>` : ''}
@@ -8892,6 +8902,77 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "matches": result})
 
 
+async def _build_team_roster(bot, guild, team_name: str) -> list:
+    """Build a team roster from the team roles sheet, enriched with Discord data."""
+    sheet_players = sheets.get_team_players(team_name)
+
+    # Resolve the Discord team role for member matching and fallback
+    team_role = None
+    if guild:
+        team_name_lower = team_name.lower()
+        for role in guild.roles:
+            if role.name.lower().startswith("team:"):
+                if role.name[5:].strip().lower() == team_name_lower:
+                    team_role = role
+                    break
+
+    member_lookup: dict[str, discord.Member] = {}
+    if team_role:
+        for member in team_role.members:
+            if member.bot:
+                continue
+            member_lookup[member.display_name.lower()] = member
+            member_lookup[member.name.lower()] = member
+
+    roster: list[dict] = []
+
+    if sheet_players:
+        for player in sheet_players:
+            player_name = player["name"]
+            member = member_lookup.get(player_name.lower())
+            avatar_url = ""
+            if member:
+                avatar_url = await get_user_avatar_url(bot, member.id)
+            on_cooldown = sheets.is_player_on_cooldown(player_name)
+            if member:
+                on_cooldown = on_cooldown or sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name)
+            roster.append({
+                "user_id": str(member.id) if member else "",
+                "username": member.name if member else "",
+                "display_name": member.display_name if member else player_name,
+                "avatar_url": avatar_url,
+                "role": player.get("role", "Player"),
+                "on_cooldown": on_cooldown,
+            })
+        role_order = {"Captain": 0, "Co-Captain": 1, "Player": 2}
+        roster.sort(key=lambda m: (role_order.get(m["role"], 3), m["display_name"].lower()))
+        return roster
+
+    # Fall back to Discord team role members when the sheet has no data
+    if team_role:
+        captain_role = None
+        for role in guild.roles:
+            if role.id == 1182380145047249000 or role.name.lower() == "captainna":
+                captain_role = role
+                break
+        for member in team_role.members:
+            if member.bot:
+                continue
+            is_captain = captain_role in member.roles if captain_role else False
+            avatar_url = await get_user_avatar_url(bot, member.id)
+            roster.append({
+                "user_id": str(member.id),
+                "username": member.name,
+                "display_name": member.display_name,
+                "avatar_url": avatar_url,
+                "role": "Captain" if is_captain else "Member",
+                "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
+            })
+        roster.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
+
+    return roster
+
+
 async def api_match_detail_handler(request: web.Request) -> web.Response:
     """API endpoint to get detailed match info with full rosters, roles, and rank."""
     bot = request.app.get("bot")
@@ -8915,47 +8996,7 @@ async def api_match_detail_handler(request: web.Request) -> web.Response:
 
     # Helper to build detailed roster for a team
     async def get_detailed_roster(team_name: str) -> list:
-        if not guild or not team_name:
-            return []
-
-        team_name_lower = team_name.lower()
-        team_role = None
-
-        for role in guild.roles:
-            if role.name.lower().startswith("team:"):
-                role_team_name = role.name[5:].strip().lower()
-                if role_team_name == team_name_lower:
-                    team_role = role
-                    break
-
-        if not team_role:
-            return []
-
-        # Find captain role (CaptainNA / role ID 1182380145047249000)
-        captain_role = None
-        for role in guild.roles:
-            if role.id == 1182380145047249000 or role.name.lower() == "captainna":
-                captain_role = role
-                break
-
-        members = []
-        for member in team_role.members:
-            if member.bot:
-                continue
-            is_captain = captain_role in member.roles if captain_role else False
-            avatar_url = await get_user_avatar_url(bot, member.id)
-            members.append({
-                "user_id": str(member.id),
-                "username": member.name,
-                "display_name": member.display_name,
-                "avatar_url": avatar_url,
-                "role": "Captain" if is_captain else "Member",
-                "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
-            })
-
-        # Captains first, then alphabetical
-        members.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
-        return members
+        return await _build_team_roster(bot, guild, team_name)
 
     team_a = match["team_a"]
     team_b = match["team_b"]
@@ -9025,15 +9066,17 @@ async def api_teams_handler(request: web.Request) -> web.Response:
     # First: ranked teams in rank order
     for name, rank in ranked_teams:
         seen.add(name.lower())
-        roster = all_rosters.get(name.lower(), {})
-        roster_count = roster.get("roster_count", 0)
-        # Fall back to Discord if CSV has no count
-        if roster_count == 0 and guild:
-            for role in guild.roles:
-                if role.name.lower().startswith("team:"):
-                    if role.name[5:].strip().lower() == name.lower():
-                        roster_count = sum(1 for m in role.members if not m.bot)
-                        break
+        roster_count = len(sheets.get_team_players(name))
+        if roster_count == 0:
+            roster = all_rosters.get(name.lower(), {})
+            roster_count = roster.get("roster_count", 0)
+            # Fall back to Discord if CSV has no count
+            if roster_count == 0 and guild:
+                for role in guild.roles:
+                    if role.name.lower().startswith("team:"):
+                        if role.name[5:].strip().lower() == name.lower():
+                            roster_count = sum(1 for m in role.members if not m.bot)
+                            break
         logo_url = None
         logo = await db.get_team_logo(name)
         if logo:
@@ -9053,13 +9096,16 @@ async def api_teams_handler(request: web.Request) -> web.Response:
             unranked.append((roster["team_name"], roster.get("roster_count", 0)))
     unranked.sort(key=lambda t: t[0].lower())
 
-    for name, roster_count in unranked:
-        if roster_count == 0 and guild:
-            for role in guild.roles:
-                if role.name.lower().startswith("team:"):
-                    if role.name[5:].strip().lower() == name.lower():
-                        roster_count = sum(1 for m in role.members if not m.bot)
-                        break
+    for name, old_roster_count in unranked:
+        roster_count = len(sheets.get_team_players(name))
+        if roster_count == 0:
+            roster_count = old_roster_count
+            if roster_count == 0 and guild:
+                for role in guild.roles:
+                    if role.name.lower().startswith("team:"):
+                        if role.name[5:].strip().lower() == name.lower():
+                            roster_count = sum(1 for m in role.members if not m.bot)
+                            break
         logo_url = None
         logo = await db.get_team_logo(name)
         if logo:
@@ -9093,45 +9139,8 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
         base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
         logo_url = f"{base_url}/team-logo/{team_name}"
 
-    # Build roster from Discord team role members, enriched with CSV roles
-    roster = []
-    csv_roster = sheets.get_team_roster(team_name)
-
-    # Build CSV name → role lookup (case-insensitive)
-    csv_role_lookup: dict[str, str] = {}
-    if csv_roster and csv_roster.get("players"):
-        for p in csv_roster["players"]:
-            csv_role_lookup[p["name"].lower()] = p["role"]
-
-    if guild:
-        team_name_lower = team_name.lower()
-        team_role = None
-        for role in guild.roles:
-            if role.name.lower().startswith("team:"):
-                if role.name[5:].strip().lower() == team_name_lower:
-                    team_role = role
-                    break
-
-        if team_role:
-            for member in team_role.members:
-                if member.bot:
-                    continue
-                avatar_url = await get_user_avatar_url(bot, member.id)
-                # Try to match Discord member to CSV player by name
-                csv_role = csv_role_lookup.get(member.display_name.lower()) or csv_role_lookup.get(member.name.lower())
-                role_label = csv_role or "Player"
-                roster.append({
-                    "user_id": str(member.id),
-                    "username": member.name,
-                    "display_name": member.display_name,
-                    "avatar_url": avatar_url,
-                    "role": role_label,
-                    "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
-                })
-
-    # Sort: Captain → Co-Captain → Player
-    role_order = {"Captain": 0, "Co-Captain": 1, "Player": 2, "Member": 2}
-    roster.sort(key=lambda m: (role_order.get(m["role"], 3), m["display_name"].lower()))
+    # Build roster from the team roles sheet, enriched with Discord avatars/names
+    roster = await _build_team_roster(bot, guild, team_name)
 
     return web.json_response({
         "success": True,

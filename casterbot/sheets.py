@@ -490,3 +490,106 @@ async def fetch_cooldowns() -> set[str]:
     _cooldowns = new_cooldowns
     log.info(f"Loaded {len(_cooldowns)} cooldown players")
     return _cooldowns
+
+
+# ---- Team roles cache (long-format sheet: Team Name, Player Name, Captain, Co-Captain, Region) ----
+_team_roles: dict[str, list[dict]] = {}  # team name (lower) -> [{name, role, region}]
+
+
+def get_team_players(team_name: str) -> list[dict]:
+    """Return the roster players for a team from the team roles sheet."""
+    return list(_team_roles.get(team_name.strip().lower(), []))
+
+
+def get_all_team_roles() -> dict[str, list[dict]]:
+    """Return all team rosters from the team roles sheet."""
+    return {team: list(players) for team, players in _team_roles.items()}
+
+
+async def fetch_team_roles() -> dict[str, list[dict]]:
+    """Fetch the team roles sheet (long format) and update the cache."""
+    global _team_roles
+    if not config.TEAM_ROLES_CSV_URL:
+        return _team_roles
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                config.TEAM_ROLES_CSV_URL,
+                headers={"User-Agent": "CasterBot/1.0"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"Team roles fetch failed with status {resp.status}")
+                    return _team_roles
+                text = await resp.text()
+        except Exception as e:
+            log.warning(f"Team roles fetch failed: {e}")
+            return _team_roles
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if len(rows) < 2:
+        return _team_roles
+
+    # Find the header row (must mention a team or player column)
+    header_idx = 0
+    for i, row in enumerate(rows):
+        row_lower = [c.strip().lower() for c in row]
+        if any("team" in c or "player" in c for c in row_lower):
+            header_idx = i
+            break
+
+    header = [c.strip().lower() for c in rows[header_idx]]
+
+    def col(name: str) -> int:
+        for i, h in enumerate(header):
+            if name in h:
+                return i
+        return -1
+
+    team_col = col("team")
+    player_col = col("player")
+    if team_col == -1 or player_col == -1:
+        log.warning(f"Team roles CSV missing Team/Player columns (found: {header})")
+        return _team_roles
+
+    # Captain and Co-Captain are Yes/No flags. Match exact headers first so
+    # "co-captain" isn't picked up by a loose "captain" search.
+    captain_col = -1
+    cocaptain_col = -1
+    for i, h in enumerate(header):
+        if h == "captain":
+            captain_col = i
+        elif h in ("co-captain", "co captain", "cocaptain", "co_captain"):
+            cocaptain_col = i
+    if captain_col == -1:
+        for i, h in enumerate(header):
+            if "captain" in h and "co" not in h:
+                captain_col = i
+                break
+
+    region_col = col("region")
+
+    new_roles: dict[str, list[dict]] = {}
+    for row in rows[header_idx + 1 :]:
+        if len(row) <= max(team_col, player_col):
+            continue
+        team = row[team_col].strip()
+        player = row[player_col].strip()
+        if not team or not player:
+            continue
+        is_captain = captain_col >= 0 and captain_col < len(row) and row[captain_col].strip().lower() in ("yes", "y", "true", "1")
+        is_cocaptain = cocaptain_col >= 0 and cocaptain_col < len(row) and row[cocaptain_col].strip().lower() in ("yes", "y", "true", "1")
+        role = "Captain" if is_captain else ("Co-Captain" if is_cocaptain else "Player")
+        region = row[region_col].strip() if region_col >= 0 and region_col < len(row) else ""
+        new_roles.setdefault(team.lower(), []).append({"name": player, "role": role, "region": region})
+
+    # Guard: don't wipe a larger cache with a tiny result (likely fetch failure)
+    if len(new_roles) < 5 and len(_team_roles) > len(new_roles):
+        log.warning(f"Team roles fetch returned only {len(new_roles)} teams, keeping existing {len(_team_roles)}")
+        return _team_roles
+
+    _team_roles = new_roles
+    log.info(f"Loaded team roles for {len(_team_roles)} teams")
+    return _team_roles
