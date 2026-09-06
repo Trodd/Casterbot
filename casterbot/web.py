@@ -9725,6 +9725,49 @@ async def rpc_get_bracket_handler(request: web.Request) -> web.Response:
 
 # ============ RPC Logo Endpoints (for external site sync) ============
 
+_RESOLVED_LOGO_EMOJIS = {"\u2705", "\u274c"}  # ✅ (approved), ❌ (denied)
+
+
+def _logo_message_resolved(msg: discord.Message) -> bool:
+    """Return True if the bot already accepted or denied this logo submission."""
+    for reaction in msg.reactions:
+        if reaction.me and str(reaction.emoji) in _RESOLVED_LOGO_EMOJIS:
+            return True
+    return False
+
+
+def _team_name_from_message(msg: discord.Message, guild: discord.Guild) -> str | None:
+    """Determine which team a logo submission is for.
+
+    Prefer the team named in the message content (a role mention or ``Team: X``
+    text), falling back to the author's current team role. This keeps a
+    submission attached to its original team even if the user switched teams.
+    """
+    content = msg.content or ""
+
+    # 1. Team role mention, e.g. <@&123456789>
+    for role_id_match in re.finditer(r"<@&(\d+)>", content):
+        role = guild.get_role(int(role_id_match.group(1)))
+        if role is not None and role.name.lower().startswith("team:"):
+            return role.name[5:].strip()
+
+    # 2. Explicit "Team: X" text (including the bot's bold "**Team:** X")
+    for pattern in (r"\*\*Team:\*\*\s*(.+)", r"(?:^|\s)Team:\s*(.+)"):
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            team_name = match.group(1).strip().rstrip("*").strip()
+            if team_name:
+                return team_name
+
+    # 3. Fall back to the author's current team role
+    member = guild.get_member(msg.author.id)
+    if member is not None:
+        for role in member.roles:
+            if role.name.lower().startswith("team:"):
+                return role.name[5:].strip()
+    return None
+
+
 async def rpc_logo_pending_handler(request: web.Request) -> web.Response:
     """RPC endpoint: get pending logo submissions (requires API key)."""
     if not _check_rpc_key(request):
@@ -9758,16 +9801,12 @@ async def rpc_logo_pending_handler(request: web.Request) -> web.Response:
         async for msg in channel.history(limit=100):
             if msg.id in approved_msg_ids:
                 continue
+            if _logo_message_resolved(msg):
+                continue
             image_attachments = [a for a in msg.attachments if a.content_type and a.content_type.startswith("image/")]
             if not image_attachments:
                 continue
-            team_name = None
-            member = guild.get_member(msg.author.id)
-            if member:
-                for role in member.roles:
-                    if role.name.lower().startswith("team:"):
-                        team_name = role.name[5:].strip()
-                        break
+            team_name = _team_name_from_message(msg, guild)
             if not team_name:
                 continue
             existing_logo = await db.get_team_logo(team_name)
@@ -11312,8 +11351,10 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
     try:
         # Read recent messages with images
         async for msg in channel.history(limit=100):
-            # Skip if already approved
+            # Skip if already approved or denied
             if msg.id in approved_msg_ids:
+                continue
+            if _logo_message_resolved(msg):
                 continue
             
             # Skip if no attachments with images
@@ -11321,17 +11362,9 @@ async def api_logo_pending_handler(request: web.Request) -> web.Response:
             if not image_attachments:
                 continue
             
-            # Find the user's team role
-            team_name = None
-            member = guild.get_member(msg.author.id)
-            if member:
-                for role in member.roles:
-                    if role.name.lower().startswith("team:"):
-                        team_name = role.name[5:].strip()
-                        break
-            
+            team_name = _team_name_from_message(msg, guild)
             if not team_name:
-                continue  # Skip if user doesn't have a team role
+                continue  # Skip if we can't determine a team
             
             # Check if this team already has an approved logo
             existing_logo = await db.get_team_logo(team_name)
