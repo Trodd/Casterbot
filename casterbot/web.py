@@ -8084,7 +8084,7 @@ async def _refresh_discord_message(bot, match_id: str) -> None:
         if not match or not match.get("message_id"):
             return
         
-        channel = bot.get_channel(config.CLAIM_CHANNEL_ID)
+        channel = bot.get_channel(match.get("channel_id") or config.CLAIM_CHANNEL_ID)
         if not channel:
             return
         
@@ -8378,6 +8378,8 @@ async def api_set_stream_channel_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Only crew members can update stream channel"}, status=403)
     
     await db.set_stream_channel(match_id, stream_channel)
+    if bot:
+        await _refresh_discord_message(bot, match_id)
     return web.json_response({"success": True})
 
 
@@ -9409,6 +9411,9 @@ async def rpc_set_stream_channel_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": "Match not found"}, status=404)
     
     await db.set_stream_channel(match["match_id"], stream_channel)
+    bot = request.app.get("bot")
+    if bot:
+        await _refresh_discord_message(bot, match["match_id"])
     log.info("[RPC] set_stream_channel success - match=%s channel=%s", match_id_param, stream_channel)
     _log_rpc("set_stream_channel", "success", match_id=str(match_id_param), remote=request.remote)
     return web.json_response({"success": True})
