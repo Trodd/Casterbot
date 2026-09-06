@@ -159,6 +159,7 @@ See `.env.example` for all available configuration options including:
 | `TWITCH_URL` | Twitch stream URL for announcements |
 | `UPCOMING_MATCHES_CSV_URL` | Published Google Sheet CSV URL |
 | `ROSTERS_CSV_URL` | Optional roster CSV URL |
+| `COOLDOWN_CSV_URL` | Optional cooldown list CSV URL (players on cooldown are highlighted) |
 | `MATCH_LOOKAHEAD_DAYS` | How many days ahead to fetch matches (default: 14) |
 | `MATCH_GRACE_HOURS` | Grace period for past matches (default: 0) |
 | `SYNC_INTERVAL_SECONDS` | How often to sync from sheet (default: 300) |

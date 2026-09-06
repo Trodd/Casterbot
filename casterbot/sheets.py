@@ -412,3 +412,81 @@ async def fetch_rosters() -> dict[str, dict]:
     _rosters = new_rosters
     log.info(f"Loaded rosters for {len(_rosters)} teams")
     return _rosters
+
+
+# ---- Cooldown list cache ----
+_cooldowns: set[str] = set()  # normalized (lowercased) player names on cooldown
+
+
+def is_player_on_cooldown(name: str) -> bool:
+    """Return True if the given player name appears on the cooldown list."""
+    if not name:
+        return False
+    return name.strip().lstrip("@").lower() in _cooldowns
+
+
+def get_cooldown_names() -> set[str]:
+    """Return a copy of all cooldown player names (lowercased)."""
+    return set(_cooldowns)
+
+
+async def fetch_cooldowns() -> set[str]:
+    """Fetch the cooldown list from the published CSV and update the cache."""
+    global _cooldowns
+    if not config.COOLDOWN_CSV_URL:
+        return _cooldowns
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                config.COOLDOWN_CSV_URL,
+                headers={"User-Agent": "CasterBot/1.0"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"Cooldowns fetch failed with status {resp.status}")
+                    return _cooldowns
+                text = await resp.text()
+        except Exception as e:
+            log.warning(f"Cooldowns fetch failed: {e}")
+            return _cooldowns
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return _cooldowns
+
+    # Find the header row (first row that mentions names/players/cooldown)
+    header_idx = 0
+    for i, row in enumerate(rows):
+        row_lower = [c.strip().lower() for c in row]
+        if any("name" in c or "player" in c or "cooldown" in c for c in row_lower):
+            header_idx = i
+            break
+
+    header = [c.strip().lower() for c in rows[header_idx]]
+
+    def col(name: str) -> int:
+        for i, h in enumerate(header):
+            if name in h:
+                return i
+        return -1
+
+    player_col = col("player")
+    if player_col == -1:
+        player_col = col("name")
+    if player_col == -1:
+        player_col = 0  # Fall back to the first column
+
+    new_cooldowns: set[str] = set()
+    for row in rows[header_idx + 1 :]:
+        if player_col >= len(row):
+            continue
+        name = row[player_col].strip()
+        if not name:
+            continue
+        new_cooldowns.add(name.lstrip("@").lower())
+
+    _cooldowns = new_cooldowns
+    log.info(f"Loaded {len(_cooldowns)} cooldown players")
+    return _cooldowns

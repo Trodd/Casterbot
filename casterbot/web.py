@@ -834,6 +834,25 @@ HTML_TEMPLATE = """
             color: var(--echo-cyan);
             border: 1px solid rgba(0,229,255,0.2);
         }
+        .match-detail-player.on-cooldown {
+            background: rgba(255, 51, 102, 0.12);
+            box-shadow: inset 3px 0 0 var(--echo-danger);
+        }
+        .match-detail-player.on-cooldown:hover {
+            background: rgba(255, 51, 102, 0.2);
+        }
+        .match-detail-player-cooldown-badge {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 6px;
+            border-radius: 8px;
+            background: var(--echo-danger);
+            color: #fff;
+            font-size: 0.62em;
+            font-weight: 700;
+            letter-spacing: 1px;
+            vertical-align: middle;
+        }
         .match-detail-close {
             display: block;
             margin: 20px auto 0;
@@ -4282,10 +4301,10 @@ HTML_TEMPLATE = """
                 const renderRoster = (rosterArr) => {
                     if (!rosterArr || rosterArr.length === 0) return '<div class="match-detail-empty">No roster data available</div>';
                     return '<ul class="match-detail-roster">' + rosterArr.map(p => `
-                        <li class="match-detail-player">
+                        <li class="match-detail-player ${p.on_cooldown ? 'on-cooldown' : ''}">
                             ${p.avatar_url ? `<img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">` : ''}
                             <div class="match-detail-player-info">
-                                <div class="match-detail-player-name">${p.display_name}</div>
+                                <div class="match-detail-player-name">${p.display_name}${p.on_cooldown ? ' <span class="match-detail-player-cooldown-badge">COOLDOWN</span>' : ''}</div>
                                 ${p.username ? `<div class="match-detail-player-username">@${p.username}</div>` : ''}
                             </div>
                             <span class="match-detail-player-role ${(p.role||'member').toLowerCase()}">${p.role || 'Member'}</span>
@@ -4343,10 +4362,10 @@ HTML_TEMPLATE = """
                 const renderRoster = (roster) => {
                     if (!roster || roster.length === 0) return '<div class="match-detail-empty">No roster data available</div>';
                     return '<ul class="match-detail-roster">' + roster.map(p => `
-                        <li class="match-detail-player">
+                        <li class="match-detail-player ${p.on_cooldown ? 'on-cooldown' : ''}">
                             <img class="match-detail-player-avatar" src="${p.avatar_url}" alt="" loading="lazy">
                             <div class="match-detail-player-info">
-                                <div class="match-detail-player-name">${p.display_name}</div>
+                                <div class="match-detail-player-name">${p.display_name}${p.on_cooldown ? ' <span class="match-detail-player-cooldown-badge">COOLDOWN</span>' : ''}</div>
                                 ${p.username ? `<div class="match-detail-player-username">@${p.username}</div>` : ''}
                             </div>
                             <span class="match-detail-player-role ${p.role.toLowerCase()}">${p.role}</span>
@@ -8931,6 +8950,7 @@ async def api_match_detail_handler(request: web.Request) -> web.Response:
                 "display_name": member.display_name,
                 "avatar_url": avatar_url,
                 "role": "Captain" if is_captain else "Member",
+                "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
             })
 
         # Captains first, then alphabetical
@@ -9106,6 +9126,7 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
                     "display_name": member.display_name,
                     "avatar_url": avatar_url,
                     "role": role_label,
+                    "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
                 })
 
     # Sort: Captain → Co-Captain → Player
