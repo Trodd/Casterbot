@@ -8875,24 +8875,32 @@ async def _build_team_roster(guild, team_name: str) -> list:
                     break
 
     member_lookup: dict[str, discord.Member] = {}
+    member_by_id: dict[int, discord.Member] = {}
     if team_role:
         for member in team_role.members:
             if member.bot:
                 continue
             member_lookup[member.display_name.lower()] = member
             member_lookup[member.name.lower()] = member
+            member_by_id[member.id] = member
 
     roster: list[dict] = []
 
     if sheet_players:
         for player in sheet_players:
             player_name = player["name"]
-            member = member_lookup.get(player_name.lower())
-            on_cooldown = sheets.is_player_on_cooldown(player_name)
+            resolved_id = sheets.resolve_discord_id(player_name)
+            member = member_by_id.get(resolved_id) if resolved_id is not None else None
+            if member is None and guild and resolved_id is not None:
+                member = guild.get_member(resolved_id)
+            if member is None:
+                member = member_lookup.get(player_name.lower())
+            discord_id = member.id if member else resolved_id
+            on_cooldown = sheets.is_on_cooldown(name=player_name, discord_id=discord_id)
             if member:
-                on_cooldown = on_cooldown or sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name)
+                on_cooldown = on_cooldown or sheets.is_on_cooldown(name=member.display_name, discord_id=member.id) or sheets.is_on_cooldown(name=member.name, discord_id=member.id)
             roster.append({
-                "user_id": str(member.id) if member else "",
+                "user_id": str(member.id) if member else (str(resolved_id) if resolved_id is not None else ""),
                 "username": member.name if member else "",
                 "display_name": member.display_name if member else player_name,
                 "role": player.get("role", "Player"),
@@ -8918,7 +8926,7 @@ async def _build_team_roster(guild, team_name: str) -> list:
                 "username": member.name,
                 "display_name": member.display_name,
                 "role": "Captain" if is_captain else "Member",
-                "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
+                "on_cooldown": sheets.is_on_cooldown(name=member.display_name, discord_id=member.id) or sheets.is_on_cooldown(name=member.name, discord_id=member.id),
             })
         roster.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
 

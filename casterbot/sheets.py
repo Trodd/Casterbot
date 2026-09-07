@@ -416,13 +416,26 @@ async def fetch_rosters() -> dict[str, dict]:
 
 # ---- Cooldown list cache ----
 _cooldowns: set[str] = set()  # normalized (lowercased) player names on cooldown
+_cooldown_ids: set[int] = set()  # resolved Discord IDs of players on cooldown
 
 
 def is_player_on_cooldown(name: str) -> bool:
     """Return True if the given player name appears on the cooldown list."""
-    if not name:
-        return False
-    return name.strip().lstrip("@").lower() in _cooldowns
+    return is_on_cooldown(name=name)
+
+
+def is_on_cooldown(name: str | None = None, discord_id: int | None = None) -> bool:
+    """Return True if a player is on cooldown, matching by Discord ID and/or name."""
+    if discord_id is not None and discord_id in _cooldown_ids:
+        return True
+    if name:
+        normalized = name.strip().lstrip("@").lower()
+        if normalized in _cooldowns:
+            return True
+        resolved = resolve_discord_id(normalized)
+        if resolved is not None and resolved in _cooldown_ids:
+            return True
+    return False
 
 
 def get_cooldown_names() -> set[str]:
@@ -432,7 +445,7 @@ def get_cooldown_names() -> set[str]:
 
 async def fetch_cooldowns() -> set[str]:
     """Fetch the cooldown list from the published CSV and update the cache."""
-    global _cooldowns
+    global _cooldowns, _cooldown_ids
     if not config.COOLDOWN_CSV_URL:
         return _cooldowns
 
@@ -487,8 +500,15 @@ async def fetch_cooldowns() -> set[str]:
             continue
         new_cooldowns.add(name.lstrip("@").lower())
 
+    new_cooldown_ids: set[int] = set()
+    for name in new_cooldowns:
+        resolved = _player_history.get(name.lower())
+        if resolved is not None:
+            new_cooldown_ids.add(resolved)
+
     _cooldowns = new_cooldowns
-    log.info(f"Loaded {len(_cooldowns)} cooldown players")
+    _cooldown_ids = new_cooldown_ids
+    log.info(f"Loaded {len(_cooldowns)} cooldown players ({len(_cooldown_ids)} matched to Discord IDs)")
     return _cooldowns
 
 
@@ -593,3 +613,106 @@ async def fetch_team_roles() -> dict[str, list[dict]]:
     _team_roles = new_roles
     log.info(f"Loaded team roles for {len(_team_roles)} teams")
     return _team_roles
+
+
+# ---- Player name history cache ----
+# Maps every known name (original + alts) to a player's Discord ID so players can
+# be identified across sheets even when names don't match Discord exactly.
+_player_history: dict[str, int] = {}  # normalized name -> Discord ID
+_player_ids: set[int] = set()  # all known Discord IDs
+
+
+def resolve_discord_id(name: str) -> int | None:
+    """Resolve a player name (original or alias) to their Discord ID."""
+    if not name:
+        return None
+    return _player_history.get(name.strip().lstrip("@").lower())
+
+
+def get_known_player_ids() -> set[int]:
+    """Return a copy of all known player Discord IDs."""
+    return set(_player_ids)
+
+
+async def fetch_player_history() -> dict[str, int]:
+    """Fetch the player name history sheet and update the cache."""
+    global _player_history, _player_ids
+    if not config.PLAYER_HISTORY_CSV_URL:
+        return _player_history
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                config.PLAYER_HISTORY_CSV_URL,
+                headers={"User-Agent": "CasterBot/1.0"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"Player history fetch failed with status {resp.status}")
+                    return _player_history
+                text = await resp.text()
+        except Exception as e:
+            log.warning(f"Player history fetch failed: {e}")
+            return _player_history
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if len(rows) < 2:
+        return _player_history
+
+    # Find the header row (must mention Discord and a name column)
+    header_idx = 0
+    for i, row in enumerate(rows):
+        row_lower = [c.strip().lower() for c in row]
+        if any("discord" in c or "player" in c or "name" in c for c in row_lower):
+            header_idx = i
+            break
+
+    header = [c.strip().lower() for c in rows[header_idx]]
+
+    def col(name: str) -> int:
+        for i, h in enumerate(header):
+            if name in h:
+                return i
+        return -1
+
+    discord_col = col("discord")
+    if discord_col == -1:
+        discord_col = col("id")
+    name_col = col("player")
+    if name_col == -1:
+        name_col = col("name")
+
+    if discord_col == -1 or name_col == -1:
+        log.warning(f"Player history CSV missing Discord ID/Player Name columns (found: {header})")
+        return _player_history
+
+    new_history: dict[str, int] = {}
+    new_ids: set[int] = set()
+    for row in rows[header_idx + 1 :]:
+        if len(row) <= discord_col:
+            continue
+        discord_id_str = row[discord_col].strip()
+        if not discord_id_str.isdigit():
+            continue
+        discord_id = int(discord_id_str)
+        names: list[str] = []
+        for i in range(name_col, len(row)):
+            cell = row[i].strip()
+            if cell:
+                names.append(cell)
+        if not names:
+            continue
+        new_ids.add(discord_id)
+        for name in names:
+            new_history[name.lstrip("@").lower()] = discord_id
+
+    # Guard against wiping a larger cache with a tiny result (likely fetch failure)
+    if len(new_history) < 5 and len(_player_history) > len(new_history):
+        log.warning(f"Player history fetch returned only {len(new_history)} names, keeping existing {len(_player_history)}")
+        return _player_history
+
+    _player_history = new_history
+    _player_ids = new_ids
+    log.info(f"Loaded {len(_player_history)} player name aliases for {len(_player_ids)} players")
+    return _player_history
