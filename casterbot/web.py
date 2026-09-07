@@ -8771,48 +8771,6 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     # Fall back to the global week setting when a match has no week_number set
     current_week = await db.get_setting("week")
     
-    # Helper to get team members from role
-    def get_team_members(team_name: str) -> list:
-        if not guild or not team_name:
-            return []
-        
-        team_name_lower = team_name.lower()
-        team_role = None
-        
-        # Find the "Team: X" role
-        for role in guild.roles:
-            if role.name.lower().startswith("team:"):
-                role_team_name = role.name[5:].strip().lower()
-                if role_team_name == team_name_lower:
-                    team_role = role
-                    break
-        
-        if not team_role:
-            return []
-        
-        # Find the captain role (CaptainNA / role ID 1182380145047249000)
-        captain_role = None
-        for role in guild.roles:
-            if role.id == 1182380145047249000 or role.name.lower() == "captainna":
-                captain_role = role
-                break
-        
-        members = []
-        for member in team_role.members:
-            if member.bot:
-                continue
-            is_captain = captain_role in member.roles if captain_role else False
-            members.append({
-                "user_id": str(member.id),
-                "username": member.name,
-                "display_name": member.display_name,
-                "role": "Captain" if is_captain else "Member",
-            })
-        
-        # Sort: captains first, then by display name
-        members.sort(key=lambda m: (0 if m["role"] == "Captain" else 1, m["display_name"].lower()))
-        return members
-    
     # Helper to get team logo URL. The /team-logo endpoint serves the approved
     # logo, or generates an initials placeholder PNG when none exists.
     def get_team_logo_url(team_name: str) -> str:
@@ -8886,8 +8844,8 @@ async def api_matches_handler(request: web.Request) -> web.Response:
             "team_b_rank": sheets.get_team_rank(match["team_b"]) or None,
             "team_a_logo": team_a_logo,
             "team_b_logo": team_b_logo,
-            "team_a_roster": get_team_members(match["team_a"]),
-            "team_b_roster": get_team_members(match["team_b"]),
+            "team_a_roster": await _build_team_roster(bot, guild, match["team_a"]),
+            "team_b_roster": await _build_team_roster(bot, guild, match["team_b"]),
             "match_date": match["match_date"],
             "match_time": match["match_time"],
             "match_timestamp": match.get("match_timestamp"),
