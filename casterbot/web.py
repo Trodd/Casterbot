@@ -8844,8 +8844,8 @@ async def api_matches_handler(request: web.Request) -> web.Response:
             "team_b_rank": sheets.get_team_rank(match["team_b"]) or None,
             "team_a_logo": team_a_logo,
             "team_b_logo": team_b_logo,
-            "team_a_roster": await _build_team_roster(bot, guild, match["team_a"]),
-            "team_b_roster": await _build_team_roster(bot, guild, match["team_b"]),
+            "team_a_roster": await _build_team_roster(guild, match["team_a"]),
+            "team_b_roster": await _build_team_roster(guild, match["team_b"]),
             "match_date": match["match_date"],
             "match_time": match["match_time"],
             "match_timestamp": match.get("match_timestamp"),
@@ -8860,8 +8860,8 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "matches": result})
 
 
-async def _build_team_roster(bot, guild, team_name: str) -> list:
-    """Build a team roster from the team roles sheet, enriched with Discord data."""
+async def _build_team_roster(guild, team_name: str) -> list:
+    """Build a team roster from the team roles sheet, enriched with Discord names."""
     sheet_players = sheets.get_team_players(team_name)
 
     # Resolve the Discord team role for member matching and fallback
@@ -8888,9 +8888,6 @@ async def _build_team_roster(bot, guild, team_name: str) -> list:
         for player in sheet_players:
             player_name = player["name"]
             member = member_lookup.get(player_name.lower())
-            avatar_url = ""
-            if member:
-                avatar_url = await get_user_avatar_url(bot, member.id)
             on_cooldown = sheets.is_player_on_cooldown(player_name)
             if member:
                 on_cooldown = on_cooldown or sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name)
@@ -8898,7 +8895,6 @@ async def _build_team_roster(bot, guild, team_name: str) -> list:
                 "user_id": str(member.id) if member else "",
                 "username": member.name if member else "",
                 "display_name": member.display_name if member else player_name,
-                "avatar_url": avatar_url,
                 "role": player.get("role", "Player"),
                 "on_cooldown": on_cooldown,
             })
@@ -8917,12 +8913,10 @@ async def _build_team_roster(bot, guild, team_name: str) -> list:
             if member.bot:
                 continue
             is_captain = captain_role in member.roles if captain_role else False
-            avatar_url = await get_user_avatar_url(bot, member.id)
             roster.append({
                 "user_id": str(member.id),
                 "username": member.name,
                 "display_name": member.display_name,
-                "avatar_url": avatar_url,
                 "role": "Captain" if is_captain else "Member",
                 "on_cooldown": sheets.is_player_on_cooldown(member.display_name) or sheets.is_player_on_cooldown(member.name),
             })
@@ -8954,7 +8948,7 @@ async def api_match_detail_handler(request: web.Request) -> web.Response:
 
     # Helper to build detailed roster for a team
     async def get_detailed_roster(team_name: str) -> list:
-        return await _build_team_roster(bot, guild, team_name)
+        return await _build_team_roster(guild, team_name)
 
     team_a = match["team_a"]
     team_b = match["team_b"]
@@ -9097,8 +9091,8 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
         base_url = config.WEB_PUBLIC_URL.rstrip("/") if config.WEB_PUBLIC_URL else ""
         logo_url = f"{base_url}/team-logo/{team_name}"
 
-    # Build roster from the team roles sheet, enriched with Discord avatars/names
-    roster = await _build_team_roster(bot, guild, team_name)
+    # Build roster from the team roles sheet, enriched with Discord names
+    roster = await _build_team_roster(guild, team_name)
 
     return web.json_response({
         "success": True,
