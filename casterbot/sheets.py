@@ -783,19 +783,29 @@ async def fetch_assigned_matches() -> dict[str, list[dict]]:
 
     week_re = re.compile(r"(?i)^\s*week\s*(\d+)\s*$")
 
-    new_matches: dict[str, list[dict]] = {}
-    current_week_label = ""
-    current_week_num = 0
-
-    for row in rows[header_idx + 1 :]:
-        # A "Week N" cell marks the week for the rows that follow it.
+    # Map week labels to their row so each row can be assigned the nearest
+    # preceding label. Rows before the first label fall back to that first
+    # label, since the Ladder section (columns A/B) covers the entire week.
+    labels: list[tuple[int, str, int]] = []
+    for i, row in enumerate(rows[header_idx + 1 :], start=header_idx + 1):
         for cell in row:
             match = week_re.match(cell.strip())
             if match:
-                current_week_label = f"Week {match.group(1)}"
-                current_week_num = int(match.group(1))
+                labels.append((i, f"Week {match.group(1)}", int(match.group(1))))
                 break
 
+    def week_for(row_idx: int) -> tuple[str, int]:
+        for idx, label, num in reversed(labels):
+            if idx <= row_idx:
+                return label, num
+        if labels:
+            return labels[0][1], labels[0][2]
+        return "", 0
+
+    new_matches: dict[str, list[dict]] = {}
+
+    for i, row in enumerate(rows[header_idx + 1 :], start=header_idx + 1):
+        current_week_label, current_week_num = week_for(i)
         for division, a_col, b_col in sections:
             if a_col >= len(row) or b_col >= len(row):
                 continue
