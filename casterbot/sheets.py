@@ -723,9 +723,9 @@ _assigned_matches: dict[str, list[dict]] = {}  # team name (lower) -> [{week, we
 
 
 def get_team_matchups(team_name: str) -> list[dict]:
-    """Return a team's assigned matchups (opponent, week, division)."""
+    """Return a team's assigned Ladder matchups (opponent)."""
     matchups = list(_assigned_matches.get(team_name.strip().lower(), []))
-    matchups.sort(key=lambda m: (m.get("week_num", 0), m.get("division", ""), m.get("opponent", "").lower()))
+    matchups.sort(key=lambda m: m.get("opponent", "").lower())
     return matchups
 
 
@@ -755,78 +755,37 @@ async def fetch_assigned_matches() -> dict[str, list[dict]]:
     if not rows:
         return _assigned_matches
 
-    # Locate the header row containing "Team A" and "Team B" columns. The sheet
-    # has two side-by-side sections (Ladder and Master), each with its own pair.
+    # Only read the first Team A/Team B pair (columns A and B = Ladder).
+    # The Master section and Week labels on the right are ignored.
     header_idx = -1
-    team_a_cols: list[int] = []
-    team_b_cols: list[int] = []
+    team_a_col = -1
+    team_b_col = -1
     for i, row in enumerate(rows):
         lower = [c.strip().lower() for c in row]
-        a_cols = [j for j, h in enumerate(lower) if h == "team a"]
-        b_cols = [j for j, h in enumerate(lower) if h == "team b"]
-        if a_cols and b_cols:
+        if "team a" in lower and "team b" in lower:
             header_idx = i
-            team_a_cols = a_cols
-            team_b_cols = b_cols
+            team_a_col = lower.index("team a")
+            team_b_col = lower.index("team b")
             break
 
     if header_idx == -1:
         log.warning("Assigned matches CSV missing Team A/Team B header row")
         return _assigned_matches
 
-    # Pair the Team A/Team B columns in order: first pair = Ladder, second = Master.
-    sections: list[tuple[str, int, int]] = []
-    division_names = ("Ladder", "Master")
-    for idx, (a_col, b_col) in enumerate(zip(sorted(team_a_cols), sorted(team_b_cols))):
-        division = division_names[idx] if idx < len(division_names) else f"Section {idx + 1}"
-        sections.append((division, a_col, b_col))
-
     week_re = re.compile(r"(?i)^\s*week\s*(\d+)\s*$")
 
-    # Map week labels to their row so each row can be assigned the nearest
-    # preceding label. Rows before the first label fall back to that first
-    # label, since the Ladder section (columns A/B) covers the entire week.
-    labels: list[tuple[int, str, int]] = []
-    for i, row in enumerate(rows[header_idx + 1 :], start=header_idx + 1):
-        for cell in row:
-            match = week_re.match(cell.strip())
-            if match:
-                labels.append((i, f"Week {match.group(1)}", int(match.group(1))))
-                break
-
-    def week_for(row_idx: int) -> tuple[str, int]:
-        for idx, label, num in reversed(labels):
-            if idx <= row_idx:
-                return label, num
-        if labels:
-            return labels[0][1], labels[0][2]
-        return "", 0
-
     new_matches: dict[str, list[dict]] = {}
-
-    for i, row in enumerate(rows[header_idx + 1 :], start=header_idx + 1):
-        current_week_label, current_week_num = week_for(i)
-        for division, a_col, b_col in sections:
-            if a_col >= len(row) or b_col >= len(row):
-                continue
-            team_a = row[a_col].strip()
-            team_b = row[b_col].strip()
-            if not team_a or not team_b:
-                continue
-            if week_re.match(team_a) or week_re.match(team_b):
-                continue
-            new_matches.setdefault(team_a.lower(), []).append({
-                "week": current_week_label,
-                "week_num": current_week_num,
-                "division": division,
-                "opponent": team_b,
-            })
-            new_matches.setdefault(team_b.lower(), []).append({
-                "week": current_week_label,
-                "week_num": current_week_num,
-                "division": division,
-                "opponent": team_a,
-            })
+    for row in rows[header_idx + 1 :]:
+        if team_a_col >= len(row) or team_b_col >= len(row):
+            continue
+        team_a = row[team_a_col].strip()
+        team_b = row[team_b_col].strip()
+        if not team_a or not team_b:
+            continue
+        if week_re.match(team_a) or week_re.match(team_b):
+            continue
+        new_matches.setdefault(team_a.lower(), []).append({"division": "Ladder", "opponent": team_b})
+        new_matches.setdefault(team_b.lower(), []).append({"division": "Ladder", "opponent": team_a})
 
     # Guard against wiping a larger cache with a tiny result (likely fetch failure)
     if len(new_matches) < 5 and len(_assigned_matches) > len(new_matches):

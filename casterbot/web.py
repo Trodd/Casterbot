@@ -4368,20 +4368,9 @@ HTML_TEMPLATE = """
                 const matchups = data.matchups || [];
                 const renderMatchups = (list) => {
                     if (!list || list.length === 0) return '';
-                    const grouped = {};
-                    for (const m of list) {
-                        const key = m.week || 'TBD';
-                        (grouped[key] = grouped[key] || []).push(m);
-                    }
                     let html = '<div class="team-matchups"><div class="team-matchups-title">Assigned Matchups</div>';
-                    for (const [week, items] of Object.entries(grouped)) {
-                        html += `<div class="team-matchup-week">${week}</div>`;
-                        for (const m of items) {
-                            html += `<div class="team-matchup-item">
-                                <span>vs ${m.opponent}</span>
-                                <span><span class="division ${(m.division || '').toLowerCase()}">${m.division || ''}</span></span>
-                            </div>`;
-                        }
+                    for (const m of list) {
+                        html += `<div class="team-matchup-item"><span>vs ${m.opponent}</span></div>`;
                     }
                     html += '</div>';
                     return html;
