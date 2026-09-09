@@ -863,49 +863,6 @@ HTML_TEMPLATE = """
             letter-spacing: 1px;
             vertical-align: middle;
         }
-        .team-matchups {
-            margin-top: 14px;
-            padding-top: 12px;
-            border-top: 1px solid var(--echo-border);
-            text-align: left;
-        }
-        .team-matchups-title {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 0.72em;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            color: var(--echo-orange);
-            margin-bottom: 6px;
-        }
-        .team-matchup-week {
-            color: var(--echo-text-dim);
-            font-size: 0.7em;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin: 8px 0 2px;
-        }
-        .team-matchup-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            padding: 6px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            font-size: 0.88em;
-        }
-        .team-matchup-item .division {
-            font-size: 0.7em;
-            padding: 1px 8px;
-            border-radius: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            background: rgba(0,212,255,0.12);
-            color: var(--echo-cyan);
-        }
-        .team-matchup-item .division.master {
-            background: rgba(255,106,0,0.15);
-            color: var(--echo-orange);
-        }
         .match-detail-close {
             display: block;
             margin: 20px auto 0;
@@ -4365,17 +4322,6 @@ HTML_TEMPLATE = """
                     `).join('') + '</ul>';
                 };
 
-                const matchups = data.matchups || [];
-                const renderMatchups = (list) => {
-                    if (!list || list.length === 0) return '';
-                    let html = '<div class="team-matchups"><div class="team-matchups-title">Assigned Matchups</div>';
-                    for (const m of list) {
-                        html += `<div class="team-matchup-item"><span>vs ${m.opponent}</span></div>`;
-                    }
-                    html += '</div>';
-                    return html;
-                };
-
                 const logoUrl = logo || `/team-logo/${encodeURIComponent(teamName)}`;
                 const logoHtml = logo
                     ? `<a href="${logoUrl}" target="_blank"><img class="match-detail-team-logo" src="${logo}" alt=""></a>`
@@ -4395,7 +4341,6 @@ HTML_TEMPLATE = """
                                 ${rankHtml}
                             </div>
                             ${renderRoster(roster)}
-                            ${renderMatchups(matchups)}
                         </div>
                     </div>
                     <button class="match-detail-close" onclick="this.closest('.match-detail-modal').remove()">Close</button>
@@ -9163,7 +9108,6 @@ async def api_team_roster_handler(request: web.Request) -> web.Response:
         "rank": rank,
         "logo": logo_url,
         "roster": roster,
-        "matchups": sheets.get_team_matchups(team_name),
     })
 
 

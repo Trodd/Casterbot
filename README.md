@@ -162,7 +162,6 @@ See `.env.example` for all available configuration options including:
 | `COOLDOWN_CSV_URL` | Optional cooldown list CSV URL (players on cooldown are highlighted) |
 | `TEAM_ROLES_CSV_URL` | Optional team roles CSV URL (Team Name, Player Name, Captain, Co-Captain) |
 | `PLAYER_HISTORY_CSV_URL` | Optional player name history CSV URL (Discord ID, Original Player Name, alts) |
-| `ASSIGNED_MATCHES_CSV_URL` | Optional assigned weekly matchups CSV URL (Ladder + Master sections) |
 | `MATCH_LOOKAHEAD_DAYS` | How many days ahead to fetch matches (default: 14) |
 | `MATCH_GRACE_HOURS` | Grace period for past matches (default: 0) |
 | `SYNC_INTERVAL_SECONDS` | How often to sync from sheet (default: 300) |
