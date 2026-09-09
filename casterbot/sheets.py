@@ -716,3 +716,113 @@ async def fetch_player_history() -> dict[str, int]:
     _player_ids = new_ids
     log.info(f"Loaded {len(_player_history)} player name aliases for {len(_player_ids)} players")
     return _player_history
+
+
+# ---- Assigned matches cache ----
+_assigned_matches: dict[str, list[dict]] = {}  # team name (lower) -> [{week, week_num, division, opponent}]
+
+
+def get_team_matchups(team_name: str) -> list[dict]:
+    """Return a team's assigned matchups (opponent, week, division)."""
+    matchups = list(_assigned_matches.get(team_name.strip().lower(), []))
+    matchups.sort(key=lambda m: (m.get("week_num", 0), m.get("division", ""), m.get("opponent", "").lower()))
+    return matchups
+
+
+async def fetch_assigned_matches() -> dict[str, list[dict]]:
+    """Fetch the Assigned Matches sheet and update the cache."""
+    global _assigned_matches
+    if not config.ASSIGNED_MATCHES_CSV_URL:
+        return _assigned_matches
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                config.ASSIGNED_MATCHES_CSV_URL,
+                headers={"User-Agent": "CasterBot/1.0"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    log.warning(f"Assigned matches fetch failed with status {resp.status}")
+                    return _assigned_matches
+                text = await resp.text()
+        except Exception as e:
+            log.warning(f"Assigned matches fetch failed: {e}")
+            return _assigned_matches
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return _assigned_matches
+
+    # Locate the header row containing "Team A" and "Team B" columns. The sheet
+    # has two side-by-side sections (Ladder and Master), each with its own pair.
+    header_idx = -1
+    team_a_cols: list[int] = []
+    team_b_cols: list[int] = []
+    for i, row in enumerate(rows):
+        lower = [c.strip().lower() for c in row]
+        a_cols = [j for j, h in enumerate(lower) if h == "team a"]
+        b_cols = [j for j, h in enumerate(lower) if h == "team b"]
+        if a_cols and b_cols:
+            header_idx = i
+            team_a_cols = a_cols
+            team_b_cols = b_cols
+            break
+
+    if header_idx == -1:
+        log.warning("Assigned matches CSV missing Team A/Team B header row")
+        return _assigned_matches
+
+    # Pair the Team A/Team B columns in order: first pair = Ladder, second = Master.
+    sections: list[tuple[str, int, int]] = []
+    division_names = ("Ladder", "Master")
+    for idx, (a_col, b_col) in enumerate(zip(sorted(team_a_cols), sorted(team_b_cols))):
+        division = division_names[idx] if idx < len(division_names) else f"Section {idx + 1}"
+        sections.append((division, a_col, b_col))
+
+    week_re = re.compile(r"(?i)^\s*week\s*(\d+)\s*$")
+
+    new_matches: dict[str, list[dict]] = {}
+    current_week_label = ""
+    current_week_num = 0
+
+    for row in rows[header_idx + 1 :]:
+        # A "Week N" cell marks the week for the rows that follow it.
+        for cell in row:
+            match = week_re.match(cell.strip())
+            if match:
+                current_week_label = f"Week {match.group(1)}"
+                current_week_num = int(match.group(1))
+                break
+
+        for division, a_col, b_col in sections:
+            if a_col >= len(row) or b_col >= len(row):
+                continue
+            team_a = row[a_col].strip()
+            team_b = row[b_col].strip()
+            if not team_a or not team_b:
+                continue
+            if week_re.match(team_a) or week_re.match(team_b):
+                continue
+            new_matches.setdefault(team_a.lower(), []).append({
+                "week": current_week_label,
+                "week_num": current_week_num,
+                "division": division,
+                "opponent": team_b,
+            })
+            new_matches.setdefault(team_b.lower(), []).append({
+                "week": current_week_label,
+                "week_num": current_week_num,
+                "division": division,
+                "opponent": team_a,
+            })
+
+    # Guard against wiping a larger cache with a tiny result (likely fetch failure)
+    if len(new_matches) < 5 and len(_assigned_matches) > len(new_matches):
+        log.warning(f"Assigned matches fetch returned only {len(new_matches)} teams, keeping existing {len(_assigned_matches)}")
+        return _assigned_matches
+
+    _assigned_matches = new_matches
+    log.info(f"Loaded assigned matchups for {len(_assigned_matches)} teams")
+    return _assigned_matches

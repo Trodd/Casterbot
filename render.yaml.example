@@ -75,6 +75,8 @@ services:
         value: "https://docs.google.com/spreadsheets/d/e/YOUR_SHEET_ID/pub?gid=YOUR_GID&single=true&output=csv"
       - key: PLAYER_HISTORY_CSV_URL
         value: "https://docs.google.com/spreadsheets/d/e/YOUR_SHEET_ID/pub?gid=YOUR_GID&single=true&output=csv"
+      - key: ASSIGNED_MATCHES_CSV_URL
+        value: "https://docs.google.com/spreadsheets/d/e/YOUR_SHEET_ID/pub?gid=YOUR_GID&single=true&output=csv"
 
       # === DEFAULTS (usually fine as-is) ===
       - key: LEAGUE_NAME

@@ -96,9 +96,10 @@ class CasterBot(commands.Bot):
             await sheets.fetch_player_history()
             await sheets.fetch_cooldowns()
             await sheets.fetch_team_roles()
-            log.info("Rankings, rosters, player history, cooldowns, and team roles preloaded")
+            await sheets.fetch_assigned_matches()
+            log.info("Rankings, rosters, player history, cooldowns, team roles, and matchups preloaded")
         except Exception as exc:
-            log.warning(f"Could not preload rankings/rosters/player history/cooldowns/team roles: {exc}")
+            log.warning(f"Could not preload rankings/rosters/player history/cooldowns/team roles/matchups: {exc}")
 
         # Register persistent views for existing matches
         await self._register_persistent_views()
@@ -246,6 +247,9 @@ async def sync_matches(bot: CasterBot) -> int:
 
     # Refresh team roles cache
     await sheets.fetch_team_roles()
+
+    # Refresh assigned matchups cache
+    await sheets.fetch_assigned_matches()
 
     existing_matches = await db.get_matches_with_message()
 
