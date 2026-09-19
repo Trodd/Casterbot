@@ -11111,6 +11111,46 @@ async def api_bracket_crew_handler(request: web.Request) -> web.Response:
     return web.json_response({"success": True, "crew": crew})
 
 
+async def _sync_bracket_claims_to_match(bot, slot: str) -> None:
+    """Mirror a bracket slot's claims into the linked match's claim table.
+
+    Keeps the regular claim rows (used by /api/matches, the match detail view,
+    and the Discord claim message) in sync with the bracket claims.
+    """
+    slot_data = await db.get_bracket_slot(slot)
+    if not slot_data or not slot_data.get("match_id"):
+        return
+
+    match_id = slot_data["match_id"]
+    bracket_claims = await db.get_bracket_claims(slot)
+
+    desired: dict[tuple[str, int], int] = {}
+    for claim in bracket_claims:
+        role = claim.get("role")
+        slot_num = claim.get("slot_num", 1)
+        if role in ("caster", "camop", "sideline") and slot_num in (1, 2):
+            desired[(role, slot_num)] = claim["user_id"]
+
+    existing_claims = await db.get_claims(match_id)
+    existing: dict[tuple[str, int], int] = {}
+    for claim in existing_claims:
+        existing[(claim["role"], claim["slot"])] = claim["user_id"]
+
+    # Drop claim slots that no longer exist in the bracket
+    for role, slot_num in existing:
+        if (role, slot_num) not in desired:
+            await db.remove_claim_by_slot(match_id, role, slot_num)
+
+    # Upsert the bracket claims
+    for (role, slot_num), user_id in desired.items():
+        if existing.get((role, slot_num)) != user_id:
+            await db.claim_slot(match_id, user_id, role, slot_num)
+
+    # Refresh the Discord claim message so it reflects the same roster
+    if bot:
+        await _refresh_discord_message(bot, match_id)
+
+
 async def api_bracket_claim_handler(request: web.Request) -> web.Response:
     """Claim a caster/camop slot on a bracket match."""
     session = _get_session(request)
@@ -11148,6 +11188,10 @@ async def api_bracket_claim_handler(request: web.Request) -> web.Response:
         claim_display_name = session.get("global_name") or session.get("username") or "Unknown"
 
     await db.claim_bracket_slot(slot, claim_user_id, claim_display_name, role, slot_num)
+
+    # Sync bracket claims into the linked match's claim table + Discord message
+    if bot:
+        await _sync_bracket_claims_to_match(bot, slot)
 
     # Check if channel should be auto-created (only if one doesn't exist yet)
     if bot:
@@ -11196,6 +11240,11 @@ async def api_bracket_unclaim_handler(request: web.Request) -> web.Response:
             await db.unclaim_bracket_slot_admin(slot, role, slot_num)
         else:
             return web.json_response({"success": False, "error": "Not your claim"}, status=403)
+
+    # Sync bracket claims into the linked match's claim table + Discord message
+    bot = request.app.get("bot")
+    if bot:
+        await _sync_bracket_claims_to_match(bot, slot)
 
     return web.json_response({"success": True})
 
