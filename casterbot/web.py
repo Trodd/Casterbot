@@ -8770,6 +8770,14 @@ async def api_matches_handler(request: web.Request) -> web.Response:
 
     # Fall back to the global week setting when a match has no week_number set
     current_week = await db.get_setting("week")
+
+    # Grand Finals (and Grand Final Reset) are Best of 5; everything else Best of 3
+    bracket_slots = await db.get_all_bracket_slots()
+    bo5_match_ids: set[str] = set()
+    for slot_name in ("GF", "GFR"):
+        slot = bracket_slots.get(slot_name)
+        if slot and slot.get("match_id"):
+            bo5_match_ids.add(slot["match_id"])
     
     # Helper to get team logo URL. The /team-logo endpoint serves the approved
     # logo, or generates an initials placeholder PNG when none exists.
@@ -8784,6 +8792,7 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     for match in matches:
         match_id = match["match_id"]
         claims = await db.get_claims(match_id)
+        match_type = "Best of 5" if match_id in bo5_match_ids else "Best of 3"
         
         # Build casters list
         casters = []
@@ -8850,7 +8859,7 @@ async def api_matches_handler(request: web.Request) -> web.Response:
             "match_time": match["match_time"],
             "match_timestamp": match.get("match_timestamp"),
             "week_number": match.get("week_number") or current_week,
-            "match_type": match.get("match_type"),
+            "match_type": match_type,
             "stream_channel": match.get("stream_channel"),
             "casters": casters,
             "cam_op": cam_op,
