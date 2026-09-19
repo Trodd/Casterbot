@@ -11103,7 +11103,7 @@ async def api_bracket_crew_handler(request: web.Request) -> web.Response:
                     if member.id not in seen:
                         seen.add(member.id)
                         crew.append({
-                            "user_id": member.id,
+                            "user_id": str(member.id),  # String to preserve precision in JS
                             "display_name": member.global_name or member.display_name or member.name,
                         })
             crew.sort(key=lambda c: c["display_name"].lower())
