@@ -273,6 +273,17 @@ async def _migrate_approved_by_column() -> None:
         pass  # Column might already be TEXT or table doesn't exist yet
 
 
+async def _migrate_best_of_column() -> None:
+    """Add best_of to bracket_slots (PostgreSQL only)."""
+    if not _use_pg:
+        return
+    try:
+        await _pg_execute("ALTER TABLE bracket_slots ADD COLUMN best_of INTEGER NOT NULL DEFAULT 3")
+        log.info("Migrated bracket_slots.best_of column")
+    except Exception:
+        pass  # Column might already exist or table doesn't exist yet
+
+
 async def init_db() -> None:
     """Initialize the database (create tables, run migrations)."""
     global _pool
@@ -285,6 +296,7 @@ async def init_db() -> None:
             await conn.execute(_PG_SCHEMA)
         # Run migrations
         await _migrate_approved_by_column()
+        await _migrate_best_of_column()
         log.info("PostgreSQL database initialized")
     else:
         import aiosqlite
@@ -310,6 +322,10 @@ async def init_db() -> None:
                 await db.execute("ALTER TABLE matches ADD COLUMN missing_since INTEGER")
             if "stream_channel" not in columns:
                 await db.execute("ALTER TABLE matches ADD COLUMN stream_channel INTEGER")
+            cursor = await db.execute("PRAGMA table_info(bracket_slots)")
+            bracket_columns = [row[1] for row in await cursor.fetchall()]
+            if "best_of" not in bracket_columns:
+                await db.execute("ALTER TABLE bracket_slots ADD COLUMN best_of INTEGER NOT NULL DEFAULT 3")
             await db.commit()
         log.info("SQLite database initialized")
 
@@ -1359,23 +1375,34 @@ async def get_all_bracket_slots() -> dict[str, dict]:
 
 
 async def set_bracket_slot(slot: str, team_a: str | None, team_b: str | None,
-                           winner: str | None = None, match_id: str | None = None) -> None:
+                           winner: str | None = None, match_id: str | None = None,
+                           best_of: int | None = None) -> None:
     """Set or update a bracket slot."""
+    # Default the format: 5th place match is Best of 5, everything else Best of 3.
+    # If best_of isn't explicitly provided, preserve the slot's existing value.
+    if best_of is None:
+        existing = await get_bracket_slot(slot)
+        if existing and existing.get("best_of"):
+            best_of = existing["best_of"]
+        else:
+            best_of = 5 if slot == "FIFTH" else 3
+
     if _use_pg:
         await _pg_execute(
-            """INSERT INTO bracket_slots (slot, team_a, team_b, winner, match_id)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT(slot) DO UPDATE SET team_a = $2, team_b = $3, winner = $4, match_id = $5""",
-            slot, team_a, team_b, winner, match_id,
+            """INSERT INTO bracket_slots (slot, team_a, team_b, winner, match_id, best_of)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT(slot) DO UPDATE SET team_a = $2, team_b = $3, winner = $4, match_id = $5, best_of = $6""",
+            slot, team_a, team_b, winner, match_id, best_of,
         )
     else:
         import aiosqlite
         async with aiosqlite.connect(config.DB_PATH) as db:
             await db.execute(
-                """INSERT INTO bracket_slots (slot, team_a, team_b, winner, match_id)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(slot) DO UPDATE SET team_a = ?, team_b = ?, winner = ?, match_id = ?""",
-                (slot, team_a, team_b, winner, match_id, team_a, team_b, winner, match_id)
+                """INSERT INTO bracket_slots (slot, team_a, team_b, winner, match_id, best_of)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(slot) DO UPDATE SET team_a = ?, team_b = ?, winner = ?, match_id = ?, best_of = ?""",
+                (slot, team_a, team_b, winner, match_id, best_of,
+                 team_a, team_b, winner, match_id, best_of)
             )
             await db.commit()
 
@@ -1405,6 +1432,17 @@ async def set_bracket_stream_channel(slot: str, stream_channel: int | None) -> N
                 "UPDATE bracket_slots SET stream_channel = ? WHERE slot = ?",
                 (stream_channel, slot),
             )
+            await db.commit()
+
+
+async def set_match_type(match_id: str, match_type: str) -> None:
+    """Update a match's type label."""
+    if _use_pg:
+        await _pg_execute("UPDATE matches SET match_type = $1 WHERE match_id = $2", match_type, match_id)
+    else:
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as db:
+            await db.execute("UPDATE matches SET match_type = ? WHERE match_id = ?", (match_type, match_id))
             await db.commit()
 
 

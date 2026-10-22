@@ -120,6 +120,9 @@ TEAM_LOGO_CHANNEL_ID: int = _int("TEAM_LOGO_CHANNEL_ID")
 # RPC API key for remote app access (optional)
 RPC_API_KEY: str = _get("RPC_API_KEY", "")
 
+# Local dev/test bypass (never enable in production)
+DEV_MODE: bool = _bool("DEV_MODE", False)
+
 # OpenAI (for bot replies in private channels)
 OPENAI_API_KEY: str = _get("OPENAI_API_KEY", "")
 

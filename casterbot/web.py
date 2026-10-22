@@ -124,6 +124,8 @@ def _get_session(request: web.Request) -> dict | None:
 
 async def _is_admin(bot, user_id: int) -> bool:
     """Check if a user has the lead role (admin access)."""
+    if config.DEV_MODE:
+        return True
     if not bot or not config.WEB_LEAD_ROLE_ID or not config.GUILD_ID:
         return False
     try:
@@ -143,6 +145,8 @@ async def _is_admin(bot, user_id: int) -> bool:
 
 async def _is_crew_member(bot, user_id: int) -> bool:
     """Check if a user has any caster/camop role (including training)."""
+    if config.DEV_MODE:
+        return True
     if not bot or not config.GUILD_ID:
         return False
     
@@ -5176,6 +5180,7 @@ HTML_TEMPLATE = """
             // Grand final
             GF:   {label:'Grand Final', round:4, idx:0, side:'G', feedsFrom:['WF','LF']},
             GFR:  {label:'Grand Final Reset', round:5, idx:0, side:'G', feedsFrom:['GF']},
+            FIFTH:{label:'5th Place', round:6, idx:0, side:'F'},
         };
         
         let _bracketData = {};
@@ -5244,6 +5249,8 @@ HTML_TEMPLATE = """
             const gfY = (losersTop + 2 * (mh + py)) / 2 - mh;
             positions['GF'] = {x: gfX, y: gfY};
             positions['GFR'] = {x: gfX, y: gfY + mh + py};
+            // 5th place match: separate column to the right, near the losers bracket bottom
+            positions['FIFTH'] = {x: gfX + (mw + px) + 40, y: losersTop + (mh + py)};
             
             // Compute SVG size
             let maxX = 0, maxY = 0;
@@ -5284,6 +5291,8 @@ HTML_TEMPLATE = """
                 const teamB = d.team_b || 'TBD';
                 const winner = d.winner || '';
                 
+                const slotBest = d.best_of || (slotName === 'FIFTH' ? 5 : 3);
+                const displayLabel = (slotName === 'FIFTH' || slotBest === 5) ? `${meta.label} (Best of ${slotBest})` : meta.label;
                 const borderColor = meta.side === 'L' ? '#00d4ff' : meta.side === 'G' ? '#ff6a00' : '#ff6a00';
                 const dimBorder = meta.side === 'L' ? 'rgba(0,212,255,0.4)' : meta.side === 'G' ? 'rgba(255,106,0,0.6)' : 'rgba(255,106,0,0.4)';
                 const hasData = d.team_a || d.team_b;
@@ -5297,7 +5306,7 @@ HTML_TEMPLATE = """
                 svg += `<rect x="${pos.x}" y="${pos.y}" width="${mw}" height="${mh}" rx="6" fill="rgba(15,15,25,${bgOpacity})" stroke="${border}" stroke-width="${isGF ? 2 : 1.5}"${glowAttr}/>`;
                 
                 // Label
-                svg += `<text x="${pos.x + mw/2}" y="${pos.y - 4}" text-anchor="middle" fill="${meta.side === 'L' ? '#00d4ff' : '#ff6a00'}" font-size="9" font-family="Orbitron,sans-serif" opacity="0.7">${meta.label}</text>`;
+                svg += `<text x="${pos.x + mw/2}" y="${pos.y - 4}" text-anchor="middle" fill="${meta.side === 'L' ? '#00d4ff' : '#ff6a00'}" font-size="9" font-family="Orbitron,sans-serif" opacity="0.7">${displayLabel}</text>`;
                 
                 // Team A row
                 const aColor = winner === teamA && winner ? '#00ff88' : winner && winner !== teamA && d.team_a ? '#ff3366' : '#e8e8f0';
@@ -5483,6 +5492,12 @@ HTML_TEMPLATE = """
                 html += `<option value="1" ${curStream==1?'selected':''}>Channel 1</option>`;
                 html += `<option value="2" ${curStream==2?'selected':''}>Channel 2</option>`;
                 html += `</select></div>`;
+                const curBest = d.best_of || (slot === 'FIFTH' ? 5 : 3);
+                html += '<div class="admin-input-group"><label>Format</label>';
+                html += '<select class="admin-select" id="be-best-of">';
+                html += `<option value="3" ${curBest==3?'selected':''}>Best of 3</option>`;
+                html += `<option value="5" ${curBest==5?'selected':''}>Best of 5</option>`;
+                html += '</select></div>';
                 html += `<datalist id="be-team-list">${datalistOpts}</datalist>`;
                 html += `<div class="admin-input-group"><label>Team A</label><input class="admin-select" id="be-team-a" list="be-team-list" value="${d.team_a||''}" placeholder="Type to search teams..." autocomplete="off"></div>`;
                 html += `<div class="admin-input-group"><label>Team B</label><input class="admin-select" id="be-team-b" list="be-team-list" value="${d.team_b||''}" placeholder="Type to search teams..." autocomplete="off"></div>`;
@@ -5614,6 +5629,7 @@ HTML_TEMPLATE = """
                 team_a: document.getElementById('be-team-a').value || null,
                 team_b: document.getElementById('be-team-b').value || null,
                 winner: document.getElementById('be-winner').value || null,
+                best_of: parseInt(document.getElementById('be-best-of').value),
             };
             try {
                 const resp = await fetch('/api/bracket/update', {
@@ -8771,13 +8787,12 @@ async def api_matches_handler(request: web.Request) -> web.Response:
     # Fall back to the global week setting when a match has no week_number set
     current_week = await db.get_setting("week")
 
-    # Grand Finals (and Grand Final Reset) are Best of 5; everything else Best of 3
+    # Any bracket slot configured as Best of 5 is Best of 5; everything else Best of 3
     bracket_slots = await db.get_all_bracket_slots()
     bo5_match_ids: set[str] = set()
-    for slot_name in ("GF", "GFR"):
-        slot = bracket_slots.get(slot_name)
-        if slot and slot.get("match_id"):
-            bo5_match_ids.add(slot["match_id"])
+    for slot_data in bracket_slots.values():
+        if slot_data.get("match_id") and slot_data.get("best_of") == 5:
+            bo5_match_ids.add(slot_data["match_id"])
     
     # Helper to get team logo URL. The /team-logo endpoint serves the approved
     # logo, or generates an initials placeholder PNG when none exists.
@@ -10023,6 +10038,9 @@ async def _check_admin(request: web.Request) -> tuple[dict | None, web.Response 
     session = _get_session(request)
     if not session:
         return None, web.json_response({"success": False, "error": "Not logged in"}, status=401)
+
+    if config.DEV_MODE:
+        return session, None
     
     bot = request.app.get("bot")
     if not bot:
@@ -10603,6 +10621,7 @@ async def public_bracket_handler(request: web.Request) -> web.Response:
         LF:   {{label:'Losers Final', round:3, idx:0, side:'L', feedsFrom:['LSF','WF']}},
         GF:   {{label:'Grand Final', round:4, idx:0, side:'G', feedsFrom:['WF','LF']}},
         GFR:  {{label:'Grand Final Reset', round:5, idx:0, side:'G', feedsFrom:['GF']}},
+        FIFTH:{{label:'5th Place', round:6, idx:0, side:'F'}},
     }};
 
     let _bracketData = {{}};
@@ -10652,6 +10671,7 @@ async def public_bracket_handler(request: web.Request) -> web.Response:
         const gfY = (losersTop + 2 * (mh + py)) / 2 - mh;
         positions['GF'] = {{x: gfX, y: gfY}};
         positions['GFR'] = {{x: gfX, y: gfY + mh + py}};
+        positions['FIFTH'] = {{x: gfX + (mw + px) + 40, y: losersTop + (mh + py)}};
 
         let maxX = 0, maxY = 0;
         for (const p of Object.values(positions)) {{
@@ -10689,12 +10709,14 @@ async def public_bracket_handler(request: web.Request) -> web.Response:
             const teamA = d.team_a || '';
             const teamB = d.team_b || '';
             const winner = d.winner || '';
+            const slotBest = d.best_of || (slotName === 'FIFTH' ? 5 : 3);
+            const displayLabel = (slotName === 'FIFTH' || slotBest === 5) ? `${{meta.label}} (Best of ${{slotBest}})` : meta.label;
             const borderColor = meta.side === 'L' ? '#00d4ff' : '#ff6a00';
 
             svg += `<g>`;
             svg += `<rect x="${{pos.x}}" y="${{pos.y}}" width="${{mw}}" height="${{mh}}" rx="6" fill="#131926" stroke="${{borderColor}}" stroke-width="1.5" opacity="0.9"/>`;
             // Slot label
-            svg += `<text x="${{pos.x + mw/2}}" y="${{pos.y - 4}}" text-anchor="middle" fill="${{meta.side === 'L' ? '#00d4ff' : '#ff6a00'}}" font-size="9" font-family="Orbitron,sans-serif" opacity="0.7">${{meta.label}}</text>`;
+            svg += `<text x="${{pos.x + mw/2}}" y="${{pos.y - 4}}" text-anchor="middle" fill="${{meta.side === 'L' ? '#00d4ff' : '#ff6a00'}}" font-size="9" font-family="Orbitron,sans-serif" opacity="0.7">${{displayLabel}}</text>`;
             // Team A
             const aColor = winner === teamA && winner ? '#00ff88' : winner && winner !== teamA && d.team_a ? '#ff3366' : '#e8e8f0';
             const aWeight = winner === teamA && winner ? 'bold' : 'normal';
@@ -10745,6 +10767,7 @@ _BRACKET_SLOT_LABELS: dict[str, str] = {
     "LR2_1": "LR2-1", "LR2_2": "LR2-2",
     "LSF": "Losers Semi", "LF": "Losers Final",
     "GF": "Grand Final", "GFR": "Grand Final Reset",
+    "FIFTH": "5th Place",
 }
 
 
@@ -10775,6 +10798,8 @@ async def _ensure_bracket_match(bot, slot: str) -> str | None:
     match_timestamp = int(match_dt.timestamp())
 
     label = _BRACKET_SLOT_LABELS.get(slot, slot)
+    best_of = slot_data.get("best_of") or (5 if slot == "FIFTH" else 3)
+    match_type = f"Best of {best_of}"
 
     await db.upsert_match(
         match_id=match_id,
@@ -10783,7 +10808,7 @@ async def _ensure_bracket_match(bot, slot: str) -> str | None:
         match_date=match_date,
         match_time=match_time,
         match_timestamp=match_timestamp,
-        match_type=f"Finals - {label}",
+        match_type=match_type,
     )
 
     # Store match_id back in the bracket slot
@@ -10825,6 +10850,15 @@ async def api_bracket_update_handler(request: web.Request) -> web.Response:
     winner = data.get("winner") or None
     match_id = data.get("match_id") or None
 
+    best_of = data.get("best_of")
+    if best_of is not None:
+        try:
+            best_of = int(best_of)
+        except (TypeError, ValueError):
+            return web.json_response({"success": False, "error": "best_of must be 3 or 5"}, status=400)
+        if best_of not in (3, 5):
+            return web.json_response({"success": False, "error": "best_of must be 3 or 5"}, status=400)
+
     # Grab existing slot data so we can close the channel when a winner is set
     existing_slot = await db.get_bracket_slot(slot)
     existing_match_id = existing_slot.get("match_id") if existing_slot else None
@@ -10833,7 +10867,7 @@ async def api_bracket_update_handler(request: web.Request) -> web.Response:
     if not match_id and existing_match_id:
         match_id = existing_match_id
 
-    await db.set_bracket_slot(slot, team_a, team_b, winner, match_id)
+    await db.set_bracket_slot(slot, team_a, team_b, winner, match_id, best_of=best_of)
 
     # WQF (initial seeding) slots don't auto-create matches;
     # admin must use the "Create WQF Matches" button after seeding.
@@ -10844,6 +10878,13 @@ async def api_bracket_update_handler(request: web.Request) -> web.Response:
         mid = await _ensure_bracket_match(bot, slot)
         if mid:
             created_matches.append(f"{_BRACKET_SLOT_LABELS.get(slot, slot)}")
+
+    # If the admin changed the format on an already-created match, update its label
+    if best_of is not None:
+        slot_after = await db.get_bracket_slot(slot)
+        linked_mid = slot_after.get("match_id") if slot_after else None
+        if linked_mid:
+            await db.set_match_type(linked_mid, f"Best of {best_of}")
 
     # Auto-propagate winner/loser to next rounds
     propagated_slots: list[str] = []
@@ -10880,8 +10921,8 @@ _BRACKET_PROPAGATION = {
     "WSF2": ("WF", "b", "LR2_1", "b"),
     "LR1_1": ("LR2_1", "a", None, None),
     "LR1_2": ("LR2_2", "a", None, None),
-    "LR2_1": ("LSF", "a", None, None),
-    "LR2_2": ("LSF", "b", None, None),
+    "LR2_1": ("LSF", "a", "FIFTH", "a"),
+    "LR2_2": ("LSF", "b", "FIFTH", "b"),
     "LSF":   ("LF", "a", None, None),
     "WF":    ("GF", "a", "LF", "b"),
     "LF":    ("GF", "b", None, None),
@@ -11036,7 +11077,8 @@ async def _create_bracket_channel(bot, match_id: str, slot: str,
                     team_roles.append(role)
 
         label = _BRACKET_SLOT_LABELS.get(slot, slot)
-        channel_name = f"finals-{team_a}-vs-{team_b}".lower().replace(" ", "-")
+        prefix = "5th-place" if slot == "FIFTH" else "finals"
+        channel_name = f"{prefix}-{team_a}-vs-{team_b}".lower().replace(" ", "-")
 
         try:
             channel = await guild.create_text_channel(
@@ -11910,6 +11952,9 @@ async def _check_lead_role(request: web.Request) -> tuple[dict | None, web.Respo
     session = _get_session(request)
     if not session:
         return None, web.Response(text="Not logged in. <a href='/login'>Login</a>", content_type="text/html", status=401)
+
+    if config.DEV_MODE:
+        return session, None
 
     bot = request.app.get("bot")
     if not bot:
