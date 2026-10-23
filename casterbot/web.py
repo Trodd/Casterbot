@@ -11084,6 +11084,12 @@ async def api_bracket_create_initial_matches_handler(request: web.Request) -> we
 _bracket_channel_lock = asyncio.Lock()
 
 
+def _slugify(text: str) -> str:
+    """Convert text into a Discord-safe channel-name slug."""
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug or "bracket"
+
+
 async def _create_bracket_channel(bot, match_id: str, slot: str,
                                   slot_claims: list[dict]) -> None:
     """Create a private channel for a bracket match using bracket claims."""
@@ -11140,8 +11146,12 @@ async def _create_bracket_channel(bot, match_id: str, slot: str,
                     team_roles.append(role)
 
         label = _BRACKET_SLOT_LABELS.get(slot, slot)
-        prefix = "5th-place" if slot == "FIFTH" else "finals"
-        channel_name = f"{prefix}-{team_a}-vs-{team_b}".lower().replace(" ", "-")
+        bracket_title = await db.get_setting("bracket_title") or "Finals Bracket"
+        title_slug = _slugify(bracket_title)[:40]
+        team_a_slug = _slugify(team_a)
+        team_b_slug = _slugify(team_b)
+        prefix = f"{title_slug}-5th-place" if slot == "FIFTH" else title_slug
+        channel_name = f"{prefix}-{team_a_slug}-vs-{team_b_slug}"[:100]
 
         try:
             channel = await guild.create_text_channel(
