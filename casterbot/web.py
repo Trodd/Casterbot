@@ -4915,6 +4915,32 @@ HTML_TEMPLATE = """
             }
         }
         
+        async function adminSetBracketTitle() {
+            const title = document.getElementById('set-bracket-title').value;
+            const result = document.getElementById('result-set-bracket-title');
+            if (!title) {
+                result.innerHTML = '<span class="error">Enter a bracket title</span>';
+                return;
+            }
+            try {
+                const resp = await fetch('/api/admin/set-bracket-title', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({title: title})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    result.innerHTML = '<span class="success">✓ ' + data.message + '</span>';
+                    showToast('Bracket title updated', 'success');
+                } else {
+                    result.innerHTML = '<span class="error">✗ ' + data.error + '</span>';
+                }
+            } catch(e) {
+                result.innerHTML = '<span class="error">✗ Request failed</span>';
+            }
+        }
+        
         async function adminEditLeaderboard() {
             const userId = document.getElementById('edit-lb-user').value;
             const count = document.getElementById('edit-lb-count').value;
@@ -7188,6 +7214,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
     # Build season badge
     season = await db.get_setting("season")
     week = await db.get_setting("week")
+    bracket_title = await db.get_setting("bracket_title") or "Finals Bracket"
     
     if season or week:
         season_part = f'<span class="season-num">SEASON {season}</span>' if season else ''
@@ -7712,7 +7739,7 @@ async def schedule_handler(request: web.Request) -> web.Response:
     bracket_admin_bar = ''
     if is_admin:
         bracket_admin_bar = '<div class="bracket-admin-bar"><button class="admin-btn" style="background:#00ff88;color:#000" onclick="createWQFMatches()">Create WQF Matches</button><button class="admin-btn danger" onclick="resetBracket()">Reset Bracket</button></div>'
-    bracket_tab_btn = f'<button class="tab-btn {bracket_active}" onclick="switchTab(\'bracket\')">Finals Bracket</button>'
+    bracket_tab_btn = f'<button class="tab-btn {bracket_active}" onclick="switchTab(\'bracket\')">{bracket_title}</button>'
     bracket_tab_content = f'''
         <div id="tab-bracket" class="tab-content {bracket_content_active}">
             <div class="bracket-legend">
@@ -7876,6 +7903,17 @@ async def schedule_handler(request: web.Request) -> web.Response:
                             <button class="admin-btn primary" onclick="adminSetWeek()">Update</button>
                         </div>
                         <div class="admin-result" id="result-set-week"></div>
+                    </div>
+                    <div class="admin-row">
+                        <div class="admin-row-desc">Set the bracket title shown on the bracket tab and public bracket page.</div>
+                        <div class="admin-form">
+                            <div class="admin-input-group">
+                                <label>Bracket Title</label>
+                                <input type="text" class="admin-input" id="set-bracket-title" placeholder="e.g. Finals Bracket" value="{bracket_title}">
+                            </div>
+                            <button class="admin-btn primary" onclick="adminSetBracketTitle()">Update</button>
+                        </div>
+                        <div class="admin-result" id="result-set-bracket-title"></div>
                     </div>
                 </div>
                 
@@ -10177,6 +10215,30 @@ async def api_admin_set_week_handler(request: web.Request) -> web.Response:
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+async def api_admin_set_bracket_title_handler(request: web.Request) -> web.Response:
+    """Admin API: Set the bracket title."""
+    session, error = await _check_admin(request)
+    if error:
+        return error
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+    title = data.get("title")
+    if not title or not str(title).strip():
+        return web.json_response({"success": False, "error": "Missing title"}, status=400)
+
+    title = str(title).strip()
+    try:
+        await db.set_setting("bracket_title", title)
+        return web.json_response({"success": True, "message": f"Bracket title set to \"{title}\""})
+    except Exception as e:
+        log.error(f"Admin set bracket title failed: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 async def api_admin_edit_leaderboard_handler(request: web.Request) -> web.Response:
     """Admin API: Edit a user's cast count."""
     session, error = await _check_admin(request)
@@ -10509,12 +10571,13 @@ async def api_admin_force_create_finals_handler(request: web.Request) -> web.Res
 async def public_bracket_handler(request: web.Request) -> web.Response:
     """Public bracket page - no login required."""
     league_name = config.LEAGUE_NAME
+    bracket_title = await db.get_setting("bracket_title") or "Finals Bracket"
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{league_name} - Finals Bracket</title>
+    <title>{league_name} - {bracket_title}</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {{
@@ -10593,7 +10656,7 @@ async def public_bracket_handler(request: web.Request) -> web.Response:
 </head>
 <body>
     <div class="header">
-        <h1>{league_name} Finals Bracket</h1>
+        <h1>{league_name} {bracket_title}</h1>
         <p>Double Elimination</p>
     </div>
     <div class="bracket-legend">
@@ -12797,6 +12860,7 @@ def create_app(bot=None) -> web.Application:
     app.router.add_post("/api/admin/refresh", api_admin_refresh_handler)
     app.router.add_post("/api/admin/force-channel", api_admin_force_channel_handler)
     app.router.add_post("/api/admin/set-week", api_admin_set_week_handler)
+    app.router.add_post("/api/admin/set-bracket-title", api_admin_set_bracket_title_handler)
     app.router.add_post("/api/admin/edit-leaderboard", api_admin_edit_leaderboard_handler)
     app.router.add_post("/api/admin/reset-leaderboard", api_admin_reset_leaderboard_handler)
     app.router.add_post("/api/admin/start-cycle", api_admin_start_cycle_handler)
