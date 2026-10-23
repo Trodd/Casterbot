@@ -11090,6 +11090,13 @@ def _slugify(text: str) -> str:
     return slug or "bracket"
 
 
+def _abbreviate(text: str) -> str:
+    """Build a short abbreviation from a title, e.g. 'Season 5 Playoffs' -> 'S5P'."""
+    tokens = re.findall(r"[a-zA-Z0-9]+", text)
+    letters = [t[0].upper() if t[0].isalpha() else t[0] for t in tokens]
+    return "".join(letters) or "FB"
+
+
 async def _create_bracket_channel(bot, match_id: str, slot: str,
                                   slot_claims: list[dict]) -> None:
     """Create a private channel for a bracket match using bracket claims."""
@@ -11147,10 +11154,10 @@ async def _create_bracket_channel(bot, match_id: str, slot: str,
 
         label = _BRACKET_SLOT_LABELS.get(slot, slot)
         bracket_title = await db.get_setting("bracket_title") or "Finals Bracket"
-        title_slug = _slugify(bracket_title)[:40]
+        title_abbr = _abbreviate(bracket_title)
         team_a_slug = _slugify(team_a)
         team_b_slug = _slugify(team_b)
-        prefix = f"{title_slug}-5th-place" if slot == "FIFTH" else title_slug
+        prefix = f"{title_abbr}-5th-place" if slot == "FIFTH" else title_abbr
         channel_name = f"{prefix}-{team_a_slug}-vs-{team_b_slug}"[:100]
 
         try:
